@@ -1,0 +1,60 @@
+/* Tokens de design — ANTS ERP (extraídos EXACTAMENTE de design/design-styles.css) */
+:root {
+  --bg: #eef2f2;
+  --card: #ffffff;
+  --card2: #f8fafa;
+  --card3: #fbfdfd;
+  --border: #e6eaea;
+  --bd-soft: #eef2f2;
+  --bd-soft2: #f0f3f3;
+  --field: #f3f6f6;
+  --field-bd: #e7eded;
+  --hover: #f3f6f6;
+  --text: #16282c;
+  --text2: #5f7378;
+  --text3: #8aa0a3;
+  --text4: #a2afaf;
+  --sidebar: #0e2a30;
+  --header: #ffffff;
+  --ok: #1f8a5b;
+  --ok-bg: #e7f4ed;
+  --bad: #c2453d;
+  --bad-bg: #fbeae9;
+  --warn: #b9791a;
+  --warn-bg: #f7eed9;
+  --info: #2a6f97;
+  --info-bg: #e6eef4;
+  --accent-fg: #13343b;
+  --accent-bg: #eaf0f0;
+  --shadow: 0 14px 34px rgba(16, 40, 45, 0.16);
+}
+
+html[data-theme='dark'] {
+  --bg: #0a1418;
+  --card: #11242a;
+  --card2: #0e1f24;
+  --card3: #0d1c21;
+  --border: #1f3a41;
+  --bd-soft: #182e34;
+  --bd-soft2: #172b31;
+  --field: #13262c;
+  --field-bd: #244249;
+  --hover: #16323a;
+  --text: #e9eff0;
+  --text2: #9fb2b6;
+  --text3: #7e9499;
+  --text4: #6a8085;
+  --sidebar: #081a1f;
+  --header: #0d2025;
+  --ok: #43b27c;
+  --ok-bg: #12302a;
+  --bad: #e3736a;
+  --bad-bg: #36191a;
+  --warn: #d9a04a;
+  --warn-bg: #33291a;
+  --info: #5aa6cf;
+  --info-bg: #14293a;
+  --accent-fg: #7fd3e0;
+  --accent-bg: #13313a;
+  --shadow: 0 16px 38px rgba(0, 0, 0, 0.55);
+}

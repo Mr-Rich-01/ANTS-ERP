@@ -1,0 +1,227 @@
+// ANTS ERP — Esquema Prisma (Fase 0: fundação multiempresa + auth)
+// Os módulos de negócio (clientes, stock, vendas, contabilidade, RH...) são
+// adicionados nas fases seguintes. Aqui ficam as entidades transversais.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────────────────────────
+// Plataforma / Multiempresa
+// ─────────────────────────────────────────────────────────────
+
+model Company {
+  id           String   @id @default(cuid())
+  legalName    String
+  tradeName    String?
+  nuit         String?
+  email        String?
+  phone        String?
+  status       CompanyStatus @default(ACTIVE)
+  // Localização padrão (configurável por empresa)
+  currency     String   @default("MZN")
+  currencySymbol String @default("MT")
+  timezone     String   @default("Africa/Maputo")
+  locale       String   @default("pt-MZ")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  branches     Branch[]
+  settings     CompanySettings?
+  users        User[]
+  roles        Role[]
+  auditLogs    AuditLog[]
+
+  @@index([status])
+  @@map("companies")
+}
+
+model CompanySettings {
+  id            String   @id @default(cuid())
+  companyId     String   @unique
+  company       Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  // JSON flexível para taxas, séries documentais, rodapés, config de stock/contabilidade/salários
+  fiscal        Json?
+  documentSeries Json?
+  branding      Json?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@map("company_settings")
+}
+
+model Branch {
+  id         String   @id @default(cuid())
+  companyId  String
+  company    Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  code       String
+  name       String
+  address    String?
+  phone      String?
+  status     RecordStatus @default(ACTIVE)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  userBranches UserBranch[]
+
+  @@unique([companyId, code])
+  @@index([companyId])
+  @@map("branches")
+}
+
+// ─────────────────────────────────────────────────────────────
+// Utilizadores / RBAC
+// ─────────────────────────────────────────────────────────────
+
+model User {
+  id              String   @id @default(cuid())
+  companyId       String?  // null = Super Administrador da Plataforma
+  company         Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  email           String
+  passwordHash    String
+  name            String
+  isPlatformAdmin Boolean  @default(false)
+  mustChangePassword Boolean @default(true)
+  status          RecordStatus @default(ACTIVE)
+  lastLoginAt     DateTime?
+  failedLoginCount Int     @default(0)
+  lockedUntil     DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  userRoles    UserRole[]
+  userBranches UserBranch[]
+  sessions     Session[]
+
+  @@unique([companyId, email])
+  @@index([companyId])
+  @@index([email])
+  @@map("users")
+}
+
+model Role {
+  id          String   @id @default(cuid())
+  companyId   String?  // null = perfil de sistema (template global)
+  company     Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  name        String
+  description String?
+  isSystem    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  rolePermissions RolePermission[]
+  userRoles       UserRole[]
+
+  @@unique([companyId, name])
+  @@index([companyId])
+  @@map("roles")
+}
+
+model Permission {
+  id          String   @id @default(cuid())
+  key         String   @unique // ex.: "sales.create", "accounting.post"
+  description String?
+  module      String   // ex.: "sales", "accounting"
+
+  rolePermissions RolePermission[]
+
+  @@index([module])
+  @@map("permissions")
+}
+
+model RolePermission {
+  roleId       String
+  permissionId String
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@index([permissionId])
+  @@map("role_permissions")
+}
+
+model UserRole {
+  userId String
+  roleId String
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role   Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([userId, roleId])
+  @@index([roleId])
+  @@map("user_roles")
+}
+
+model UserBranch {
+  userId   String
+  branchId String
+  user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  branch   Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  @@id([userId, branchId])
+  @@index([branchId])
+  @@map("user_branches")
+}
+
+// ─────────────────────────────────────────────────────────────
+// Sessões / Auditoria
+// ─────────────────────────────────────────────────────────────
+
+model Session {
+  id               String   @id @default(cuid())
+  userId           String
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  refreshTokenHash String   // nunca guardar o token em claro
+  ipAddress        String?
+  userAgent        String?
+  expiresAt        DateTime
+  revokedAt        DateTime?
+  lastActivityAt   DateTime @default(now())
+  createdAt        DateTime @default(now())
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("sessions")
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  companyId  String?
+  company    Company? @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  branchId   String?
+  userId     String?
+  action     String   // ex.: "invoice.issue"
+  entity     String   // ex.: "Invoice"
+  entityId   String?
+  oldValues  Json?
+  newValues  Json?
+  reason     String?
+  ipAddress  String?
+  userAgent  String?
+  result     String?  // "success" | "failure"
+  createdAt  DateTime @default(now())
+
+  @@index([companyId])
+  @@index([entity, entityId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+// ─────────────────────────────────────────────────────────────
+// Enums
+// ─────────────────────────────────────────────────────────────
+
+enum CompanyStatus {
+  ACTIVE
+  SUSPENDED
+  CANCELLED
+}
+
+enum RecordStatus {
+  ACTIVE
+  INACTIVE
+}

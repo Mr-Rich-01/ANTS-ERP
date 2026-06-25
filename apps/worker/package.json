@@ -1,0 +1,24 @@
+{
+  "name": "@ants/worker",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/main.ts",
+    "build": "tsc",
+    "start": "node dist/main.js",
+    "lint": "eslint . --max-warnings 0",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@ants/database": "workspace:*",
+    "@ants/shared": "workspace:*",
+    "bullmq": "^5.13.2"
+  },
+  "devDependencies": {
+    "@ants/config": "workspace:*",
+    "@types/node": "^22.7.4",
+    "tsx": "^4.19.1",
+    "typescript": "^5.6.2"
+  }
+}

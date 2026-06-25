@@ -1,0 +1,25 @@
+# ANTS ERP — Caddy reverse proxy (produção)
+# Cloudflare à frente (modo Full/Strict). Caddy termina TLS e encaminha web/api.
+# Substituir o domínio antes do deploy.
+{$DOMAIN:erp.exemplo.co.mz} {
+	encode gzip zstd
+
+	# API sob /api
+	handle_path /api/* {
+		reverse_proxy api:4000
+	}
+
+	# Frontend (Next.js)
+	handle {
+		reverse_proxy web:3000
+	}
+
+	# Headers de segurança
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "SAMEORIGIN"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+}

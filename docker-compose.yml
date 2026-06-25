@@ -1,0 +1,40 @@
+# ANTS ERP — Ambiente de desenvolvimento
+# Sobe apenas as dependências de infraestrutura (Postgres + Redis).
+# As apps (web/api/worker) correm localmente via `pnpm dev` durante o desenvolvimento.
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: ants-postgres-dev
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-ants}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ants_dev_password}
+      POSTGRES_DB: ${POSTGRES_DB:-ants_erp}
+    ports:
+      - "5432:5432"
+    volumes:
+      - ants_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-ants} -d ${POSTGRES_DB:-ants_erp}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: ants-redis-dev
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - ants_redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  ants_pgdata:
+  ants_redisdata:

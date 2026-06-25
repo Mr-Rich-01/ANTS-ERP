@@ -1,0 +1,112 @@
+@import './tokens.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Globais portados de design/design-styles.css */
+* {
+  box-sizing: border-box;
+}
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+body {
+  font-family: var(--font-sans), 'Hanken Grotesk', system-ui, -apple-system, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Transição suave de tema */
+.ants-tz {
+  transition:
+    background-color 0.25s ease,
+    border-color 0.25s ease,
+    color 0.25s ease;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: #9fb0b0;
+  border-radius: 8px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  opacity: 0.5;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+input,
+button {
+  font-family: inherit;
+}
+button {
+  cursor: pointer;
+}
+a {
+  -webkit-tap-highlight-color: transparent;
+}
+:focus-visible {
+  outline: 2px solid var(--info);
+  outline-offset: 2px;
+}
+input::placeholder {
+  color: var(--text3);
+}
+
+.ants-navlink:hover {
+  background: rgba(255, 255, 255, 0.07) !important;
+}
+.ants-hover:hover {
+  background: var(--hover) !important;
+}
+.ants-pcard:hover {
+  border-color: var(--accent-fg) !important;
+  box-shadow: var(--shadow);
+  transform: translateY(-1px);
+}
+.ants-row:hover {
+  background: var(--hover) !important;
+}
+
+@keyframes antfade {
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Tipografia monoespaçada para valores/SKUs/códigos */
+.font-mono,
+.tnum {
+  font-family: var(--font-mono), 'IBM Plex Mono', ui-monospace, monospace;
+}
+
+@media print {
+  .ants-noprint {
+    display: none !important;
+  }
+  html,
+  body {
+    background: #fff !important;
+  }
+  .ants-shell,
+  .ants-main,
+  .ants-scroll {
+    height: auto !important;
+    overflow: visible !important;
+    display: block !important;
+  }
+}

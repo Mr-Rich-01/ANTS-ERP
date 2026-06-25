@@ -1,0 +1,33 @@
+{
+  "name": "ants-erp",
+  "version": "0.0.0",
+  "private": true,
+  "description": "ANTS ERP — sistema ERP modular, multiempresa, pt-MZ",
+  "packageManager": "pnpm@9.12.0",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\"",
+    "db:generate": "pnpm --filter @ants/database generate",
+    "db:migrate": "pnpm --filter @ants/database migrate:dev",
+    "db:seed": "pnpm --filter @ants/database seed",
+    "docker:dev": "docker compose up -d postgres redis"
+  },
+  "devDependencies": {
+    "eslint": "^9.11.1",
+    "prettier": "^3.3.3",
+    "turbo": "^2.1.3",
+    "typescript": "^5.6.2"
+  },
+  "pnpm": {
+    "overrides": {
+      "ioredis": "5.10.1"
+    }
+  }
+}

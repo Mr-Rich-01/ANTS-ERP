@@ -1,0 +1,45 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build outputs
+dist/
+.next/
+out/
+build/
+*.tsbuildinfo
+
+# Turbo
+.turbo/
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+
+# Prisma
+packages/database/prisma/migrations/dev.db*
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# Coverage / tests
+coverage/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# Design working files (decoded reference kept in /design instead)
+_ants_decoded/
+design/_pretty.html
+# Bundled design export (canonical sources live in /design)
+/ANTS ERP (standalone).html
+
+# Backups / prompts (kept locally, not part of app source)
+Backups de prompts do chatgbt/
