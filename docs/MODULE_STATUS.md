@@ -7,7 +7,7 @@ Estados: Não iniciado · Em desenvolvimento · Parcial · Em testes · Concluí
 | Módulo | Funcionalidades previstas | Estado | % | Testes | Pendências | Dependências | Actualizado |
 |--------|---------------------------|--------|---|--------|------------|--------------|-------------|
 | Fundação (Fase 0) | Monorepo, Docker, Prisma base, API/Worker/Web shell, docs | Concluído | 100 | typecheck 6/6, lint 6/6, build 3/3, test 8 ✓ | Migração inicial corre na Fase 1 (precisa Postgres a correr) | — | 2026-06-24 |
-| Porte do design (UI) | Shell + 17/22 ecrãs (incl. Tesouraria, Fecho diário, Contabilidade, Contratos) | Parcial | 77 | build 25 págs ✓, typecheck/lint ✓, screenshots 6 + HTTP 12 ✓ | Portar 5 ecrãs restantes: Produção, RH, Relatórios, Administração, Perfil de conta | Fundação | 2026-06-25 |
+| Porte do design (UI) | Shell + **22/22 ecrãs** portados fielmente (todos os do design) | Concluído | 100 | build 25 págs ✓, typecheck/lint ✓, screenshots (dashboard, POS, facturas, RH, admin…) + HTTP de todos ✓ | Ligar cada ecrã a API real nas fases de negócio (dados são placeholders de UI) | Fundação | 2026-06-26 |
 | Autenticação | Login, refresh, sessões, recuperação, troca de password | Não iniciado | 0 | — | — | Fundação | 2026-06-24 |
 | Multiempresa / RBAC | Empresas, filiais, perfis, permissões, isolamento, auditoria | Não iniciado | 0 | — | — | Autenticação | 2026-06-24 |
 | Plataforma (Super Admin) | Cadastro empresas, planos, impersonação auditada | Não iniciado | 0 | — | — | Multiempresa | 2026-06-24 |
