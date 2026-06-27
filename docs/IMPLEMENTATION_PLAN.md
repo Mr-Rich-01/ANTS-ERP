@@ -12,7 +12,7 @@ actualizar MODULE_STATUS.md → reportar pendências. Uma fase só fecha quando 
 - [x] Monorepo (pnpm + Turborepo), tsconfig/eslint/prettier partilhados
 - [x] Docker dev (Postgres + Redis), docker-compose.production (esqueleto)
 - [x] Prisma — esquema de fundação (multiempresa + auth)
-- [x] API NestJS — health + Swagger + PrismaModule
+- [x] Monólito Next.js + camada de domínio (`packages/domain`) — sem API NestJS separada
 - [x] Worker BullMQ — esqueleto + filas nomeadas
 - [x] Web Next.js — tokens do design + shell + navegação
 - [x] packages shared/ui/config

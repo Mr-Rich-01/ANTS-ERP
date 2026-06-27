@@ -29,7 +29,23 @@ module.exports = {
         bad: { DEFAULT: 'var(--bad)', bg: 'var(--bad-bg)' },
         warn: { DEFAULT: 'var(--warn)', bg: 'var(--warn-bg)' },
         info: { DEFAULT: 'var(--info)', bg: 'var(--info-bg)' },
-        accent: { fg: 'var(--accent-fg)', bg: 'var(--accent-bg)' },
+        // shadcn/ui — nomes semânticos mapeados aos tokens do ANTS (via tokens.css)
+        background: 'var(--background)',
+        foreground: 'var(--foreground)',
+        primary: { DEFAULT: 'var(--primary)', foreground: 'var(--primary-foreground)' },
+        secondary: { DEFAULT: 'var(--secondary)', foreground: 'var(--secondary-foreground)' },
+        muted: { DEFAULT: 'var(--muted)', foreground: 'var(--muted-foreground)' },
+        destructive: { DEFAULT: 'var(--destructive)', foreground: 'var(--destructive-foreground)' },
+        popover: { DEFAULT: 'var(--popover)', foreground: 'var(--popover-foreground)' },
+        input: 'var(--input)',
+        ring: 'var(--ring)',
+        // 'accent' do shadcn (hover) + os campos do ANTS (fg/bg). DEFAULT = hover.
+        accent: { DEFAULT: 'var(--accent)', foreground: 'var(--accent-foreground)', fg: 'var(--accent-fg)', bg: 'var(--accent-bg)' },
+      },
+      borderRadius: {
+        lg: 'var(--radius)',
+        md: 'calc(var(--radius) - 2px)',
+        sm: 'calc(var(--radius) - 4px)',
       },
       boxShadow: {
         ants: 'var(--shadow)',
@@ -40,5 +56,5 @@ module.exports = {
       },
     },
   },
-  plugins: [],
+  plugins: [require('tailwindcss-animate')],
 };

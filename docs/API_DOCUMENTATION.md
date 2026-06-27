@@ -1,37 +1,34 @@
 # API_DOCUMENTATION — ANTS ERP
 
-_Última actualização: 2026-06-24_
+_Última actualização: 2026-06-26_
 
-API REST construída em **NestJS**. Documentação interactiva via **Swagger/OpenAPI**.
+Arquitectura **monólito Next.js**: não há API REST separada. A lógica é exposta por:
 
-## Acesso
+- **Server Actions** — para mutações chamadas directamente dos componentes/formulários
+  (criar venda, emitir factura, etc.). Type-safe, sem fetch manual.
+- **Route Handlers** (`apps/web/src/app/api/**`) — para endpoints HTTP quando preciso:
+  webhooks, integrações, exportações, health check.
 
-- Base URL (dev): `http://localhost:4000/api`
-- Swagger UI: `http://localhost:4000/api/docs`
-- Prefixo global: `/api`
+Ambos derivam o `RequestContext` (companyId/userId/permissões) da **sessão Auth.js** e
+invocam os serviços de `packages/domain`, que impõem isolamento multiempresa + permissões.
 
 ## Convenções
 
-- Autenticação por Bearer (access token) — introduzida na Fase 1.
-- `companyId` nunca é aceite do cliente; é derivado da sessão.
-- Validação de payloads com `ValidationPipe` (whitelist + transform).
-- Respostas de erro seguem o formato de exceção do Nest (`statusCode`, `message`, `error`).
+- Autenticação por sessão Auth.js (cookie). `companyId` **nunca** vem do cliente.
+- Validação de entrada com **Zod** (mesma schema partilhável entre form e servidor).
+- Erros de domínio (`DomainError` → status 403/404/409/422) mapeados para respostas/UI.
+- Toda a mutação relevante escreve `AuditLog` na mesma transacção.
 
-## Endpoints actuais (Fase 0)
+## Endpoints HTTP actuais
 
 | Método | Rota | Descrição | Auth |
 |--------|------|-----------|------|
-| GET | `/api/health` | Estado do serviço | Não |
+| GET | `/api/health` | Estado do serviço (a criar na Fase 1) | Não |
 
-Exemplo de resposta:
+## A introduzir (Fase 1+)
 
-```json
-{ "status": "ok", "service": "ants-erp-api", "timestamp": "2026-06-24T10:00:00.000Z" }
-```
+- Auth.js handlers em `/api/auth/*` (login, sessão, logout).
+- Server Actions por módulo: empresas, filiais, utilizadores, perfis, clientes, vendas, …
+- Route Handlers para exportações (PDF/CSV) e webhooks.
 
-## Endpoints planeados (Fase 1+)
-
-`/api/auth/login`, `/api/auth/refresh`, `/api/auth/logout`, `/api/companies`,
-`/api/branches`, `/api/users`, `/api/roles`, `/api/permissions`, `/api/sessions`,
-`/api/audit` … e por módulo nas fases seguintes. Cada endpoint será documentado aqui
-e no Swagger à medida que é implementado.
+Cada Action/Handler é documentado aqui à medida que é implementado, com a permissão exigida.

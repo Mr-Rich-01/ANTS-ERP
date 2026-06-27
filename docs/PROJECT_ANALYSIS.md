@@ -45,7 +45,7 @@ Localização confirmada: **NUIT, MZN/MT, Matola, bancos locais** — pt-MZ.
 | Stack / monorepo | Implementado (pnpm + Turborepo) |
 | Infra dev (Postgres + Redis) | Implementado (docker-compose) |
 | Base de dados (fundação multiempresa + auth) | Esquema Prisma inicial |
-| API (NestJS) | Esqueleto + health + Swagger |
+| Backend (monólito Next + domínio) | Server Actions/Route Handlers + `packages/domain` (Fase 1) |
 | Worker (BullMQ) | Esqueleto |
 | Web (Next.js) | Shell + tokens + navegação (sem módulos ligados) |
 | Módulos de negócio | Não iniciados (Fases 1–12) |

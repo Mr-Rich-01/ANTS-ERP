@@ -1,31 +1,31 @@
 # DEPLOYMENT — ANTS ERP
 
-_Última actualização: 2026-06-24_
+_Última actualização: 2026-06-26_
 
 Alvo: **VPS Hostinger · Ubuntu Server · Docker Compose · Cloudflare**.
-O deploy real é executado na Fase 12; este documento descreve a arquitectura desenhada agora.
+Arquitectura: **monólito Next.js** + worker. O deploy real é executado na Fase 12.
 
 ## 1. Desenvolvimento local
 
 ```bash
 corepack enable && corepack prepare pnpm@9.12.0 --activate
 pnpm install
-cp .env.example .env            # ajustar valores
+cp .env.example .env            # ajustar valores (AUTH_SECRET, DATABASE_URL, …)
 pnpm docker:dev                 # sobe Postgres + Redis
 pnpm db:generate                # gera cliente Prisma
 pnpm db:migrate                 # cria/aplica migrações (Fase 1+)
 pnpm db:seed                    # dados de demonstração (só dev)
-pnpm dev                        # web + api + worker
+pnpm dev                        # web (Next) + worker
 ```
 
-- Web: http://localhost:3000 · API: http://localhost:4000/api · Swagger: /api/docs
+- Web (UI + API interna): http://localhost:3000 · Route Handlers sob `/api/*`.
 
 ## 2. Produção (Docker Compose)
 
-Serviços em `docker-compose.production.yml`: `reverse-proxy` (Caddy), `web`, `api`,
-`worker`, `postgres`, `redis`.
+Serviços em `docker-compose.production.yml`: `reverse-proxy` (Caddy), `web` (Next.js
+monólito), `worker`, `postgres`, `redis`.
 
-- **Caddy** termina TLS e encaminha: `/api/*` → api:4000, restante → web:3000 (`infra/Caddyfile`).
+- **Caddy** termina TLS e encaminha tudo → `web:3000` (o Next trata `/api` internamente).
 - **Cloudflare** à frente: DNS proxied, SSL **Full (Strict)**, WAF, rate limiting de borda.
 - **Postgres e Redis sem `ports:`** — acessíveis apenas na rede interna `ants_net`.
 - Apenas o reverse-proxy publica **80/443**.
@@ -40,7 +40,7 @@ Serviços em `docker-compose.production.yml`: `reverse-proxy` (Caddy), `web`, `a
 ## 4. Segredos
 
 - `.env` fora do git (apenas `.env.example` versionado).
-- Gerar `JWT_ACCESS_SECRET` / `JWT_REFRESH_SECRET` fortes: `openssl rand -base64 48`.
+- Gerar `AUTH_SECRET` forte: `npx auth secret` (ou `openssl rand -base64 33`).
 - Password de Postgres forte e exclusiva.
 
 ## 5. Dados e backups
@@ -51,11 +51,21 @@ Serviços em `docker-compose.production.yml`: `reverse-proxy` (Caddy), `web`, `a
 
 ## 6. Operação
 
-- Health checks por serviço (Postgres/Redis healthcheck; `/api/health`).
-- Migrações: `prisma migrate deploy` controlado no arranque do serviço `api`.
+- Health checks por serviço (Postgres/Redis healthcheck; Route Handler `/api/health` na web).
+- Migrações: `prisma migrate deploy` executado antes de subir a nova versão da `web`.
 - Logs estruturados + rotação. Seed **nunca** em produção.
 
-## 7. Build de imagens (a criar na Fase 12)
+## 7. Publicação (deploy)
 
-Dockerfiles multi-stage: `apps/web/Dockerfile` (Next.js standalone),
-`apps/api/Dockerfile` e `apps/worker/Dockerfile` (NestJS/Node slim).
+```bash
+git pull
+docker compose -f docker-compose.production.yml build
+docker compose -f docker-compose.production.yml run --rm web pnpm db:migrate:deploy
+docker compose -f docker-compose.production.yml up -d
+docker compose -f docker-compose.production.yml ps
+```
+
+## 8. Build de imagens (a criar na Fase 12)
+
+Dockerfiles multi-stage: `apps/web/Dockerfile` (Next.js standalone) e
+`apps/worker/Dockerfile` (Node slim).

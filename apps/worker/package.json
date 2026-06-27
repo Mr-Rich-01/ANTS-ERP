@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@ants/database": "workspace:*",
+    "@ants/domain": "workspace:*",
     "@ants/shared": "workspace:*",
     "bullmq": "^5.13.2"
   },

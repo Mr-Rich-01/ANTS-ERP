@@ -1,5 +1,6 @@
 # ANTS ERP — Produção (VPS Hostinger / Ubuntu / Cloudflare)
-# Esqueleto. Os Dockerfiles das apps são criados nas fases seguintes (Fase 12 = deploy real).
+# Arquitectura: monólito Next.js (web) + worker BullMQ + Postgres + Redis + Caddy.
+# Os Dockerfiles das apps são criados na Fase 12 (deploy real).
 # Regras: Postgres e Redis NUNCA expostos publicamente — apenas o reverse-proxy publica 80/443.
 services:
   reverse-proxy:
@@ -14,7 +15,6 @@ services:
       - caddy_config:/config
     depends_on:
       - web
-      - api
     networks:
       - ants_net
 
@@ -25,25 +25,13 @@ services:
     restart: unless-stopped
     environment:
       NODE_ENV: production
-      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
-    expose:
-      - "3000"
-    networks:
-      - ants_net
-
-  api:
-    build:
-      context: .
-      dockerfile: apps/api/Dockerfile
-    restart: unless-stopped
-    environment:
-      NODE_ENV: production
+      APP_URL: ${APP_URL}
+      AUTH_URL: ${AUTH_URL}
+      AUTH_SECRET: ${AUTH_SECRET}
       DATABASE_URL: ${DATABASE_URL}
       REDIS_URL: ${REDIS_URL}
-      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET}
-      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
     expose:
-      - "4000"
+      - "3000"
     depends_on:
       postgres:
         condition: service_healthy

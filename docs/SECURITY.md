@@ -2,10 +2,9 @@
 
 _Última actualização: 2026-06-24_
 
-## 1. Autenticação
+## 1. Autenticação (Auth.js)
 
-- Access token de curta duração + refresh token seguro.
-- Refresh token em **cookie httpOnly**, `Secure` + `SameSite` em produção.
+- Sessões geridas por **Auth.js**, cookie **httpOnly** + `Secure`/`SameSite` em produção.
 - Hash de passwords com **Argon2** (`@node-rs/argon2`).
 - Política de password, troca obrigatória da password inicial (`mustChangePassword`).
 - Bloqueio após tentativas falhadas (`failedLoginCount` + `lockedUntil`).
@@ -14,13 +13,14 @@ _Última actualização: 2026-06-24_
 ## 2. Autorização (RBAC)
 
 - Permissões granulares (ex.: `sales.create`, `accounting.post`) — não dependem do nome do perfil.
-- Validação **sempre no backend**; o frontend apenas oculta o que o utilizador não pode ver.
+- Validação **sempre no servidor** via `requirePermission(ctx, key)` em `packages/domain`;
+  o frontend apenas oculta o que o utilizador não pode ver.
 - Restrição por filial (`UserBranch`); limites de desconto/aprovação por workflow.
 
 ## 3. Isolamento multiempresa
 
-- `companyId` derivado da sessão, **nunca** do cliente.
-- Filtro automático por empresa em queries (extensão Prisma) + guard de contexto.
+- `companyId` derivado da sessão (`RequestContext`), **nunca** do cliente.
+- Filtro por empresa em todos os serviços de domínio + extensão Prisma; 2.ª barreira RLS opcional.
 - Testes de isolamento obrigatórios.
 
 ## 4. Protecções da aplicação

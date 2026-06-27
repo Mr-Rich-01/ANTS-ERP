@@ -4,15 +4,8 @@
 {$DOMAIN:erp.exemplo.co.mz} {
 	encode gzip zstd
 
-	# API sob /api
-	handle_path /api/* {
-		reverse_proxy api:4000
-	}
-
-	# Frontend (Next.js)
-	handle {
-		reverse_proxy web:3000
-	}
+	# Monólito Next.js (UI + Route Handlers /api + Server Actions)
+	reverse_proxy web:3000
 
 	# Headers de segurança
 	header {

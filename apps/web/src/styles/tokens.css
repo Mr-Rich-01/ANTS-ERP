@@ -29,6 +29,30 @@
   --shadow: 0 14px 34px rgba(16, 40, 45, 0.16);
 }
 
+/* Variáveis semânticas do shadcn/ui mapeadas aos tokens do ANTS.
+   Como referenciam os tokens acima (que mudam no tema escuro), o shadcn
+   herda automaticamente o look exacto do design — claro e escuro. */
+:root {
+  --background: var(--bg);
+  --foreground: var(--text);
+  --card-foreground: var(--text);
+  --popover: var(--card);
+  --popover-foreground: var(--text);
+  --primary: #13343b; /* cor da marca (fixa) */
+  --primary-foreground: #ffffff;
+  --secondary: var(--card2);
+  --secondary-foreground: var(--text);
+  --muted: var(--bd-soft);
+  --muted-foreground: var(--text2);
+  --accent: var(--hover);
+  --accent-foreground: var(--text);
+  --destructive: var(--bad);
+  --destructive-foreground: #ffffff;
+  --input: var(--field-bd);
+  --ring: var(--info);
+  --radius: 0.625rem;
+}
+
 html[data-theme='dark'] {
   --bg: #0a1418;
   --card: #11242a;
