@@ -66,12 +66,26 @@ export interface NavItem {
   icon: string;
   route: string;
   badge?: string;
+  /** Permissão necessária para ver o item (validada também no servidor). Vazio = sempre visível. */
+  permission?: string;
 }
 
 export interface NavGroup {
   label: string;
   items: NavItem[];
 }
+
+// Permissão por ecrã (subconjunto — itens não listados ficam sempre visíveis).
+const NAV_PERMISSION: Partial<Record<ScreenId, string>> = {
+  pos: 'sales.create',
+  invoices: 'sales.view',
+  clients: 'clients.view',
+  purchases: 'purchases.create',
+  products: 'stock.view',
+  accounting: 'accounting.post',
+  reports: 'reports.export',
+  admin: 'users.manage',
+};
 
 // navDef exacto do design.
 export const NAV_GROUPS: NavGroup[] = [
@@ -93,7 +107,15 @@ export const NAV_GROUPS: NavGroup[] = [
 
 function toNav(id: string): NavItem {
   const s = SCREENS[id as ScreenId];
-  return { id: s.id, label: s.title, icon: s.icon, route: s.route };
+  return { id: s.id, label: s.title, icon: s.icon, route: s.route, permission: NAV_PERMISSION[s.id] };
+}
+
+/** Filtra grupos/itens pelas permissões do utilizador (Super Admin vê tudo). */
+export function visibleNav(permissions: ReadonlySet<string>, isPlatformAdmin: boolean): NavGroup[] {
+  return NAV_GROUPS.map((g) => ({
+    label: g.label,
+    items: g.items.filter((it) => !it.permission || isPlatformAdmin || permissions.has(it.permission)),
+  })).filter((g) => g.items.length > 0);
 }
 
 /** Resolve qual item da sidebar fica activo a partir do ecrã actual (lógica do design). */

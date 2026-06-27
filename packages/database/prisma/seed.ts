@@ -50,35 +50,28 @@ async function main() {
   }
   const allPermissions = await prisma.permission.findMany();
 
-  // 2) Super Admin da plataforma (sem empresa)
+  // 2) Super Admin da plataforma (sem empresa). companyId null não é coberto pela
+  // chave única composta, por isso é idempotente via findFirst + create/update.
   const platformPassword = await hash('Admin@123');
-  await prisma.user.upsert({
-    where: { companyId_email: { companyId: '', email: 'superadmin@ants.co.mz' } },
-    update: {},
-    create: {
-      email: 'superadmin@ants.co.mz',
-      passwordHash: platformPassword,
-      name: 'Super Administrador',
-      isPlatformAdmin: true,
-      mustChangePassword: true,
-    },
-  }).catch(async () => {
-    // companyId null não funciona em chave composta única; criar directamente
-    const exists = await prisma.user.findFirst({
-      where: { email: 'superadmin@ants.co.mz', companyId: null },
-    });
-    if (!exists) {
-      await prisma.user.create({
-        data: {
-          email: 'superadmin@ants.co.mz',
-          passwordHash: platformPassword,
-          name: 'Super Administrador',
-          isPlatformAdmin: true,
-          mustChangePassword: true,
-        },
-      });
-    }
+  const existingSuper = await prisma.user.findFirst({
+    where: { email: 'superadmin@ants.co.mz', companyId: null },
   });
+  if (existingSuper) {
+    await prisma.user.update({
+      where: { id: existingSuper.id },
+      data: { passwordHash: platformPassword, name: 'Super Administrador', isPlatformAdmin: true },
+    });
+  } else {
+    await prisma.user.create({
+      data: {
+        email: 'superadmin@ants.co.mz',
+        passwordHash: platformPassword,
+        name: 'Super Administrador',
+        isPlatformAdmin: true,
+        mustChangePassword: true,
+      },
+    });
+  }
 
   // 3) Empresa demo
   const company = await prisma.company.upsert({

@@ -4,13 +4,19 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { Icon } from '@/components/Icon';
 import { useShell } from './ThemeProvider';
-import { ACCENT, activeNavId, NAV_GROUPS, ROUTE_TO_SCREEN, type ScreenId } from '@/lib/erp-nav';
+import { ACCENT, activeNavId, ROUTE_TO_SCREEN, visibleNav, type ScreenId } from '@/lib/erp-nav';
 
-export function Sidebar() {
+interface SidebarProps {
+  permissions: string[];
+  isPlatformAdmin: boolean;
+}
+
+export function Sidebar({ permissions, isPlatformAdmin }: SidebarProps) {
   const pathname = usePathname();
   const { collapsed } = useShell();
   const showLabels = !collapsed;
 
+  const groups = visibleNav(new Set(permissions), isPlatformAdmin);
   const currentScreen: ScreenId = ROUTE_TO_SCREEN[pathname] ?? 'dashboard';
   const activeId = activeNavId(currentScreen);
   const navWidth = collapsed ? 74 : 248;
@@ -79,7 +85,7 @@ export function Sidebar() {
 
       {/* Navegação */}
       <nav style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', padding: '12px 10px 18px' }}>
-        {NAV_GROUPS.map((group) => (
+        {groups.map((group) => (
           <div key={group.label} style={{ marginBottom: 16 }}>
             {showLabels && (
               <div

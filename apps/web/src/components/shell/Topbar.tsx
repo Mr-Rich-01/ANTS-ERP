@@ -5,6 +5,13 @@ import { useRouter } from 'next/navigation';
 import { Icon } from '@/components/Icon';
 import { useShell } from './ThemeProvider';
 import { ACCENT } from '@/lib/erp-nav';
+import { logoutAction } from '@/app/(erp)/actions';
+
+interface TopbarProps {
+  userName: string;
+  userEmail: string;
+  userInitials: string;
+}
 
 // Dados de UI (placeholders). TODO: ligar a sessão/notificações reais nas fases respectivas.
 const QUICK_ITEMS: Array<{ icon: string; label: string; href?: string }> = [
@@ -36,11 +43,12 @@ const iconBtn: React.CSSProperties = {
   flex: 'none',
 };
 
-export function Topbar() {
+export function Topbar({ userName, userEmail, userInitials }: TopbarProps) {
   const { theme, toggleTheme, toggleCollapsed } = useShell();
   const router = useRouter();
   const [quickOpen, setQuickOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
 
   return (
     <header
@@ -343,43 +351,90 @@ export function Topbar() {
       </div>
 
       {/* Perfil */}
-      <button
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 9,
-          height: 38,
-          padding: '0 9px 0 4px',
-          borderRadius: 10,
-          border: '1px solid var(--border)',
-          background: 'var(--card)',
-        }}
-      >
-        <span
+      <div style={{ position: 'relative' }}>
+        <button
+          onClick={() => {
+            setProfileOpen((v) => !v);
+            setQuickOpen(false);
+            setNotifOpen(false);
+          }}
           style={{
-            width: 30,
-            height: 30,
-            borderRadius: 8,
-            background: 'linear-gradient(135deg,#1b4651,#0e2a30)',
-            color: '#fff',
             display: 'flex',
             alignItems: 'center',
-            justifyContent: 'center',
-            fontSize: 12,
-            fontWeight: 700,
-            flex: 'none',
+            gap: 9,
+            height: 38,
+            padding: '0 9px 0 4px',
+            borderRadius: 10,
+            border: '1px solid var(--border)',
+            background: 'var(--card)',
           }}
         >
-          HM
-        </span>
-        <span style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.1, textAlign: 'left' }}>
-          <span style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text)' }}>Hélder Munguambe</span>
-          <span style={{ fontSize: 10.5, color: 'var(--text3)' }}>Administrador</span>
-        </span>
-        <span style={{ color: 'var(--text3)', display: 'inline-flex' }}>
-          <Icon name="chevron-down" size={15} />
-        </span>
-      </button>
+          <span
+            style={{
+              width: 30,
+              height: 30,
+              borderRadius: 8,
+              background: 'linear-gradient(135deg,#1b4651,#0e2a30)',
+              color: '#fff',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: 12,
+              fontWeight: 700,
+              flex: 'none',
+            }}
+          >
+            {userInitials}
+          </span>
+          <span style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.1, textAlign: 'left' }}>
+            <span style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text)' }}>{userName}</span>
+            <span style={{ fontSize: 10.5, color: 'var(--text3)' }}>{userEmail}</span>
+          </span>
+          <span style={{ color: 'var(--text3)', display: 'inline-flex' }}>
+            <Icon name="chevron-down" size={15} />
+          </span>
+        </button>
+        {profileOpen && (
+          <div
+            style={{
+              position: 'absolute',
+              top: 46,
+              right: 0,
+              width: 200,
+              background: 'var(--card)',
+              border: '1px solid var(--border)',
+              borderRadius: 13,
+              boxShadow: 'var(--shadow)',
+              padding: 6,
+              zIndex: 60,
+              animation: 'antfade .14s ease both',
+            }}
+          >
+            <form action={logoutAction}>
+              <button
+                type="submit"
+                className="ants-hover"
+                style={{
+                  width: '100%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 11,
+                  padding: '9px 10px',
+                  border: 'none',
+                  background: 'none',
+                  borderRadius: 8,
+                  fontSize: 13,
+                  color: 'var(--bad)',
+                  textAlign: 'left',
+                }}
+              >
+                <Icon name="log-out" size={16} />
+                Terminar sessão
+              </button>
+            </form>
+          </div>
+        )}
+      </div>
     </header>
   );
 }
