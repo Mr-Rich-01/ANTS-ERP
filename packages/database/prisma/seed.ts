@@ -138,7 +138,71 @@ async function main() {
     create: { userId: admin.id, roleId: adminRole.id },
   });
 
-  console.log('Seed concluído: empresa demo, filiais, permissões, perfil e utilizadores.');
+  // 7) Perfis adicionais (subconjuntos de permissões) + utilizadores demo
+  const permByKey = new Map(allPermissions.map((p) => [p.key, p.id]));
+  const roleDefs: Array<{ name: string; description: string; keys: string[] }> = [
+    {
+      name: 'Gestor',
+      description: 'Gestão operacional e aprovações',
+      keys: ['clients.view', 'clients.create', 'sales.view', 'sales.create', 'sales.approve_discount', 'purchases.create', 'purchases.approve', 'stock.view', 'reports.export', 'audit.view'],
+    },
+    { name: 'Contabilista', description: 'Contabilidade e relatórios', keys: ['accounting.post', 'accounting.reverse', 'payments.receive', 'reports.export', 'audit.view'] },
+    { name: 'Caixa', description: 'Vendas e recebimentos', keys: ['sales.view', 'sales.create', 'invoices.issue', 'payments.receive'] },
+    { name: 'Vendedor', description: 'Vendas e clientes', keys: ['sales.view', 'sales.create', 'clients.view', 'clients.create'] },
+  ];
+
+  const roleByName = new Map<string, string>();
+  for (const rd of roleDefs) {
+    const role = await prisma.role.upsert({
+      where: { companyId_name: { companyId: company.id, name: rd.name } },
+      update: { description: rd.description },
+      create: { companyId: company.id, name: rd.name, description: rd.description },
+    });
+    roleByName.set(rd.name, role.id);
+    await prisma.rolePermission.deleteMany({ where: { roleId: role.id } });
+    await prisma.rolePermission.createMany({
+      data: rd.keys.map((k) => permByKey.get(k)).filter((id): id is string => !!id).map((permissionId) => ({ roleId: role.id, permissionId })),
+      skipDuplicates: true,
+    });
+  }
+
+  const demoUsers: Array<{ email: string; name: string; role: string; status?: 'ACTIVE' | 'INACTIVE' }> = [
+    { email: 'maria@ants.co.mz', name: 'Maria Tembe', role: 'Caixa' },
+    { email: 'joao@ants.co.mz', name: 'João Macuácua', role: 'Vendedor' },
+    { email: 'ana@ants.co.mz', name: 'Ana Cossa', role: 'Contabilista' },
+    { email: 'carlos@ants.co.mz', name: 'Carlos Sitoe', role: 'Vendedor' },
+    { email: 'lucia@ants.co.mz', name: 'Lúcia Mondlane', role: 'Gestor', status: 'INACTIVE' },
+  ];
+  const demoPassword = await hash('Demo@123');
+  for (const du of demoUsers) {
+    const u = await prisma.user.upsert({
+      where: { companyId_email: { companyId: company.id, email: du.email } },
+      update: { name: du.name, status: du.status ?? 'ACTIVE' },
+      create: { companyId: company.id, email: du.email, name: du.name, passwordHash: demoPassword, mustChangePassword: false, status: du.status ?? 'ACTIVE' },
+    });
+    const roleId = roleByName.get(du.role);
+    if (roleId) {
+      await prisma.userRole.upsert({
+        where: { userId_roleId: { userId: u.id, roleId } },
+        update: {},
+        create: { userId: u.id, roleId },
+      });
+    }
+  }
+
+  // 8) Auditoria de exemplo (apenas se ainda não houver registos da empresa)
+  const auditCount = await prisma.auditLog.count({ where: { companyId: company.id } });
+  if (auditCount === 0) {
+    await prisma.auditLog.createMany({
+      data: [
+        { companyId: company.id, userId: admin.id, action: 'product.price_update', entity: 'Product', entityId: 'ANTS-OIL-1', oldValues: { price: 150 }, newValues: { price: 165 }, result: 'success' },
+        { companyId: company.id, userId: admin.id, action: 'invoice.cancel', entity: 'Invoice', entityId: 'FT 2026/0331', reason: 'Erro de facturação', result: 'success' },
+        { companyId: company.id, userId: admin.id, action: 'sale.create', entity: 'Sale', entityId: 'VND-2041', newValues: { total: 12500 }, result: 'success' },
+      ],
+    });
+  }
+
+  console.log('Seed concluído: empresa demo, filiais, permissões, perfis e utilizadores.');
 }
 
 main()

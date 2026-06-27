@@ -6,3 +6,4 @@ export * from './errors';
 export * from './permissions';
 export * from './audit';
 export * from './auth';
+export * from './admin';
