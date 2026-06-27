@@ -1,5 +1,5 @@
 import { redirect } from 'next/navigation';
-import { prisma } from '@ants/database';
+import { forCompany } from '@ants/database';
 import { getCompanyIdentity, hasPermission, listCompanyUsers, listRecentAudit, listRoles } from '@ants/domain';
 import { getContext } from '@/lib/session';
 import { AdminClient } from './AdminClient';
@@ -18,12 +18,14 @@ export default async function AdminPage() {
   }
   if (!hasPermission(ctx, 'users.manage')) redirect('/');
 
+  // Cliente isolado pela empresa activa (2.ª barreira: filtra companyId automaticamente).
+  const db = forCompany(ctx.companyId);
   const canViewAudit = hasPermission(ctx, 'audit.view');
   const [users, roles, audit, company] = await Promise.all([
-    listCompanyUsers(prisma, ctx),
-    listRoles(prisma, ctx),
-    canViewAudit ? listRecentAudit(prisma, ctx) : Promise.resolve([]),
-    getCompanyIdentity(prisma, ctx),
+    listCompanyUsers(db, ctx),
+    listRoles(db, ctx),
+    canViewAudit ? listRecentAudit(db, ctx) : Promise.resolve([]),
+    getCompanyIdentity(db, ctx),
   ]);
 
   return (
