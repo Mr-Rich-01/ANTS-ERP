@@ -2,6 +2,9 @@ import type { PrismaClient } from '@ants/database';
 import type { RequestContext } from './context';
 import { requireCompany } from './context';
 import { requirePermission } from './permissions';
+import { ConflictError, NotFoundError, ValidationError } from './errors';
+import { writeAudit } from './audit';
+import { hashPassword } from './auth';
 
 export interface CompanyUser {
   id: string;
@@ -118,4 +121,102 @@ export async function getCompanyIdentity(db: PrismaClient, ctx: RequestContext):
     currencySymbol: c.currencySymbol,
     locale: c.locale,
   };
+}
+
+export interface PermissionItem {
+  key: string;
+  module: string;
+  description: string | null;
+}
+
+/** Catálogo global de permissões (para o formulário de perfis). */
+export async function listPermissions(db: PrismaClient): Promise<PermissionItem[]> {
+  const perms = await db.permission.findMany({ orderBy: [{ module: 'asc' }, { key: 'asc' }] });
+  return perms.map((p) => ({ key: p.key, module: p.module, description: p.description }));
+}
+
+// ─────────────────────────── Mutações ───────────────────────────
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/** Cria/convida um utilizador na empresa activa, com perfil e password temporária. */
+export async function createCompanyUser(
+  db: PrismaClient,
+  ctx: RequestContext,
+  input: { name: string; email: string; roleId?: string },
+): Promise<{ id: string; tempPassword: string }> {
+  requirePermission(ctx, 'users.manage');
+  requireCompany(ctx);
+
+  const name = input.name.trim();
+  const email = input.email.toLowerCase().trim();
+  if (!name) throw new ValidationError('O nome é obrigatório.');
+  if (!EMAIL_RE.test(email)) throw new ValidationError('Email inválido.');
+
+  // `db` é um cliente isolado por empresa — esta procura só vê a empresa activa.
+  const existing = await db.user.findFirst({ where: { email } });
+  if (existing) throw new ConflictError('Já existe um utilizador com este email.');
+
+  if (input.roleId) {
+    const role = await db.role.findFirst({ where: { id: input.roleId } });
+    if (!role) throw new ValidationError('Perfil inválido.');
+  }
+
+  const tempPassword = 'Ants@123';
+  const user = await db.user.create({
+    data: { name, email, passwordHash: await hashPassword(tempPassword), mustChangePassword: true, status: 'ACTIVE' },
+  });
+  if (input.roleId) {
+    await db.userRole.create({ data: { userId: user.id, roleId: input.roleId } });
+  }
+  await writeAudit(db, ctx, { action: 'user.create', entity: 'User', entityId: user.id, newValues: { name, email } });
+  return { id: user.id, tempPassword };
+}
+
+/** Activa/desactiva um utilizador da empresa. */
+export async function setUserStatus(
+  db: PrismaClient,
+  ctx: RequestContext,
+  userId: string,
+  status: 'ACTIVE' | 'INACTIVE',
+): Promise<void> {
+  requirePermission(ctx, 'users.manage');
+  requireCompany(ctx);
+  if (userId === ctx.userId) throw new ValidationError('Não pode alterar o seu próprio estado.');
+
+  const user = await db.user.findFirst({ where: { id: userId } });
+  if (!user) throw new NotFoundError('Utilizador não encontrado.');
+
+  await db.user.update({ where: { id: userId }, data: { status } });
+  await writeAudit(db, ctx, {
+    action: 'user.status',
+    entity: 'User',
+    entityId: userId,
+    oldValues: { status: user.status },
+    newValues: { status },
+  });
+}
+
+/** Cria um perfil (role) na empresa, com as permissões indicadas. */
+export async function createRole(
+  db: PrismaClient,
+  ctx: RequestContext,
+  input: { name: string; description?: string; permissionKeys: string[] },
+): Promise<{ id: string }> {
+  requirePermission(ctx, 'users.manage');
+  requireCompany(ctx);
+
+  const name = input.name.trim();
+  if (!name) throw new ValidationError('O nome do perfil é obrigatório.');
+
+  const dup = await db.role.findFirst({ where: { name } });
+  if (dup) throw new ConflictError('Já existe um perfil com este nome.');
+
+  const role = await db.role.create({ data: { name, description: input.description?.trim() || null } });
+  const perms = await db.permission.findMany({ where: { key: { in: input.permissionKeys } }, select: { id: true } });
+  if (perms.length) {
+    await db.rolePermission.createMany({ data: perms.map((p) => ({ roleId: role.id, permissionId: p.id })), skipDuplicates: true });
+  }
+  await writeAudit(db, ctx, { action: 'role.create', entity: 'Role', entityId: role.id, newValues: { name, permissions: input.permissionKeys } });
+  return { id: role.id };
 }

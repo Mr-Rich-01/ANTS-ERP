@@ -1,10 +1,13 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useTransition } from 'react';
 import { Icon } from '@/components/Icon';
 import { ACCENT } from '@/lib/erp-nav';
 import { ADMIN_TABS, type AdminTabId } from '@/lib/data/admin';
 import { auditValue, initials, relativeTime, roleTone, shortDateTime } from '@/lib/ui-format';
+import { InviteUserDialog } from '@/components/admin/InviteUserDialog';
+import { CreateRoleDialog } from '@/components/admin/CreateRoleDialog';
+import { toggleUserStatusAction } from './actions';
 
 interface UserRow {
   id: string;
@@ -41,12 +44,20 @@ interface CompanyInfo {
   locale: string;
 }
 
+interface PermItem {
+  key: string;
+  module: string;
+  description: string | null;
+}
+
 interface Props {
   users: UserRow[];
   roles: RoleRow[];
   audit: AuditRow[];
   company: CompanyInfo | null;
   canViewAudit: boolean;
+  permissions: PermItem[];
+  currentUserId: string;
 }
 
 const ACTION_LABEL: Record<string, string> = {
@@ -89,8 +100,16 @@ function EmptyState({ icon, text }: { icon: string; text: string }) {
   );
 }
 
-export function AdminClient({ users, roles, audit, company, canViewAudit }: Props) {
+export function AdminClient({ users, roles, audit, company, canViewAudit, permissions, currentUserId }: Props) {
   const [tab, setTab] = useState<AdminTabId>('users');
+  const [pending, startTransition] = useTransition();
+
+  const toggleStatus = (id: string, status: 'ACTIVE' | 'INACTIVE') => {
+    startTransition(async () => {
+      const res = await toggleUserStatusAction(id, status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE');
+      if (res.error) alert(res.error);
+    });
+  };
 
   return (
     <div style={{ padding: '14px 26px 30px', display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -118,10 +137,7 @@ export function AdminClient({ users, roles, audit, company, canViewAudit }: Prop
               <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)' }}>Utilizadores</div>
               <span style={{ fontSize: 12, color: 'var(--text3)' }}>· {users.length}</span>
               <div style={{ flex: 1 }} />
-              <button style={{ display: 'flex', alignItems: 'center', gap: 7, height: 36, padding: '0 13px', borderRadius: 9, border: 'none', background: ACCENT, color: '#fff', fontSize: 12.5, fontWeight: 600 }}>
-                <Icon name="user-plus" size={15} />
-                Convidar utilizador
-              </button>
+              <InviteUserDialog roles={roles.map((r) => ({ id: r.id, name: r.name }))} />
             </div>
             <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 660 }}>
@@ -132,6 +148,7 @@ export function AdminClient({ users, roles, audit, company, canViewAudit }: Prop
                     <th style={th}>Âmbito</th>
                     <th style={th}>Último acesso</th>
                     <th style={th}>Estado</th>
+                    <th style={{ ...th, width: 56 }} />
                   </tr>
                 </thead>
                 <tbody>
@@ -165,6 +182,18 @@ export function AdminClient({ users, roles, audit, company, canViewAudit }: Prop
                             {active ? 'Activo' : 'Inactivo'}
                           </span>
                         </td>
+                        <td style={{ padding: '11px 10px', textAlign: 'right' }}>
+                          {u.id !== currentUserId && (
+                            <button
+                              onClick={() => toggleStatus(u.id, u.status)}
+                              disabled={pending}
+                              title={active ? 'Desactivar' : 'Activar'}
+                              style={{ height: 28, padding: '0 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--card)', color: active ? 'var(--bad)' : 'var(--ok)', fontSize: 11.5, fontWeight: 600, whiteSpace: 'nowrap' }}
+                            >
+                              {active ? 'Desactivar' : 'Activar'}
+                            </button>
+                          )}
+                        </td>
                       </tr>
                     );
                   })}
@@ -197,10 +226,9 @@ export function AdminClient({ users, roles, audit, company, canViewAudit }: Prop
                 </div>
               ))}
             </div>
-            <button style={{ width: '100%', height: 40, marginTop: 14, borderRadius: 11, border: '1px solid var(--border)', background: 'var(--card)', color: 'var(--text2)', fontSize: 12.5, fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7 }}>
-              <Icon name="plus" size={16} />
-              Criar perfil
-            </button>
+            <div style={{ marginTop: 14 }}>
+              <CreateRoleDialog permissions={permissions} />
+            </div>
           </div>
         </div>
       )}

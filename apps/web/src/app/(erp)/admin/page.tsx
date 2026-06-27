@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation';
 import { forCompany } from '@ants/database';
-import { getCompanyIdentity, hasPermission, listCompanyUsers, listRecentAudit, listRoles } from '@ants/domain';
+import { getCompanyIdentity, hasPermission, listCompanyUsers, listPermissions, listRecentAudit, listRoles } from '@ants/domain';
 import { getContext } from '@/lib/session';
 import { AdminClient } from './AdminClient';
 
@@ -21,11 +21,12 @@ export default async function AdminPage() {
   // Cliente isolado pela empresa activa (2.ª barreira: filtra companyId automaticamente).
   const db = forCompany(ctx.companyId);
   const canViewAudit = hasPermission(ctx, 'audit.view');
-  const [users, roles, audit, company] = await Promise.all([
+  const [users, roles, audit, company, permissions] = await Promise.all([
     listCompanyUsers(db, ctx),
     listRoles(db, ctx),
     canViewAudit ? listRecentAudit(db, ctx) : Promise.resolve([]),
     getCompanyIdentity(db, ctx),
+    listPermissions(db),
   ]);
 
   return (
@@ -53,6 +54,8 @@ export default async function AdminPage() {
       }))}
       company={company}
       canViewAudit={canViewAudit}
+      permissions={permissions}
+      currentUserId={ctx.userId}
     />
   );
 }
