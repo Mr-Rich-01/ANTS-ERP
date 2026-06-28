@@ -42,6 +42,10 @@ model Company {
   warehouses   Warehouse[]
   stockLevels  StockLevel[]
   stockMovements StockMovement[]
+  invoices     Invoice[]
+  invoiceLines InvoiceLine[]
+  payments     Payment[]
+  documentCounters DocumentCounter[]
 
   @@index([status])
   @@map("companies")
@@ -247,6 +251,9 @@ model Customer {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
+  invoices     Invoice[]
+  payments     Payment[]
+
   @@unique([companyId, nuit])
   @@index([companyId])
   @@index([companyId, status])
@@ -321,6 +328,7 @@ model Product {
 
   stockLevels  StockLevel[]
   movements    StockMovement[]
+  invoiceLines InvoiceLine[]
 
   @@unique([companyId, sku])
   @@index([companyId])
@@ -343,6 +351,7 @@ model Warehouse {
 
   stockLevels  StockLevel[]
   movements    StockMovement[]
+  invoices     Invoice[]
 
   @@unique([companyId, code])
   @@index([companyId])
@@ -390,6 +399,106 @@ model StockMovement {
 }
 
 // ─────────────────────────────────────────────────────────────
+// Vendas & Facturação (Fase 5)
+// ─────────────────────────────────────────────────────────────
+
+model Invoice {
+  id            String   @id @default(cuid())
+  companyId     String
+  company       Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  branchId      String?
+  /// Número do documento (ex.: "FT 2026/0001"), único por empresa.
+  number        String
+  customerId    String
+  customer      Customer @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  /// Snapshot dos dados do cliente no momento da emissão.
+  customerName  String
+  customerNuit  String?
+  warehouseId   String
+  warehouse     Warehouse @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
+  issueDate     DateTime @default(now())
+  dueDate       DateTime
+  status        InvoiceStatus @default(ISSUED)
+  subtotal      Decimal  @db.Decimal(14, 2)
+  discountTotal Decimal  @db.Decimal(14, 2)
+  taxableBase   Decimal  @db.Decimal(14, 2)
+  taxTotal      Decimal  @db.Decimal(14, 2)
+  total         Decimal  @db.Decimal(14, 2)
+  amountPaid    Decimal  @default(0) @db.Decimal(14, 2)
+  paymentMethod PaymentMethod?
+  notes         String?
+  createdBy     String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  lines         InvoiceLine[]
+  payments      Payment[]
+
+  @@unique([companyId, number])
+  @@index([companyId, status])
+  @@index([companyId, customerId])
+  @@index([companyId, issueDate])
+  @@map("invoices")
+}
+
+model InvoiceLine {
+  id             String   @id @default(cuid())
+  companyId      String
+  company        Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  invoiceId      String
+  invoice        Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  productId      String?
+  product        Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+  sku            String?
+  description    String
+  unitPrice      Decimal  @db.Decimal(14, 2)
+  quantity       Int
+  discountPercent Decimal @default(0) @db.Decimal(5, 2)
+  taxRate        Decimal  @default(16) @db.Decimal(5, 2)
+  /// Total da linha (líquido + imposto).
+  total          Decimal  @db.Decimal(14, 2)
+
+  @@index([companyId])
+  @@index([invoiceId])
+  @@map("invoice_lines")
+}
+
+model Payment {
+  id          String   @id @default(cuid())
+  companyId   String
+  company     Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  /// Número do recibo (ex.: "REC 2026/0001"), único por empresa.
+  number      String
+  invoiceId   String?
+  invoice     Invoice? @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
+  customerId  String
+  customer    Customer @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  amount      Decimal  @db.Decimal(14, 2)
+  method      PaymentMethod @default(CASH)
+  paidAt      DateTime @default(now())
+  notes       String?
+  createdBy   String?
+  createdAt   DateTime @default(now())
+
+  @@unique([companyId, number])
+  @@index([companyId, customerId])
+  @@index([companyId, paidAt])
+  @@map("payments")
+}
+
+model DocumentCounter {
+  id         String   @id @default(cuid())
+  companyId  String
+  company    Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  /// Chave da série (ex.: "FT-2026", "REC-2026").
+  key        String
+  value      Int      @default(0)
+
+  @@unique([companyId, key])
+  @@map("document_counters")
+}
+
+// ─────────────────────────────────────────────────────────────
 // Enums
 // ─────────────────────────────────────────────────────────────
 
@@ -407,6 +516,21 @@ enum StockMovementType {
   IN
   OUT
   ADJUST
+}
+
+enum InvoiceStatus {
+  ISSUED
+  PARTIAL
+  PAID
+  CANCELLED
+}
+
+enum PaymentMethod {
+  CASH
+  MPESA
+  EMOLA
+  CARD
+  TRANSFER
 }
 
 enum CompanyStatus {

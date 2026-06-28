@@ -136,12 +136,38 @@ em [`CLAUDE.md`](CLAUDE.md).
 
 ---
 
+## ✅ Fase 5 — Vendas / Facturação _(concluída)_
+
+> Emitir factura → baixa stock (OUT) + incrementa saldo do cliente + extracto; registar recibo →
+> baixa saldo + marca factura paga/parcial. Verificado ao vivo no browser ponta-a-ponta.
+
+- **Modelos + migração `20260628182229_sales_invoicing`**: `Invoice` (número por série, snapshot do
+  cliente, totais, estado), `InvoiceLine` (snapshot de preço/IVA/desconto), `Payment` (recibo),
+  `DocumentCounter` (numeração FT/REC por empresa/ano). Os 4 em `COMPANY_SCOPED` + teste; excluídos
+  da auditoria automática (emissão/recebimento registam auditoria explícita).
+- **Domínio** `invoices.ts`: `listInvoices`, `getInvoice`, `invoiceKpis`, `createInvoice`
+  (transaccional — **bloqueia se stock insuficiente**, gera movimentos OUT, incrementa saldo,
+  auditoria `invoice.issue`), `createPayment` (recibo → baixa saldo, estado PARTIAL/PAID,
+  auditoria `payment.receive`), `getCustomerStatement` (extracto: saldo inicial + facturas/recibos).
+  Estado "vencido" derivado da data; descontos exigem `sales.approve_discount`.
+- **Permissões** já existentes (`sales.*`, `invoices.*`, `payments.*`); admin tem todas.
+- **Server Actions** `createInvoiceAction`/`createPaymentAction`.
+- **Ecrãs reais**: `/facturas` (lista + KPIs + filtros), `/facturas/nova` (cliente + linhas de
+  produtos reais + totais ao vivo + armazém de saída → emitir), `/facturas/documento?id=…`
+  (documento real com identidade da empresa + **Registar recibo**), e o **extracto do cliente**
+  em `/contas/perfil?type=client` agora mostra facturas/recibos reais (saldo inicial reconcilia).
+- **Limpeza**: removido o mock `data/invoices.ts`.
+- **Validado**: typecheck 6/6 · lint 6/6 · testes 25 · build OK + smoke e2e (factura→stock/saldo,
+  recibo, extracto, bloqueio de stock, isolamento) + verificação ao vivo no browser.
+
+---
+
 ## 🔨 Próximo (sugerido)
 
-> **Vendas / Facturação** (cotações, POS, facturas, recibos) — passa a gerar movimentos `OUT`
-> de stock e a alimentar os extractos de conta de clientes (até agora vazios). Em alternativa,
-> **Compras** (encomendas + recepção `/recepcao` gerando movimentos `IN`) para fechar o ciclo
-> de fornecedores e stock.
+> **Compras** (encomendas a fornecedores + recepção `/recepcao` gerando movimentos `IN` e contas a
+> pagar) para fechar o ciclo de stock/fornecedores; ou **Tesouraria & Bancos** (contas, fluxo de
+> caixa, fecho de caixa) que recebe os recibos. **POS** e **NC/ND** também ficam disponíveis como
+> extensões da facturação.
 
 ---
 

@@ -1,11 +1,11 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { forCompany } from '@ants/database';
-import { getCustomer, getSupplier, hasPermission, DomainError } from '@ants/domain';
+import { getCustomer, getSupplier, getCustomerStatement, hasPermission, DomainError } from '@ants/domain';
 import { getContext } from '@/lib/session';
 import { Icon } from '@/components/Icon';
 import { ACCENT } from '@/lib/erp-nav';
-import { fmt } from '@/lib/format';
+import { fmt, fmtNoSymbol } from '@/lib/format';
 import { initials } from '@/lib/ui-format';
 import { getProfile, type ProfileType } from '@/lib/data/profile';
 import { CustomerFormDialog, type CustomerFormValues } from '@/components/clientes/CustomerFormDialog';
@@ -24,6 +24,10 @@ const th: React.CSSProperties = {
   borderBottom: '1px solid var(--bd-soft)',
 };
 const meta: React.CSSProperties = { fontSize: 12.5, color: 'var(--text2)', display: 'flex', alignItems: 'center', gap: 6 };
+
+function fmtDate(d: Date): string {
+  return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
+}
 
 interface MiniKpi {
   label: string;
@@ -88,6 +92,29 @@ export default async function PerfilContaPage({ searchParams }: { searchParams: 
     }
 
     const available = customer.creditLimit - customer.balance;
+    const statement = await getCustomerStatement(forCompany(ctx.companyId), ctx, customer.id);
+    const extract: ExtractRow[] = [
+      {
+        date: '—',
+        doc: '—',
+        desc: 'Saldo inicial',
+        debStr: '—',
+        credStr: '—',
+        debCol: 'var(--text4)',
+        credCol: 'var(--text4)',
+        saldoStr: fmt(statement.openingBalance),
+      },
+      ...statement.rows.map((r) => ({
+        date: fmtDate(r.date),
+        doc: r.doc,
+        desc: r.description,
+        debStr: r.debit > 0 ? fmtNoSymbol(r.debit) : '—',
+        credStr: r.credit > 0 ? fmtNoSymbol(r.credit) : '—',
+        debCol: r.debit > 0 ? 'var(--text)' : 'var(--text4)',
+        credCol: r.credit > 0 ? 'var(--ok)' : 'var(--text4)',
+        saldoStr: fmt(r.balance),
+      })),
+    ];
     view = {
       ini: initials(customer.name),
       name: customer.name,
@@ -106,8 +133,8 @@ export default async function PerfilContaPage({ searchParams }: { searchParams: 
         { label: 'Crédito disponível', value: fmt(available), color: available < 0 ? 'var(--bad)' : 'var(--text)' },
         { label: 'Prazo de pagamento', value: `${customer.paymentTermDays} dias`, color: 'var(--text)' },
       ],
-      extract: [],
-      saldoFinalStr: fmt(customer.balance),
+      extract: statement.rows.length === 0 ? [] : extract,
+      saldoFinalStr: fmt(statement.closingBalance),
     };
     editClient = {
       id: customer.id,
@@ -242,14 +269,21 @@ export default async function PerfilContaPage({ searchParams }: { searchParams: 
               Editar
             </button>
           )}
-          <button
-            disabled={isReal}
-            title={isReal ? 'Disponível numa fase futura (Vendas/Tesouraria)' : undefined}
-            style={{ display: 'flex', alignItems: 'center', gap: 7, height: 38, padding: '0 15px', borderRadius: 10, border: 'none', background: ACCENT, color: '#fff', fontSize: 12.5, fontWeight: 600, opacity: isReal ? 0.55 : 1, cursor: isReal ? 'not-allowed' : 'pointer' }}
-          >
-            <Icon name={pf.actionIcon} size={15} />
-            {pf.actionLabel}
-          </button>
+          {editClient ? (
+            <Link href="/facturas/nova" style={{ display: 'flex', alignItems: 'center', gap: 7, height: 38, padding: '0 15px', borderRadius: 10, border: 'none', background: ACCENT, color: '#fff', fontSize: 12.5, fontWeight: 600 }}>
+              <Icon name={pf.actionIcon} size={15} />
+              {pf.actionLabel}
+            </Link>
+          ) : (
+            <button
+              disabled={isReal}
+              title={isReal ? 'Disponível na fase de Tesouraria' : undefined}
+              style={{ display: 'flex', alignItems: 'center', gap: 7, height: 38, padding: '0 15px', borderRadius: 10, border: 'none', background: ACCENT, color: '#fff', fontSize: 12.5, fontWeight: 600, opacity: isReal ? 0.55 : 1, cursor: isReal ? 'not-allowed' : 'pointer' }}
+            >
+              <Icon name={pf.actionIcon} size={15} />
+              {pf.actionLabel}
+            </button>
+          )}
         </div>
       </div>
 

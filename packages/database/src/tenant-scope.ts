@@ -20,6 +20,10 @@ export const COMPANY_SCOPED = new Set<string>([
   'Warehouse',
   'StockLevel',
   'StockMovement',
+  'Invoice',
+  'InvoiceLine',
+  'Payment',
+  'DocumentCounter',
 ]);
 
 /** Operações cujo `where` deve ser filtrado por companyId. */

@@ -29,7 +29,17 @@ const AUDITED_OPS = new Set<string>(['create', 'update', 'delete', 'upsert', 'up
 // Modelos que NÃO geram auditoria automática (evita ruído e recursão).
 // StockLevel/StockMovement: o próprio movimento é o trilho imutável; a acção
 // (ex.: ajuste de inventário) regista uma auditoria explícita e semântica.
-const AUDIT_EXCLUDED = new Set<string>(['AuditLog', 'Session', 'StockLevel', 'StockMovement']);
+const AUDIT_EXCLUDED = new Set<string>([
+  'AuditLog',
+  'Session',
+  'StockLevel',
+  'StockMovement',
+  // Vendas: a emissão/recebimento regista auditoria explícita e semântica.
+  'Invoice',
+  'InvoiceLine',
+  'Payment',
+  'DocumentCounter',
+]);
 
 /**
  * Cliente Prisma vinculado ao contexto: isolamento por empresa + auditoria automática
