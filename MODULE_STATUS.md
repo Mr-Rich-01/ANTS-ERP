@@ -49,10 +49,12 @@ em [`CLAUDE.md`](CLAUDE.md).
    - Migração **`20260628102312_customers`** aplicada; cliente Prisma regenerado.
    - Validado: typecheck 6/6 · lint 6/6 · testes 21.
 
-2. 🔜 **Seed de clientes demo** _(próximo passo)_ — os 6 do design (Distribuidora Maputo,
+2. ✅ **Seed de clientes demo** _(concluído)_ — os 6 do design (Distribuidora Maputo,
    Farmácia Sigma, Restaurante Costa do Sol, Hotel Polana Lodge, Mercearia Bom Preço,
-   Auto Peças Matola) com NUIT, telefone, `balance` e estado. Idempotente (`prisma/seed.ts`).
-3. **Domínio** `packages/domain/customers.ts` (sempre via cliente isolado `forContext(ctx)`):
+   Auto Peças Matola) com NUIT, telefone, `balance`, segmento, limite e `createdBy`.
+   Idempotente via `@@unique([companyId, nuit])` (`prisma/seed.ts`). Verificado na BD
+   (6 clientes, sem duplicados após 2.ª execução). typecheck 6/6 · lint 6/6 · testes 21.
+3. 🔜 **Domínio** `packages/domain/customers.ts` _(próximo passo)_ (sempre via cliente isolado `forContext(ctx)`):
    - `listCustomers(ctx)` e `getCustomer(ctx, id)` — `requirePermission('clients.view')`.
    - `customerKpis(ctx)` (total, a receber, com dívida, novos no mês).
    - `createCustomer(ctx, input)` — `clients.create`, validação (Zod) + NUIT único + auditoria.

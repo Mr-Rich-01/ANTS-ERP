@@ -202,7 +202,64 @@ async function main() {
     });
   }
 
-  console.log('Seed concluído: empresa demo, filiais, permissões, perfis e utilizadores.');
+  // 9) Clientes demo (os 6 do design). Idempotente via @@unique([companyId, nuit]).
+  // Estado de conta deriva do balance: > 0 com dívida · < 0 saldo a favor · 0 regular.
+  const demoCustomers: Array<{
+    name: string;
+    nuit: string;
+    phone: string;
+    email?: string;
+    address?: string;
+    province?: string;
+    district?: string;
+    segment: string;
+    creditLimit: number;
+    paymentTermDays: number;
+    balance: number;
+  }> = [
+    { name: 'Distribuidora Maputo, Lda', nuit: '400785214', phone: '+258 84 321 0099', email: 'compras@distmaputo.co.mz', address: 'Av. 24 de Julho, nº 1290', province: 'Maputo Cidade', district: 'KaMpfumo', segment: 'Grossista', creditLimit: 100000, paymentTermDays: 30, balance: 48900 },
+    { name: 'Farmácia Sigma', nuit: '400112908', phone: '+258 82 110 2030', province: 'Maputo Cidade', segment: 'Saúde', creditLimit: 50000, paymentTermDays: 0, balance: 0 },
+    { name: 'Restaurante Costa do Sol', nuit: '400556711', phone: '+258 84 700 1212', province: 'Maputo Cidade', district: 'KaMaxakeni', segment: 'Restauração', creditLimit: 30000, paymentTermDays: 15, balance: 15200 },
+    { name: 'Hotel Polana Lodge', nuit: '400778540', phone: '+258 21 491 001', province: 'Maputo Cidade', district: 'KaMpfumo', segment: 'Hotelaria', creditLimit: 80000, paymentTermDays: 30, balance: 62400 },
+    { name: 'Mercearia Bom Preço', nuit: '400334122', phone: '+258 86 555 0099', province: 'Maputo Cidade', segment: 'Retalho', creditLimit: 20000, paymentTermDays: 0, balance: 0 },
+    { name: 'Auto Peças Matola', nuit: '400220665', phone: '+258 84 909 8800', province: 'Maputo Província', district: 'Matola', segment: 'Automóvel', creditLimit: 40000, paymentTermDays: 30, balance: -3400 },
+  ];
+  for (const c of demoCustomers) {
+    await prisma.customer.upsert({
+      where: { companyId_nuit: { companyId: company.id, nuit: c.nuit } },
+      update: {
+        name: c.name,
+        phone: c.phone,
+        email: c.email,
+        address: c.address,
+        province: c.province,
+        district: c.district,
+        segment: c.segment,
+        creditLimit: c.creditLimit,
+        paymentTermDays: c.paymentTermDays,
+        balance: c.balance,
+        updatedBy: admin.id,
+      },
+      create: {
+        companyId: company.id,
+        name: c.name,
+        type: 'COMPANY',
+        nuit: c.nuit,
+        phone: c.phone,
+        email: c.email,
+        address: c.address,
+        province: c.province,
+        district: c.district,
+        segment: c.segment,
+        creditLimit: c.creditLimit,
+        paymentTermDays: c.paymentTermDays,
+        balance: c.balance,
+        createdBy: admin.id,
+      },
+    });
+  }
+
+  console.log('Seed concluído: empresa demo, filiais, permissões, perfis, utilizadores e clientes.');
 }
 
 main()
