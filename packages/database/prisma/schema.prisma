@@ -37,6 +37,7 @@ model Company {
   roles        Role[]
   auditLogs    AuditLog[]
   customers    Customer[]
+  suppliers    Supplier[]
 
   @@index([status])
   @@map("companies")
@@ -249,10 +250,51 @@ model Customer {
 }
 
 // ─────────────────────────────────────────────────────────────
+// Fornecedores (Fase 3)
+// ─────────────────────────────────────────────────────────────
+
+model Supplier {
+  id           String   @id @default(cuid())
+  companyId    String
+  company      Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  name         String
+  type         SupplierType @default(COMPANY)
+  nuit         String?
+  email        String?
+  phone        String?
+  address      String?
+  province     String?
+  district     String?
+  /// Limite de crédito concedido pelo fornecedor (MZN).
+  creditLimit  Decimal  @default(0) @db.Decimal(14, 2)
+  /// Saldo de conta-corrente: > 0 a empresa deve ao fornecedor (a pagar); < 0 adiantamento.
+  balance      Decimal  @default(0) @db.Decimal(14, 2)
+  paymentTermDays Int   @default(0)
+  category     String?
+  status       RecordStatus @default(ACTIVE)
+  notes        String?
+  createdBy    String?
+  updatedBy    String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([companyId, nuit])
+  @@index([companyId])
+  @@index([companyId, status])
+  @@index([name])
+  @@map("suppliers")
+}
+
+// ─────────────────────────────────────────────────────────────
 // Enums
 // ─────────────────────────────────────────────────────────────
 
 enum CustomerType {
+  INDIVIDUAL
+  COMPANY
+}
+
+enum SupplierType {
   INDIVIDUAL
   COMPANY
 }

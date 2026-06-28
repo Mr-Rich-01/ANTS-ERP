@@ -27,6 +27,10 @@ const PERMISSIONS: Array<{ key: string; module: string; description: string }> =
   { key: 'stock.view', module: 'stock', description: 'Ver stock' },
   { key: 'stock.adjust', module: 'stock', description: 'Ajustar stock' },
   { key: 'stock.transfer', module: 'stock', description: 'Transferir stock' },
+  { key: 'suppliers.view', module: 'suppliers', description: 'Ver fornecedores' },
+  { key: 'suppliers.create', module: 'suppliers', description: 'Criar fornecedores' },
+  { key: 'suppliers.update', module: 'suppliers', description: 'Editar fornecedores' },
+  { key: 'suppliers.delete', module: 'suppliers', description: 'Eliminar fornecedores' },
   { key: 'purchases.create', module: 'purchases', description: 'Criar compras' },
   { key: 'purchases.approve', module: 'purchases', description: 'Aprovar compras' },
   { key: 'accounting.post', module: 'accounting', description: 'Publicar lançamentos' },
@@ -144,9 +148,9 @@ async function main() {
     {
       name: 'Gestor',
       description: 'Gestão operacional e aprovações',
-      keys: ['clients.view', 'clients.create', 'sales.view', 'sales.create', 'sales.approve_discount', 'purchases.create', 'purchases.approve', 'stock.view', 'reports.export', 'audit.view'],
+      keys: ['clients.view', 'clients.create', 'suppliers.view', 'suppliers.create', 'sales.view', 'sales.create', 'sales.approve_discount', 'purchases.create', 'purchases.approve', 'stock.view', 'reports.export', 'audit.view'],
     },
-    { name: 'Contabilista', description: 'Contabilidade e relatórios', keys: ['accounting.post', 'accounting.reverse', 'payments.receive', 'reports.export', 'audit.view'] },
+    { name: 'Contabilista', description: 'Contabilidade e relatórios', keys: ['accounting.post', 'accounting.reverse', 'payments.receive', 'suppliers.view', 'reports.export', 'audit.view'] },
     { name: 'Caixa', description: 'Vendas e recebimentos', keys: ['sales.view', 'sales.create', 'invoices.issue', 'payments.receive'] },
     { name: 'Vendedor', description: 'Vendas e clientes', keys: ['sales.view', 'sales.create', 'clients.view', 'clients.create'] },
   ];
@@ -259,7 +263,61 @@ async function main() {
     });
   }
 
-  console.log('Seed concluído: empresa demo, filiais, permissões, perfis, utilizadores e clientes.');
+  // 10) Fornecedores demo (os 6 do design). Idempotente via @@unique([companyId, nuit]).
+  // Estado de conta deriva do balance: > 0 a empresa deve (a pagar) · < 0 adiantamento · 0 regular.
+  const demoSuppliers: Array<{
+    name: string;
+    nuit: string;
+    phone: string;
+    email?: string;
+    address?: string;
+    province?: string;
+    category: string;
+    creditLimit: number;
+    paymentTermDays: number;
+    balance: number;
+  }> = [
+    { name: 'Dangote Cimento, SA', nuit: '400990112', phone: '+258 21 720 400', email: 'vendas@dangote.co.mz', address: 'Av. das Indústrias, Matola', province: 'Maputo Província', category: 'Construção', creditLimit: 250000, paymentTermDays: 30, balance: 186300 },
+    { name: 'Distribuidora Fula', nuit: '400221884', phone: '+258 84 330 1188', province: 'Maputo Cidade', category: 'Distribuição', creditLimit: 100000, paymentTermDays: 30, balance: 0 },
+    { name: 'Coca-Cola Sabco', nuit: '400778221', phone: '+258 21 460 700', province: 'Maputo Cidade', category: 'Bebidas', creditLimit: 150000, paymentTermDays: 45, balance: 84000 },
+    { name: 'Xinavane Açúcar, SA', nuit: '400112667', phone: '+258 23 110 050', province: 'Maputo Província', category: 'Alimentar', creditLimit: 120000, paymentTermDays: 30, balance: 57000 },
+    { name: 'Águas de Moçambique', nuit: '400556003', phone: '+258 21 350 900', province: 'Maputo Cidade', category: 'Utilidades', creditLimit: 0, paymentTermDays: 0, balance: 0 },
+    { name: 'Lux Higiene, Lda', nuit: '400334909', phone: '+258 84 221 6677', province: 'Maputo Cidade', category: 'Higiene', creditLimit: 40000, paymentTermDays: 30, balance: 12000 },
+  ];
+  for (const s of demoSuppliers) {
+    await prisma.supplier.upsert({
+      where: { companyId_nuit: { companyId: company.id, nuit: s.nuit } },
+      update: {
+        name: s.name,
+        phone: s.phone,
+        email: s.email,
+        address: s.address,
+        province: s.province,
+        category: s.category,
+        creditLimit: s.creditLimit,
+        paymentTermDays: s.paymentTermDays,
+        balance: s.balance,
+        updatedBy: admin.id,
+      },
+      create: {
+        companyId: company.id,
+        name: s.name,
+        type: 'COMPANY',
+        nuit: s.nuit,
+        phone: s.phone,
+        email: s.email,
+        address: s.address,
+        province: s.province,
+        category: s.category,
+        creditLimit: s.creditLimit,
+        paymentTermDays: s.paymentTermDays,
+        balance: s.balance,
+        createdBy: admin.id,
+      },
+    });
+  }
+
+  console.log('Seed concluído: empresa demo, filiais, permissões, perfis, utilizadores, clientes e fornecedores.');
 }
 
 main()

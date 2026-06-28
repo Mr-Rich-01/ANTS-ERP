@@ -81,11 +81,38 @@ em [`CLAUDE.md`](CLAUDE.md).
 
 ---
 
-## 🔨 Próximo — Fase 3: Fornecedores (sugerido)
+## ✅ Fase 3 — Fornecedores ponta-a-ponta _(concluída)_
 
-> Replicar o padrão dos clientes para fornecedores (cadastro, extracto, contas a pagar),
-> ligando o ecrã `/fornecedores` (ainda em mock via `EntityList`) a dados reais.
-> Em alternativa, avançar para **Produtos & Stock** ou **Vendas/Facturação** conforme prioridade.
+> Mesmo padrão dos clientes (domínio isolado + auditoria automática via `forContext`).
+> Verificado ao vivo no browser: lista real (6 fornecedores, KPIs), criar, perfil real
+> (saldo a pagar/crédito) e editar — auditoria escrita automaticamente.
+
+- **Modelo + migração**: `model Supplier` (espelho do `Customer`, com `category`) + enum
+  `SupplierType`; migração **`20260628125551_suppliers`**; `Supplier` em `COMPANY_SCOPED` + teste.
+- **Permissões** `suppliers.view/create/update/delete` no seed (admin tem todas; Gestor view/create;
+  Contabilista view).
+- **Seed** dos 6 fornecedores do design (Dangote, Distribuidora Fula, Coca-Cola Sabco, Xinavane,
+  Águas de Moçambique, Lux Higiene) — idempotente via `@@unique([companyId, nuit])`.
+- **Domínio** `packages/domain/suppliers.ts`: `listSuppliers`, `getSupplier`, `supplierKpis`,
+  `createSupplier`, `updateSupplier`; `payableStateOf` (>0 a pagar · <0 adiantamento · 0 regular).
+- **Server Actions** `createSupplierAction`/`updateSupplierAction` (`forContext` + `DomainError`).
+- **Ecrãs reais**: `/fornecedores` (Server Component + `FornecedoresClient` com pesquisa e diálogo
+  **Novo fornecedor**); `/contas/perfil?type=supplier&id=…` (dados reais, extracto vazio com nota,
+  **Editar** ligado, "Novo pagamento" desativado). Gates `suppliers.view`/`suppliers.create`.
+- **Limpeza**: removidos `EntityList` e o mock `entities.ts` (já não usados).
+- **Validado**: typecheck 6/6 · lint 6/6 · testes 23 · build OK + smoke e2e (auditoria, isolamento,
+  NUIT único) + verificação ao vivo no browser.
+
+> ⚠️ Após o seed adicionar novas permissões, as sessões antigas (JWT) não as têm — é preciso
+> **terminar e reiniciar sessão** para o gate passar a reconhecê-las.
+
+---
+
+## 🔨 Próximo (sugerido)
+
+> **Produtos & Stock** (produtos, armazéns, movimentos, inventário) ou **Vendas/Facturação**
+> (cotações, POS, facturas, recibos), que passam a alimentar os extractos de conta de
+> clientes/fornecedores (até agora vazios). Escolher conforme prioridade de negócio.
 
 ---
 
@@ -101,7 +128,6 @@ em [`CLAUDE.md`](CLAUDE.md).
 
 ## 🗺️ Fases futuras (esboço)
 
-- **Fornecedores** — cadastro, extracto, contas a pagar.
 - **Produtos & Stock** — produtos, armazéns, movimentos, inventário.
 - **Vendas / Facturação** — cotações, POS, facturas, recibos, NC/ND.
 - **Tesouraria & Bancos** — contas, movimentos, fluxo de caixa, conciliação, fecho de caixa.

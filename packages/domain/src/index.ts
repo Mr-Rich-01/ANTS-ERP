@@ -8,3 +8,4 @@ export * from './audit';
 export * from './auth';
 export * from './admin';
 export * from './customers';
+export * from './suppliers';

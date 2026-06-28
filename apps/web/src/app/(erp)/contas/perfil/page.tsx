@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { forCompany } from '@ants/database';
-import { getCustomer, hasPermission, DomainError } from '@ants/domain';
+import { getCustomer, getSupplier, hasPermission, DomainError } from '@ants/domain';
 import { getContext } from '@/lib/session';
 import { Icon } from '@/components/Icon';
 import { ACCENT } from '@/lib/erp-nav';
@@ -9,6 +9,7 @@ import { fmt } from '@/lib/format';
 import { initials } from '@/lib/ui-format';
 import { getProfile, type ProfileType } from '@/lib/data/profile';
 import { CustomerFormDialog, type CustomerFormValues } from '@/components/clientes/CustomerFormDialog';
+import { SupplierFormDialog, type SupplierFormValues } from '@/components/fornecedores/SupplierFormDialog';
 
 export const dynamic = 'force-dynamic';
 
@@ -60,9 +61,20 @@ export default async function PerfilContaPage({ searchParams }: { searchParams: 
   const type: ProfileType = searchParams.type === 'supplier' ? 'supplier' : 'client';
   const backHref = type === 'supplier' ? '/fornecedores' : '/clientes';
 
-  // Cliente real (CRM, Fase 2). Fornecedores continuam com dados de demonstração até à sua fase.
+  // Cliente/fornecedor real (CRM, Fases 2/3). Sem id → dados de demonstração.
   let view: ProfileView;
-  let editInitial: CustomerFormValues | null = null;
+  let editClient: CustomerFormValues | null = null;
+  let editSupplier: SupplierFormValues | null = null;
+
+  const notFound = (message: string) => (
+    <div style={{ padding: '14px 26px 30px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+      <Link href={backHref} style={backBtn}>
+        <Icon name="arrow-left" size={16} />
+        Voltar à lista
+      </Link>
+      <div style={{ padding: '50px 26px', textAlign: 'center', color: 'var(--text2)', fontSize: 14 }}>{message}</div>
+    </div>
+  );
 
   if (type === 'client' && searchParams.id) {
     const ctx = await getContext();
@@ -71,17 +83,7 @@ export default async function PerfilContaPage({ searchParams }: { searchParams: 
     try {
       customer = await getCustomer(forCompany(ctx.companyId), ctx, searchParams.id);
     } catch (e) {
-      if (e instanceof DomainError) {
-        return (
-          <div style={{ padding: '14px 26px 30px', display: 'flex', flexDirection: 'column', gap: 14 }}>
-            <Link href={backHref} style={backBtn}>
-              <Icon name="arrow-left" size={16} />
-              Voltar à lista
-            </Link>
-            <div style={{ padding: '50px 26px', textAlign: 'center', color: 'var(--text2)', fontSize: 14 }}>{e.message}</div>
-          </div>
-        );
-      }
+      if (e instanceof DomainError) return notFound(e.message);
       throw e;
     }
 
@@ -107,7 +109,7 @@ export default async function PerfilContaPage({ searchParams }: { searchParams: 
       extract: [],
       saldoFinalStr: fmt(customer.balance),
     };
-    editInitial = {
+    editClient = {
       id: customer.id,
       name: customer.name,
       type: customer.type,
@@ -121,11 +123,59 @@ export default async function PerfilContaPage({ searchParams }: { searchParams: 
       creditLimit: customer.creditLimit,
       paymentTermDays: customer.paymentTermDays,
     };
+  } else if (type === 'supplier' && searchParams.id) {
+    const ctx = await getContext();
+    if (!ctx.companyId || !hasPermission(ctx, 'suppliers.view')) redirect('/fornecedores');
+    let supplier;
+    try {
+      supplier = await getSupplier(forCompany(ctx.companyId), ctx, searchParams.id);
+    } catch (e) {
+      if (e instanceof DomainError) return notFound(e.message);
+      throw e;
+    }
+
+    const available = supplier.creditLimit - supplier.balance;
+    view = {
+      ini: initials(supplier.name),
+      name: supplier.name,
+      typeLabel: 'Fornecedor',
+      typeColor: 'var(--info)',
+      typeBg: 'var(--info-bg)',
+      nuit: supplier.nuit ?? '—',
+      address: supplier.address ?? '—',
+      phone: supplier.phone ?? '—',
+      email: supplier.email ?? '—',
+      actionLabel: 'Novo pagamento',
+      actionIcon: 'banknote',
+      mini: [
+        { label: 'Saldo a pagar', value: fmt(supplier.balance), color: supplier.balance > 0 ? 'var(--bad)' : supplier.balance < 0 ? 'var(--info)' : 'var(--text)' },
+        { label: 'Crédito concedido', value: fmt(supplier.creditLimit), color: 'var(--text)' },
+        { label: 'Crédito disponível', value: fmt(available), color: available < 0 ? 'var(--bad)' : 'var(--text)' },
+        { label: 'Prazo de pagamento', value: `${supplier.paymentTermDays} dias`, color: 'var(--text)' },
+      ],
+      extract: [],
+      saldoFinalStr: fmt(supplier.balance),
+    };
+    editSupplier = {
+      id: supplier.id,
+      name: supplier.name,
+      type: supplier.type,
+      nuit: supplier.nuit,
+      email: supplier.email,
+      phone: supplier.phone,
+      category: supplier.category,
+      province: supplier.province,
+      district: supplier.district,
+      address: supplier.address,
+      creditLimit: supplier.creditLimit,
+      paymentTermDays: supplier.paymentTermDays,
+    };
   } else {
     view = getProfile(type);
   }
 
   const pf = view;
+  const isReal = !!(editClient || editSupplier);
 
   return (
     <div style={{ padding: '14px 26px 30px', display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -164,27 +214,38 @@ export default async function PerfilContaPage({ searchParams }: { searchParams: 
           </div>
         </div>
         <div style={{ display: 'flex', gap: 9, flex: 'none' }}>
-          {editInitial ? (
+          {editClient ? (
             <CustomerFormDialog
               mode="edit"
-              initial={editInitial}
+              initial={editClient}
               trigger={
-                <button style={{ display: 'flex', alignItems: 'center', gap: 7, height: 38, padding: '0 14px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--card)', color: 'var(--text2)', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>
+                <button style={editBtn}>
+                  <Icon name="pencil" size={15} />
+                  Editar
+                </button>
+              }
+            />
+          ) : editSupplier ? (
+            <SupplierFormDialog
+              mode="edit"
+              initial={editSupplier}
+              trigger={
+                <button style={editBtn}>
                   <Icon name="pencil" size={15} />
                   Editar
                 </button>
               }
             />
           ) : (
-            <button style={{ display: 'flex', alignItems: 'center', gap: 7, height: 38, padding: '0 14px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--card)', color: 'var(--text2)', fontSize: 12.5, fontWeight: 600 }}>
+            <button style={{ ...editBtn, cursor: 'default' }}>
               <Icon name="pencil" size={15} />
               Editar
             </button>
           )}
           <button
-            disabled={!!editInitial}
-            title={editInitial ? 'Disponível na Fase 4 — Vendas' : undefined}
-            style={{ display: 'flex', alignItems: 'center', gap: 7, height: 38, padding: '0 15px', borderRadius: 10, border: 'none', background: ACCENT, color: '#fff', fontSize: 12.5, fontWeight: 600, opacity: editInitial ? 0.55 : 1, cursor: editInitial ? 'not-allowed' : 'pointer' }}
+            disabled={isReal}
+            title={isReal ? 'Disponível numa fase futura (Vendas/Tesouraria)' : undefined}
+            style={{ display: 'flex', alignItems: 'center', gap: 7, height: 38, padding: '0 15px', borderRadius: 10, border: 'none', background: ACCENT, color: '#fff', fontSize: 12.5, fontWeight: 600, opacity: isReal ? 0.55 : 1, cursor: isReal ? 'not-allowed' : 'pointer' }}
           >
             <Icon name={pf.actionIcon} size={15} />
             {pf.actionLabel}
@@ -290,4 +351,19 @@ const backBtn: React.CSSProperties = {
   fontSize: 12.5,
   fontWeight: 600,
   width: 'max-content',
+};
+
+const editBtn: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 7,
+  height: 38,
+  padding: '0 14px',
+  borderRadius: 10,
+  border: '1px solid var(--border)',
+  background: 'var(--card)',
+  color: 'var(--text2)',
+  fontSize: 12.5,
+  fontWeight: 600,
+  cursor: 'pointer',
 };

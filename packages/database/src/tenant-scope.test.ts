@@ -47,6 +47,13 @@ describe('scopeArgs — isolamento multiempresa', () => {
     });
   });
 
+  it('Supplier está no âmbito: injecta companyId no where e no data', () => {
+    expect(scopeArgs('Supplier', 'findMany', undefined, C)).toEqual({ where: { companyId: C } });
+    expect(scopeArgs('Supplier', 'create', { data: { name: 'Fornecedor X' } }, C)).toEqual({
+      data: { name: 'Fornecedor X', companyId: C },
+    });
+  });
+
   it('NÃO altera modelos fora do âmbito (ex.: Permission)', () => {
     const args = { where: { key: 'sales.view' } };
     expect(scopeArgs('Permission', 'findMany', args, C)).toBe(args);
