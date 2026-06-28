@@ -28,4 +28,4 @@ pnpm dev               # web :3000 (UI + /api) · worker
 ```
 
 Ver [`docs/`](docs/) para arquitectura, base de dados, segurança, deploy e estado dos módulos.
-O estado por módulo está em [`docs/MODULE_STATUS.md`](docs/MODULE_STATUS.md).
+O estado por módulo está em [`MODULE_STATUS.md`](MODULE_STATUS.md).

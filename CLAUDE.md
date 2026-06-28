@@ -1,7 +1,7 @@
 # CLAUDE.md — ANTS ERP
 
 Conhecimento permanente do projecto para o Claude Code. (O estado actual e o próximo
-passo vivem em [`docs/MODULE_STATUS.md`](docs/MODULE_STATUS.md), não aqui.)
+passo vivem em [`MODULE_STATUS.md`](MODULE_STATUS.md), não aqui.)
 
 ## O que é
 
