@@ -63,9 +63,10 @@ em [`CLAUDE.md`](CLAUDE.md).
    - **`Customer` registado em `COMPANY_SCOPED`** (faltava — 2.ª barreira de isolamento) + teste.
    - Verificado e2e na BD (smoke): KPIs corretos, auditoria escrita, NUIT duplicado → conflito,
      isolamento (Empresa B vê 0; getCustomer cross-company → NotFound). typecheck/lint · testes 22.
-4. 🔜 **Server Actions** (`apps/web/src/app/(erp)/clientes/actions.ts`) _(próximo passo)_: `createCustomerAction`,
-   `updateCustomerAction` (getContext → `forContext` → domínio → `revalidatePath` + erros de domínio).
-5. **Ligar ecrãs a dados reais**
+4. ✅ **Server Actions** (`apps/web/src/app/(erp)/clientes/actions.ts`) _(concluído)_: `createCustomerAction`
+   e `updateCustomerAction` (getContext → `forContext(ctx)` → domínio → `revalidatePath` + `DomainError`).
+   FormData → input (números coeridos; vazios caem no default do Zod). typecheck/lint verdes.
+5. 🔜 **Ligar ecrãs a dados reais** _(próximo passo)_
    - `/clientes` (lista): Server Component → KPIs + tabela reais (substituir o `EntityList` mock);
      diálogo **Novo cliente** (shadcn Dialog/Input/Select).
    - `/contas/perfil?type=client&id=…`: dados reais do cliente + KPIs (saldo/limite/…);
