@@ -24,6 +24,9 @@ const PERMISSIONS: Array<{ key: string; module: string; description: string }> =
   { key: 'invoices.cancel', module: 'invoices', description: 'Cancelar facturas' },
   { key: 'payments.receive', module: 'payments', description: 'Receber pagamentos' },
   { key: 'payments.cancel', module: 'payments', description: 'Cancelar pagamentos' },
+  { key: 'products.view', module: 'products', description: 'Ver produtos' },
+  { key: 'products.create', module: 'products', description: 'Criar produtos' },
+  { key: 'products.update', module: 'products', description: 'Editar produtos' },
   { key: 'stock.view', module: 'stock', description: 'Ver stock' },
   { key: 'stock.adjust', module: 'stock', description: 'Ajustar stock' },
   { key: 'stock.transfer', module: 'stock', description: 'Transferir stock' },
@@ -148,7 +151,7 @@ async function main() {
     {
       name: 'Gestor',
       description: 'Gestão operacional e aprovações',
-      keys: ['clients.view', 'clients.create', 'suppliers.view', 'suppliers.create', 'sales.view', 'sales.create', 'sales.approve_discount', 'purchases.create', 'purchases.approve', 'stock.view', 'reports.export', 'audit.view'],
+      keys: ['clients.view', 'clients.create', 'suppliers.view', 'suppliers.create', 'sales.view', 'sales.create', 'sales.approve_discount', 'purchases.create', 'purchases.approve', 'products.view', 'products.create', 'products.update', 'stock.view', 'stock.adjust', 'reports.export', 'audit.view'],
     },
     { name: 'Contabilista', description: 'Contabilidade e relatórios', keys: ['accounting.post', 'accounting.reverse', 'payments.receive', 'suppliers.view', 'reports.export', 'audit.view'] },
     { name: 'Caixa', description: 'Vendas e recebimentos', keys: ['sales.view', 'sales.create', 'invoices.issue', 'payments.receive'] },
@@ -317,7 +320,80 @@ async function main() {
     });
   }
 
-  console.log('Seed concluído: empresa demo, filiais, permissões, perfis, utilizadores, clientes e fornecedores.');
+  // 11) Armazéns demo (1 por filial). Idempotente via @@unique([companyId, code]).
+  const branchByCode = new Map(
+    (await prisma.branch.findMany({ where: { companyId: company.id }, select: { id: true, code: true } })).map((b) => [b.code, b.id]),
+  );
+  const warehouseDefs = [
+    { code: 'ARM-MAP', name: 'Armazém Maputo', branchCode: 'MAP' },
+    { code: 'ARM-MAT', name: 'Armazém Matola', branchCode: 'MAT' },
+  ];
+  const whByCode = new Map<string, string>();
+  for (const w of warehouseDefs) {
+    const wh = await prisma.warehouse.upsert({
+      where: { companyId_code: { companyId: company.id, code: w.code } },
+      update: { name: w.name, branchId: branchByCode.get(w.branchCode) ?? null },
+      create: { companyId: company.id, code: w.code, name: w.name, branchId: branchByCode.get(w.branchCode) ?? null },
+    });
+    whByCode.set(w.code, wh.id);
+  }
+  const mainWarehouseId = whByCode.get('ARM-MAP')!;
+
+  // 12) Produtos demo (os 9 do design) + stock inicial no armazém de Maputo.
+  // Idempotente: upsert por (companyId, sku); stock só é semeado se ainda não houver nível.
+  const demoProducts: Array<{
+    sku: string;
+    name: string;
+    category: string;
+    brand: string;
+    salePrice: number;
+    minStock: number;
+    stock: number;
+  }> = [
+    { sku: 'ANTS-RICE-5', name: 'Arroz Tio 5kg', category: 'Mercearia', brand: 'Tio', salePrice: 580, minStock: 80, stock: 420 },
+    { sku: 'ANTS-OIL-1', name: 'Óleo Fula 1L', category: 'Mercearia', brand: 'Fula', salePrice: 165, minStock: 60, stock: 38 },
+    { sku: 'ANTS-SUG-2', name: 'Açúcar Xinavane 2kg', category: 'Mercearia', brand: 'Xinavane', salePrice: 190, minStock: 50, stock: 260 },
+    { sku: 'ANTS-WAT-5', name: 'Água Vumba 5L', category: 'Bebidas', brand: 'Vumba', salePrice: 95, minStock: 40, stock: 0 },
+    { sku: 'ANTS-COL-2', name: 'Coca-Cola 2L', category: 'Bebidas', brand: 'Coca-Cola', salePrice: 140, minStock: 60, stock: 312 },
+    { sku: 'ANTS-CEM-50', name: 'Cimento Dangote 50kg', category: 'Construção', brand: 'Dangote', salePrice: 720, minStock: 30, stock: 84 },
+    { sku: 'ANTS-PAR-500', name: 'Paracetamol 500mg', category: 'Farmácia', brand: 'Genérico', salePrice: 45, minStock: 40, stock: 22 },
+    { sku: 'ANTS-SOAP-1', name: 'Sabão Azul 400g', category: 'Higiene', brand: 'Lux', salePrice: 60, minStock: 100, stock: 540 },
+    { sku: 'ANTS-RICE-25', name: 'Arroz Tio 25kg', category: 'Mercearia', brand: 'Tio', salePrice: 2650, minStock: 15, stock: 12 },
+  ];
+  for (const p of demoProducts) {
+    const avgCost = Math.round(p.salePrice * 0.72);
+    const product = await prisma.product.upsert({
+      where: { companyId_sku: { companyId: company.id, sku: p.sku } },
+      update: { name: p.name, category: p.category, brand: p.brand, salePrice: p.salePrice, avgCost, minStock: p.minStock, updatedBy: admin.id },
+      create: { companyId: company.id, sku: p.sku, name: p.name, category: p.category, brand: p.brand, salePrice: p.salePrice, avgCost, minStock: p.minStock, createdBy: admin.id },
+    });
+    // Stock inicial (idempotente): só cria nível + movimento se ainda não existir nível.
+    const existingLevel = await prisma.stockLevel.findUnique({
+      where: { productId_warehouseId: { productId: product.id, warehouseId: mainWarehouseId } },
+    });
+    if (!existingLevel) {
+      await prisma.stockLevel.create({
+        data: { companyId: company.id, productId: product.id, warehouseId: mainWarehouseId, quantity: p.stock },
+      });
+      if (p.stock > 0) {
+        await prisma.stockMovement.create({
+          data: {
+            companyId: company.id,
+            productId: product.id,
+            warehouseId: mainWarehouseId,
+            type: 'IN',
+            quantity: p.stock,
+            balanceAfter: p.stock,
+            document: 'Stock inicial',
+            reason: 'Carregamento inicial do catálogo (seed)',
+            createdBy: admin.id,
+          },
+        });
+      }
+    }
+  }
+
+  console.log('Seed concluído: empresa demo, filiais, permissões, perfis, utilizadores, clientes, fornecedores, produtos e stock.');
 }
 
 main()

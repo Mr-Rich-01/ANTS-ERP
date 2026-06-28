@@ -54,6 +54,15 @@ describe('scopeArgs — isolamento multiempresa', () => {
     });
   });
 
+  it('Produtos & Stock estão no âmbito: injecta companyId', () => {
+    expect(scopeArgs('Product', 'findMany', undefined, C)).toEqual({ where: { companyId: C } });
+    expect(scopeArgs('Warehouse', 'create', { data: { code: 'ARM' } }, C)).toEqual({ data: { code: 'ARM', companyId: C } });
+    expect(scopeArgs('StockLevel', 'findFirst', { where: { productId: 'p1' } }, C)).toEqual({ where: { productId: 'p1', companyId: C } });
+    expect(scopeArgs('StockMovement', 'create', { data: { productId: 'p1', quantity: 5 } }, C)).toEqual({
+      data: { productId: 'p1', quantity: 5, companyId: C },
+    });
+  });
+
   it('NÃO altera modelos fora do âmbito (ex.: Permission)', () => {
     const args = { where: { key: 'sales.view' } };
     expect(scopeArgs('Permission', 'findMany', args, C)).toBe(args);

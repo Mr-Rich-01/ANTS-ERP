@@ -38,6 +38,10 @@ model Company {
   auditLogs    AuditLog[]
   customers    Customer[]
   suppliers    Supplier[]
+  products     Product[]
+  warehouses   Warehouse[]
+  stockLevels  StockLevel[]
+  stockMovements StockMovement[]
 
   @@index([status])
   @@map("companies")
@@ -70,6 +74,7 @@ model Branch {
   updatedAt  DateTime @updatedAt
 
   userBranches UserBranch[]
+  warehouses   Warehouse[]
 
   @@unique([companyId, code])
   @@index([companyId])
@@ -286,6 +291,105 @@ model Supplier {
 }
 
 // ─────────────────────────────────────────────────────────────
+// Produtos & Stock (Fase 4)
+// ─────────────────────────────────────────────────────────────
+
+model Product {
+  id           String   @id @default(cuid())
+  companyId    String
+  company      Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  sku          String
+  name         String
+  category     String?
+  brand        String?
+  unit         String   @default("un")
+  /// Preço de venda unitário (MZN, IVA incl.).
+  salePrice    Decimal  @default(0) @db.Decimal(14, 2)
+  /// Custo médio ponderado (MZN).
+  avgCost      Decimal  @default(0) @db.Decimal(14, 2)
+  /// Taxa de IVA aplicável (%).
+  taxRate      Decimal  @default(16) @db.Decimal(5, 2)
+  /// Stock mínimo (alerta de reposição).
+  minStock     Int      @default(0)
+  barcode      String?
+  status       RecordStatus @default(ACTIVE)
+  notes        String?
+  createdBy    String?
+  updatedBy    String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  stockLevels  StockLevel[]
+  movements    StockMovement[]
+
+  @@unique([companyId, sku])
+  @@index([companyId])
+  @@index([companyId, status])
+  @@index([name])
+  @@map("products")
+}
+
+model Warehouse {
+  id           String   @id @default(cuid())
+  companyId    String
+  company      Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  branchId     String?
+  branch       Branch?  @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  code         String
+  name         String
+  status       RecordStatus @default(ACTIVE)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  stockLevels  StockLevel[]
+  movements    StockMovement[]
+
+  @@unique([companyId, code])
+  @@index([companyId])
+  @@map("warehouses")
+}
+
+model StockLevel {
+  id           String   @id @default(cuid())
+  companyId    String
+  company      Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  productId    String
+  product      Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  warehouseId  String
+  warehouse    Warehouse @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+  quantity     Int      @default(0)
+  updatedAt    DateTime @updatedAt
+
+  @@unique([productId, warehouseId])
+  @@index([companyId])
+  @@index([companyId, warehouseId])
+  @@map("stock_levels")
+}
+
+model StockMovement {
+  id           String   @id @default(cuid())
+  companyId    String
+  company      Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  productId    String
+  product      Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  warehouseId  String
+  warehouse    Warehouse @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+  type         StockMovementType
+  /// Delta com sinal: > 0 entrada · < 0 saída/ajuste negativo.
+  quantity     Int
+  /// Saldo do produto no armazém após o movimento.
+  balanceAfter Int
+  document     String?
+  reason       String?
+  createdBy    String?
+  createdAt    DateTime @default(now())
+
+  @@index([companyId, productId, createdAt])
+  @@index([companyId, warehouseId])
+  @@map("stock_movements")
+}
+
+// ─────────────────────────────────────────────────────────────
 // Enums
 // ─────────────────────────────────────────────────────────────
 
@@ -297,6 +401,12 @@ enum CustomerType {
 enum SupplierType {
   INDIVIDUAL
   COMPANY
+}
+
+enum StockMovementType {
+  IN
+  OUT
+  ADJUST
 }
 
 enum CompanyStatus {

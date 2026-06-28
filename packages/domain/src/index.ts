@@ -9,3 +9,5 @@ export * from './auth';
 export * from './admin';
 export * from './customers';
 export * from './suppliers';
+export * from './products';
+export * from './stock';

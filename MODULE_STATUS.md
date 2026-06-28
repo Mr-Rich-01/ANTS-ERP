@@ -108,11 +108,40 @@ em [`CLAUDE.md`](CLAUDE.md).
 
 ---
 
+## ✅ Fase 4 — Produtos & Stock (multi-armazém) _(concluída)_
+
+> Catálogo + stock por armazém + movimentos imutáveis + inventário com ajuste auditado.
+> Verificado ao vivo no browser: lista real, criar/editar produto, ficha com movimentos e
+> stock por armazém, contagem de inventário (KPIs ao vivo) → ajuste que gera movimento +
+> auditoria explícita `stock.adjust`.
+
+- **Modelos + migração `20260628141239_products_stock`**: `Product` (sku, preço, custo médio,
+  IVA, stock mínimo), `Warehouse` (1 por filial), `StockLevel` (stock por produto/armazém),
+  `StockMovement` (IN/OUT/ADJUST, delta com sinal + saldo, imutável). Os 4 em `COMPANY_SCOPED`
+  + teste. `StockLevel`/`StockMovement` excluídos da auditoria automática (o movimento é o trilho).
+- **Permissões**: novas `products.view/create/update`; ver = `stock.view` (menu), CRUD catálogo =
+  `products.*`, ajuste = `stock.adjust`. Atribuídas ao admin (todas) e ao Gestor.
+- **Seed**: 2 armazéns (ARM-MAP/ARM-MAT), 9 produtos do design, stock inicial em Maputo + movimento
+  `IN` "Stock inicial" por produto. Idempotente.
+- **Domínio** `products.ts` (`listProducts`, `getProduct`, `productKpis`, `createProduct`,
+  `updateProduct`; `stockStatusOf`) e `stock.ts` (`listProductMovements`, `listWarehouses`,
+  `listInventory`, `adjustInventory` — transaccional, gera movimento ADJUST + auditoria).
+- **Server Actions** `createProductAction`/`updateProductAction`/`adjustInventoryAction`.
+- **Ecrãs reais**: `/produtos` (lista + pesquisa + **Novo produto** + ir para Inventário),
+  `/produtos/ficha?id=…` (KPIs, stock por armazém, movimentos, **Editar**), `/inventario`
+  (folha de contagem por armazém, KPIs ao vivo, **Validar ajustes** → `adjustInventory`).
+  Recepção (`/recepcao`) fica para a fase de **Compras**.
+- **Validado**: typecheck 6/6 · lint 6/6 · testes 24 · build OK + smoke e2e (KPIs, ajuste com
+  movimento + auditoria, isolamento) + verificação ao vivo no browser.
+
+---
+
 ## 🔨 Próximo (sugerido)
 
-> **Produtos & Stock** (produtos, armazéns, movimentos, inventário) ou **Vendas/Facturação**
-> (cotações, POS, facturas, recibos), que passam a alimentar os extractos de conta de
-> clientes/fornecedores (até agora vazios). Escolher conforme prioridade de negócio.
+> **Vendas / Facturação** (cotações, POS, facturas, recibos) — passa a gerar movimentos `OUT`
+> de stock e a alimentar os extractos de conta de clientes (até agora vazios). Em alternativa,
+> **Compras** (encomendas + recepção `/recepcao` gerando movimentos `IN`) para fechar o ciclo
+> de fornecedores e stock.
 
 ---
 
@@ -128,7 +157,6 @@ em [`CLAUDE.md`](CLAUDE.md).
 
 ## 🗺️ Fases futuras (esboço)
 
-- **Produtos & Stock** — produtos, armazéns, movimentos, inventário.
 - **Vendas / Facturação** — cotações, POS, facturas, recibos, NC/ND.
 - **Tesouraria & Bancos** — contas, movimentos, fluxo de caixa, conciliação, fecho de caixa.
 - **Contabilidade** — plano de contas, lançamentos (partidas dobradas), relatórios.

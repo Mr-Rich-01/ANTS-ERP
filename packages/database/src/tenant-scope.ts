@@ -8,7 +8,19 @@
  * filtradas pela empresa activa (2.ª barreira de isolamento multiempresa).
  * À medida que entram modelos de negócio (Customer, Invoice, …), adicionar aqui.
  */
-export const COMPANY_SCOPED = new Set<string>(['Branch', 'CompanySettings', 'User', 'Role', 'AuditLog', 'Customer', 'Supplier']);
+export const COMPANY_SCOPED = new Set<string>([
+  'Branch',
+  'CompanySettings',
+  'User',
+  'Role',
+  'AuditLog',
+  'Customer',
+  'Supplier',
+  'Product',
+  'Warehouse',
+  'StockLevel',
+  'StockMovement',
+]);
 
 /** Operações cujo `where` deve ser filtrado por companyId. */
 export const WHERE_OPS = new Set<string>([
