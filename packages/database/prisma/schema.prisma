@@ -36,6 +36,7 @@ model Company {
   users        User[]
   roles        Role[]
   auditLogs    AuditLog[]
+  customers    Customer[]
 
   @@index([status])
   @@map("companies")
@@ -212,8 +213,49 @@ model AuditLog {
 }
 
 // ─────────────────────────────────────────────────────────────
+// CRM — Clientes (Fase 2)
+// ─────────────────────────────────────────────────────────────
+
+model Customer {
+  id           String   @id @default(cuid())
+  companyId    String
+  company      Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  name         String
+  type         CustomerType @default(COMPANY)
+  nuit         String?
+  email        String?
+  phone        String?
+  address      String?
+  province     String?
+  district     String?
+  /// Limite de crédito concedido (MZN).
+  creditLimit  Decimal  @default(0) @db.Decimal(14, 2)
+  /// Saldo de conta-corrente: > 0 deve à empresa; < 0 saldo a favor.
+  balance      Decimal  @default(0) @db.Decimal(14, 2)
+  paymentTermDays Int   @default(0)
+  segment      String?
+  status       RecordStatus @default(ACTIVE)
+  notes        String?
+  createdBy    String?
+  updatedBy    String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([companyId, nuit])
+  @@index([companyId])
+  @@index([companyId, status])
+  @@index([name])
+  @@map("customers")
+}
+
+// ─────────────────────────────────────────────────────────────
 // Enums
 // ─────────────────────────────────────────────────────────────
+
+enum CustomerType {
+  INDIVIDUAL
+  COMPANY
+}
 
 enum CompanyStatus {
   ACTIVE
