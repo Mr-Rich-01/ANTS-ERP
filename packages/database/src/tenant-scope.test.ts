@@ -38,6 +38,15 @@ describe('scopeArgs — isolamento multiempresa', () => {
     expect(out).toEqual({ where: { id: '1', companyId: C }, create: { name: 'Gestor', companyId: C }, update: {} });
   });
 
+  it('Customer está no âmbito: injecta companyId no where e no data', () => {
+    expect(scopeArgs('Customer', 'findMany', { where: { status: 'ACTIVE' } }, C)).toEqual({
+      where: { status: 'ACTIVE', companyId: C },
+    });
+    expect(scopeArgs('Customer', 'create', { data: { name: 'Cliente X' } }, C)).toEqual({
+      data: { name: 'Cliente X', companyId: C },
+    });
+  });
+
   it('NÃO altera modelos fora do âmbito (ex.: Permission)', () => {
     const args = { where: { key: 'sales.view' } };
     expect(scopeArgs('Permission', 'findMany', args, C)).toBe(args);

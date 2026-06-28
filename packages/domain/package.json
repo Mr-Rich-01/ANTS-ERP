@@ -15,7 +15,8 @@
   "dependencies": {
     "@ants/database": "workspace:*",
     "@ants/shared": "workspace:*",
-    "@node-rs/argon2": "^2.0.2"
+    "@node-rs/argon2": "^2.0.2",
+    "zod": "^3.23.8"
   },
   "devDependencies": {
     "@ants/config": "workspace:*",

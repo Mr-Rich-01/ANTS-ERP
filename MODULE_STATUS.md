@@ -54,13 +54,16 @@ em [`CLAUDE.md`](CLAUDE.md).
    Auto Peças Matola) com NUIT, telefone, `balance`, segmento, limite e `createdBy`.
    Idempotente via `@@unique([companyId, nuit])` (`prisma/seed.ts`). Verificado na BD
    (6 clientes, sem duplicados após 2.ª execução). typecheck 6/6 · lint 6/6 · testes 21.
-3. 🔜 **Domínio** `packages/domain/customers.ts` _(próximo passo)_ (sempre via cliente isolado `forContext(ctx)`):
-   - `listCustomers(ctx)` e `getCustomer(ctx, id)` — `requirePermission('clients.view')`.
-   - `customerKpis(ctx)` (total, a receber, com dívida, novos no mês).
-   - `createCustomer(ctx, input)` — `clients.create`, validação (Zod) + NUIT único + auditoria.
-   - `updateCustomer(ctx, id, input)` — `clients.update` + auditoria.
-   - Estado de conta derivado do `balance`: >0 = com dívida · <0 = saldo a favor · 0 = regular.
-4. **Server Actions** (`apps/web/src/app/(erp)/clientes/actions.ts`): `createCustomerAction`,
+3. ✅ **Domínio** `packages/domain/customers.ts` _(concluído)_ (via cliente isolado `forContext(ctx)`):
+   - `listCustomers` e `getCustomer(id)` — `requirePermission('clients.view')`.
+   - `customerKpis` (total, a receber, com dívida, novos no mês).
+   - `createCustomer(input)` — `clients.create`, validação (Zod) + NUIT único + auditoria automática.
+   - `updateCustomer(id, input)` — `clients.update` + auditoria automática.
+   - `accountStateOf(balance)`: >0 = devedor · <0 = credor · 0 = regular.
+   - **`Customer` registado em `COMPANY_SCOPED`** (faltava — 2.ª barreira de isolamento) + teste.
+   - Verificado e2e na BD (smoke): KPIs corretos, auditoria escrita, NUIT duplicado → conflito,
+     isolamento (Empresa B vê 0; getCustomer cross-company → NotFound). typecheck/lint · testes 22.
+4. 🔜 **Server Actions** (`apps/web/src/app/(erp)/clientes/actions.ts`) _(próximo passo)_: `createCustomerAction`,
    `updateCustomerAction` (getContext → `forContext` → domínio → `revalidatePath` + erros de domínio).
 5. **Ligar ecrãs a dados reais**
    - `/clientes` (lista): Server Component → KPIs + tabela reais (substituir o `EntityList` mock);
