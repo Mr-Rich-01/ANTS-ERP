@@ -1,6 +1,6 @@
 # MODULE_STATUS — ANTS ERP
 
-_Última actualização: 2026-06-27_
+_Última actualização: 2026-06-28_
 
 Estado vivo do projecto. O conhecimento permanente (arquitectura, regras, comandos) está
 em [`CLAUDE.md`](CLAUDE.md).
@@ -43,15 +43,15 @@ em [`CLAUDE.md`](CLAUDE.md).
 
 **Sub-passos accionáveis (por ordem):**
 
-1. **Modelo + migração** _(em curso)_
-   - `Customer` já redigido em `packages/database/prisma/schema.prisma` — **WIP não commitado**
-     (companyId, tipo, NUIT, contactos, endereço, `creditLimit`, `balance`, `paymentTermDays`,
-     segmento, estado, auditoria) + enum `CustomerType`.
-   - Aplicar a migração: `docker compose up -d --force-recreate postgres` (se o Prisma não
-     ligar após restart do Docker) → `pnpm db:migrate` (nome `customers`) → `pnpm db:generate`.
-2. **Seed de clientes demo** — os 6 do design (Distribuidora Maputo, Farmácia Sigma,
-   Restaurante Costa do Sol, Hotel Polana Lodge, Mercearia Bom Preço, Auto Peças Matola)
-   com NUIT, telefone, `balance` e estado. Idempotente.
+1. ✅ **Modelo + migração** _(concluído — commit `1affe9a`)_
+   - `model Customer` (companyId, tipo, NUIT, contactos, endereço, `creditLimit`, `balance`,
+     `paymentTermDays`, segmento, estado, auditoria) + enum `CustomerType` + relação em `Company`.
+   - Migração **`20260628102312_customers`** aplicada; cliente Prisma regenerado.
+   - Validado: typecheck 6/6 · lint 6/6 · testes 21.
+
+2. 🔜 **Seed de clientes demo** _(próximo passo)_ — os 6 do design (Distribuidora Maputo,
+   Farmácia Sigma, Restaurante Costa do Sol, Hotel Polana Lodge, Mercearia Bom Preço,
+   Auto Peças Matola) com NUIT, telefone, `balance` e estado. Idempotente (`prisma/seed.ts`).
 3. **Domínio** `packages/domain/customers.ts` (sempre via cliente isolado `forContext(ctx)`):
    - `listCustomers(ctx)` e `getCustomer(ctx, id)` — `requirePermission('clients.view')`.
    - `customerKpis(ctx)` (total, a receber, com dívida, novos no mês).
