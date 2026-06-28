@@ -36,12 +36,14 @@ em [`CLAUDE.md`](CLAUDE.md).
 
 ---
 
-## 🔨 Próximo — Fase 2: Clientes (CRM) ponta-a-ponta
+## ✅ Fase 2 — Clientes (CRM) ponta-a-ponta _(concluída)_
 
-> Construir o **primeiro módulo de negócio** real, exercitando o padrão completo
-> (domínio isolado + auditoria automática via `forContext`).
+> **Primeiro módulo de negócio** real, exercitando o padrão completo
+> (domínio isolado + auditoria automática via `forContext`). Verificado ao vivo no browser:
+> lista real (6 clientes, KPIs corretos), criar cliente, perfil real com extracto vazio
+> (nota da Fase 4) e editar — auditoria escrita automaticamente.
 
-**Sub-passos accionáveis (por ordem):**
+**Sub-passos (todos concluídos):**
 
 1. ✅ **Modelo + migração** _(concluído — commit `1affe9a`)_
    - `model Customer` (companyId, tipo, NUIT, contactos, endereço, `creditLimit`, `balance`,
@@ -66,14 +68,24 @@ em [`CLAUDE.md`](CLAUDE.md).
 4. ✅ **Server Actions** (`apps/web/src/app/(erp)/clientes/actions.ts`) _(concluído)_: `createCustomerAction`
    e `updateCustomerAction` (getContext → `forContext(ctx)` → domínio → `revalidatePath` + `DomainError`).
    FormData → input (números coeridos; vazios caem no default do Zod). typecheck/lint verdes.
-5. 🔜 **Ligar ecrãs a dados reais** _(próximo passo)_
-   - `/clientes` (lista): Server Component → KPIs + tabela reais (substituir o `EntityList` mock);
-     diálogo **Novo cliente** (shadcn Dialog/Input/Select).
-   - `/contas/perfil?type=client&id=…`: dados reais do cliente + KPIs (saldo/limite/…);
-     **extracto vazio com nota** (os movimentos chegam na Fase 4 — Vendas).
-   - Linhas da lista passam a navegar com o `id` do cliente.
-6. **Validar & commitar**: typecheck/lint/test/build verdes + verificação e2e (criar cliente
-   isolado por empresa, auditoria escrita) → **commit**.
+5. ✅ **Ligar ecrãs a dados reais** _(concluído)_
+   - `/clientes` (lista): Server Component (`forCompany`) → KPIs + tabela reais; `ClientesClient`
+     com pesquisa client-side e diálogo **Novo cliente** (`CustomerFormDialog`, shadcn Dialog).
+     Removido o mock `CLIENTS`/`CLIENT_KPIS` de `entities.ts` (fornecedores mantêm-se em mock).
+   - `/contas/perfil?type=client&id=…`: dados reais do cliente + mini-KPIs (saldo/limite/disponível/
+     prazo); **extracto vazio com nota** (movimentos na Fase 4 — Vendas); botão **Editar** ligado
+     ao `updateCustomerAction`; "Nova factura" desativado (Fase 4).
+   - Linhas da lista navegam com o `id` do cliente; gate por `clients.create`/`clients.view`.
+6. ✅ **Validado & commitado**: typecheck 6/6 · lint 6/6 · testes 22 · build OK + verificação
+   ao vivo no browser (criar/editar com auditoria automática; dados limpos após teste).
+
+---
+
+## 🔨 Próximo — Fase 3: Fornecedores (sugerido)
+
+> Replicar o padrão dos clientes para fornecedores (cadastro, extracto, contas a pagar),
+> ligando o ecrã `/fornecedores` (ainda em mock via `EntityList`) a dados reais.
+> Em alternativa, avançar para **Produtos & Stock** ou **Vendas/Facturação** conforme prioridade.
 
 ---
 
