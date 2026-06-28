@@ -1,8 +1,27 @@
 # MODULE_STATUS — ANTS ERP
 
-_Última actualização: 2026-06-24_
+_Última actualização: 2026-06-27_
 
 Estados: Não iniciado · Em desenvolvimento · Parcial · Em testes · Concluído · Bloqueado
+
+## Foco actual / ponto de paragem
+
+**A trabalhar:** Fase 2 — **Clientes (CRM) ponta-a-ponta**.
+
+Parámos a meio do primeiro passo (modelo de dados):
+- ✅ Modelo `Customer` redigido em `packages/database/prisma/schema.prisma` (companyId,
+  tipo, NUIT, contactos, endereço, `creditLimit`, `balance`, `paymentTermDays`, segmento,
+  estado, auditoria) + enum `CustomerType`. **Alteração ainda não commitada (WIP).**
+- ⏳ **Migração `customers` por aplicar** — o `Customer` ainda não existe na BD.
+  (Houve um problema de ligação do Prisma após restart do Docker; resolver com
+  `docker compose up -d --force-recreate postgres` e correr `pnpm db:migrate`.)
+- ⏳ Falta: seed de clientes demo; serviços de domínio (`listCustomers`, `getCustomer`,
+  `createCustomer`, `updateCustomer`, `customerKpis`) com `requirePermission`/auditoria;
+  ligar os ecrãs **Clientes (lista)** e **Perfil de conta** a dados reais + diálogo
+  Novo/Editar cliente. Tarefas #25–#27.
+
+**Commits relevantes:** porte 22 ecrãs → monólito+shadcn → Auth.js → Admin dados reais →
+isolamento Prisma → Admin CRUD (`5fc0c6e`).
 
 | Módulo | Funcionalidades previstas | Estado | % | Testes | Pendências | Dependências | Actualizado |
 |--------|---------------------------|--------|---|--------|------------|--------------|-------------|
@@ -12,7 +31,7 @@ Estados: Não iniciado · Em desenvolvimento · Parcial · Em testes · Concluí
 | Multiempresa / RBAC | RequestContext, menu por permissões; Admin com dados reais; **CRUD** (convidar utilizador, mudar estado, criar perfil) com auditoria; isolamento Prisma automático | Parcial | 70 | scopeArgs 8 testes; isolamento + mutações e2e na BD ✓ | Editar perfis/permissões existentes, sessões persistidas, recuperação de password | Autenticação | 2026-06-26 |
 | Plataforma (Super Admin) | Cadastro empresas, planos, impersonação auditada | Não iniciado | 0 | — | — | Multiempresa | 2026-06-24 |
 | Configurações da empresa | Dados legais, fiscais, séries, branding | Não iniciado | 0 | — | — | Multiempresa | 2026-06-24 |
-| Clientes / CRM | Cadastro, visão 360, extracto | Não iniciado | 0 | — | — | Config | 2026-06-24 |
+| Clientes / CRM | Cadastro, visão 360, extracto | Em desenvolvimento | 10 | — | Migração + seed; domínio CRUD; ligar lista/perfil à BD; diálogo Novo/Editar | Multiempresa | 2026-06-27 |
 | Fornecedores | Cadastro, extracto | Não iniciado | 0 | — | — | Config | 2026-06-24 |
 | Produtos / Stock | Produtos, movimentos, armazéns, inventário | Não iniciado | 0 | — | — | Config | 2026-06-24 |
 | Compras | Requisição→OC→recepção→factura | Não iniciado | 0 | — | — | Stock | 2026-06-24 |
