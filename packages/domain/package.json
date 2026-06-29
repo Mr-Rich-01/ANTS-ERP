@@ -11,7 +11,8 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint . --max-warnings 0",
     "test": "vitest run",
-    "test:integration": "vitest run --config vitest.integration.config.ts"
+    "test:integration": "vitest run --config vitest.integration.config.ts",
+    "test:integration:c1": "vitest run --config vitest.integration.config.ts accounting.c1.integration"
   },
   "dependencies": {
     "@ants/database": "workspace:*",

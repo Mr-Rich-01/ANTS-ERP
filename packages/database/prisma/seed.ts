@@ -406,21 +406,25 @@ async function main() {
   }
 
   // 13) Contas de tesouraria demo. Idempotente via @@unique([companyId, name]).
-  const treasuryAccounts: Array<{ name: string; type: 'CASH' | 'BANK' | 'MOBILE' | 'OTHER'; reference?: string; balance: number }> = [
-    { name: 'Caixa Principal', type: 'CASH', reference: 'Numerário', balance: 84300 },
-    { name: 'BCI', type: 'BANK', reference: 'IBAN ···· 1234567', balance: 192400 },
-    { name: 'Millennium BIM', type: 'BANK', reference: 'IBAN ···· 7654321', balance: 244950 },
-    { name: 'M-Pesa', type: 'MOBILE', reference: '84 555 1234', balance: 46200 },
-    { name: 'e-Mola', type: 'MOBILE', reference: '86 222 9090', balance: 18750 },
+  // `key` é um identificador estável do seed (não depende da ordem da BD nem do nome
+  // apresentado) usado para ligar deterministicamente a conta do razão (secção 15).
+  const treasuryAccounts: Array<{ key: string; name: string; type: 'CASH' | 'BANK' | 'MOBILE' | 'OTHER'; reference?: string; balance: number }> = [
+    { key: 'CAIXA_PRINCIPAL', name: 'Caixa Principal', type: 'CASH', reference: 'Numerário', balance: 84300 },
+    { key: 'BCI', name: 'BCI', type: 'BANK', reference: 'IBAN ···· 1234567', balance: 192400 },
+    { key: 'MILLENNIUM', name: 'Millennium BIM', type: 'BANK', reference: 'IBAN ···· 7654321', balance: 244950 },
+    { key: 'MPESA', name: 'M-Pesa', type: 'MOBILE', reference: '84 555 1234', balance: 46200 },
+    { key: 'EMOLA', name: 'e-Mola', type: 'MOBILE', reference: '86 222 9090', balance: 18750 },
   ];
+  const treasuryIdByKey = new Map<string, string>();
   for (const a of treasuryAccounts) {
     // Banco e "outras" permitem descoberto; caixa e carteiras móveis não.
     const allowNegative = a.type === 'BANK' || a.type === 'OTHER';
-    await prisma.treasuryAccount.upsert({
+    const acc = await prisma.treasuryAccount.upsert({
       where: { companyId_name: { companyId: company.id, name: a.name } },
       update: { type: a.type, reference: a.reference, allowNegative, updatedBy: admin.id },
       create: { companyId: company.id, name: a.name, type: a.type, reference: a.reference, allowNegative, openingBalance: a.balance, balance: a.balance, createdBy: admin.id },
     });
+    treasuryIdByKey.set(a.key, acc.id);
   }
 
   // 14) Contabilidade (Fase 8a) — plano-base, diários, exercício, períodos, mappings.
@@ -604,7 +608,84 @@ async function main() {
     }
   }
 
-  console.log('Seed concluído: empresa demo, filiais, permissões, perfis, utilizadores, clientes, fornecedores, produtos, stock, tesouraria e contabilidade (plano, diários, exercício, períodos, mappings).');
+  // 15) Mapping contabilístico individual das contas de tesouraria (Fase 8c.1).
+  // Liga cada conta de tesouraria a uma conta-razão (1:1). Determinístico (por `key`,
+  // não por ordem da BD). Não destrutivo: liga só se ausente; nunca rouba uma conta-razão
+  // já associada. Bancos/carteiras adicionais → contas-irmãs sob a agrupadora `11`
+  // (NUNCA filhos de 112/113, que são contas de movimento). `provisioningKey` permite
+  // reencontrar a conta mesmo após renomeação pelo utilizador.
+  await provisionTreasuryLedgerMapping(prisma, company.id, [
+    { treasuryAccountId: treasuryIdByKey.get('CAIXA_PRINCIPAL')!, existingLedgerCode: '111' },
+    { treasuryAccountId: treasuryIdByKey.get('BCI')!, existingLedgerCode: '112' },
+    { treasuryAccountId: treasuryIdByKey.get('MPESA')!, existingLedgerCode: '113' },
+    { treasuryAccountId: treasuryIdByKey.get('MILLENNIUM')!, createSibling: { code: '114', name: 'Millennium BIM', provisioningKey: 'TREASURY_BANK_MILLENNIUM_BIM', parentCode: '11' } },
+    { treasuryAccountId: treasuryIdByKey.get('EMOLA')!, createSibling: { code: '115', name: 'e-Mola', provisioningKey: 'TREASURY_MOBILE_EMOLA', parentCode: '11' } },
+  ]);
+
+  console.log('Seed concluído: empresa demo, filiais, permissões, perfis, utilizadores, clientes, fornecedores, produtos, stock, tesouraria e contabilidade (plano, diários, exercício, períodos, mappings + ligação tesouraria↔razão).');
+}
+
+/**
+ * Provisionamento reutilizável (por empresa) do mapping individual tesouraria↔razão.
+ * Demo-específico fica nos argumentos; esta lógica serve qualquer empresa.
+ * Para empresas reais, o mapping é configurado explicitamente (accounting.manageSettings);
+ * não se cria automaticamente uma conta do razão por cada banco do utilizador.
+ */
+type TreasuryLedgerLink = {
+  treasuryAccountId: string;
+  existingLedgerCode?: string;
+  createSibling?: { code: string; name: string; provisioningKey: string; parentCode: string };
+};
+
+async function provisionTreasuryLedgerMapping(db: PrismaClient, companyId: string, links: TreasuryLedgerLink[]): Promise<void> {
+  for (const link of links) {
+    const ledgerAccountId = link.createSibling
+      ? (await ensureSiblingLedgerAccount(db, companyId, link.createSibling)).id
+      : (await requireLedgerByCode(db, companyId, link.existingLedgerCode!)).id;
+
+    const ta = await db.treasuryAccount.findFirst({ where: { id: link.treasuryAccountId, companyId } });
+    if (!ta) continue;
+    if (ta.ledgerAccountId) continue; // já ligada — não reescreve (não destrutivo)
+    const taken = await db.treasuryAccount.findFirst({ where: { companyId, ledgerAccountId, NOT: { id: ta.id } } });
+    if (taken) throw new Error(`Conta-razão já associada a outra conta de tesouraria (${taken.name}).`);
+    await db.treasuryAccount.update({ where: { id: ta.id }, data: { ledgerAccountId } });
+  }
+}
+
+async function requireLedgerByCode(db: PrismaClient, companyId: string, code: string) {
+  const acc = await db.ledgerAccount.findFirst({ where: { companyId, code } });
+  if (!acc) throw new Error(`Conta-razão ${code} não encontrada para o mapping de tesouraria.`);
+  return acc;
+}
+
+/** Cria (ou reencontra) uma conta-razão de movimento irmã, sob a agrupadora indicada. Idempotente. */
+async function ensureSiblingLedgerAccount(db: PrismaClient, companyId: string, spec: { code: string; name: string; provisioningKey: string; parentCode: string }) {
+  const byKey = await db.ledgerAccount.findFirst({ where: { companyId, provisioningKey: spec.provisioningKey } });
+  if (byKey) return byKey; // reencontrada por provisioningKey (sobrevive a renomeação)
+  const byCode = await db.ledgerAccount.findFirst({ where: { companyId, code: spec.code } });
+  if (byCode) {
+    if (byCode.provisioningKey !== spec.provisioningKey) {
+      throw new Error(`Código ${spec.code} ocupado por conta não relacionada (${byCode.name}). Não reutilizado.`);
+    }
+    return byCode;
+  }
+  const parent = await db.ledgerAccount.findFirst({ where: { companyId, code: spec.parentCode } });
+  if (!parent) throw new Error(`Conta agrupadora ${spec.parentCode} não encontrada.`);
+  if (parent.isPosting) throw new Error(`A conta ${spec.parentCode} é de movimento; não pode ter filhos.`);
+  return db.ledgerAccount.create({
+    data: {
+      companyId,
+      code: spec.code,
+      name: spec.name,
+      accountType: 'ASSET',
+      normalBalance: 'DEBIT',
+      parentId: parent.id,
+      level: parent.level + 1,
+      isPosting: true,
+      isActive: true,
+      provisioningKey: spec.provisioningKey,
+    },
+  });
 }
 
 main()

@@ -102,7 +102,7 @@ export function formatAccountingDate(d: Date): string {
 }
 
 /** Compara apenas a parte da data (UTC). value ∈ [start, end]. */
-function dateWithin(value: Date, start: Date, end: Date): boolean {
+export function dateWithin(value: Date, start: Date, end: Date): boolean {
   const v = value.getTime();
   return v >= start.getTime() && v <= end.getTime();
 }
@@ -122,7 +122,7 @@ const lineSchema = z.object({
 });
 export type JournalLineInput = z.input<typeof lineSchema>;
 
-interface NormalizedLine {
+export interface NormalizedLine {
   ledgerAccountId: string;
   description: string | null;
   debit: number;
@@ -152,7 +152,7 @@ function normalizeLine(raw: JournalLineInput, index: number): NormalizedLine {
   };
 }
 
-function recalcTotals(lines: Array<{ debit: number; credit: number }>): { totalDebit: number; totalCredit: number } {
+export function recalcTotals(lines: Array<{ debit: number; credit: number }>): { totalDebit: number; totalCredit: number } {
   let totalDebit = 0;
   let totalCredit = 0;
   for (const l of lines) {
@@ -163,7 +163,7 @@ function recalcTotals(lines: Array<{ debit: number; credit: number }>): { totalD
 }
 
 /** Valida que todas as relações das linhas pertencem à empresa e que as contas são de movimento e activas. */
-async function validateLineRelations(tx: Prisma.TransactionClient, companyId: string, lines: NormalizedLine[]): Promise<void> {
+export async function validateLineRelations(tx: Prisma.TransactionClient, companyId: string, lines: NormalizedLine[]): Promise<void> {
   const accountIds = [...new Set(lines.map((l) => l.ledgerAccountId))];
   const accounts = await tx.ledgerAccount.findMany({ where: { companyId, id: { in: accountIds } } });
   const byId = new Map(accounts.map((a) => [a.id, a]));
@@ -193,7 +193,7 @@ async function validateLineRelations(tx: Prisma.TransactionClient, companyId: st
 }
 
 /** Resolve o período (e o exercício) que contém a data contabilística. Prefere períodos normais. */
-async function resolvePeriodForDate(
+export async function resolvePeriodForDate(
   tx: Prisma.TransactionClient,
   companyId: string,
   date: Date,
@@ -210,7 +210,7 @@ async function resolvePeriodForDate(
 // Numeração (decisão D) — definitiva só no post, via DocumentCounter atómico.
 // ─────────────────────────────────────────────────────────────
 
-async function nextEntryNumber(
+export async function nextEntryNumber(
   tx: Prisma.TransactionClient,
   companyId: string,
   fiscalYearId: string,
@@ -580,6 +580,66 @@ export async function getMappedAccountTx(tx: Prisma.TransactionClient, companyId
   if (!mapping) throw new ValidationError(`Não existe mapping contabilístico para "${systemKey}".`);
   const account = await assertMappableAccountTx(tx, companyId, mapping.ledgerAccountId);
   return { id: account.id, code: account.code };
+}
+
+// ─────────────────────────────────────────────────────────────
+// Mapping individual de Tesouraria ↔ razão (Fase 8c.1)
+// ─────────────────────────────────────────────────────────────
+
+export interface TreasuryLedgerMappingItem {
+  treasuryAccountId: string;
+  treasuryAccountName: string;
+  treasuryStatus: 'ACTIVE' | 'INACTIVE';
+  ledgerAccountId: string | null;
+  ledgerCode: string | null;
+  ledgerName: string | null;
+}
+
+export async function listTreasuryLedgerMappings(db: PrismaClient, ctx: RequestContext): Promise<TreasuryLedgerMappingItem[]> {
+  requirePermission(ctx, 'accounting.view');
+  const companyId = requireCompany(ctx);
+  const rows = await db.treasuryAccount.findMany({
+    where: { companyId },
+    include: { ledgerAccount: { select: { id: true, code: true, name: true } } },
+    orderBy: { name: 'asc' },
+  });
+  return rows.map((t) => ({
+    treasuryAccountId: t.id,
+    treasuryAccountName: t.name,
+    treasuryStatus: t.status,
+    ledgerAccountId: t.ledgerAccountId,
+    ledgerCode: t.ledgerAccount?.code ?? null,
+    ledgerName: t.ledgerAccount?.name ?? null,
+  }));
+}
+
+/**
+ * Configura/troca/remove (null) a conta-razão de uma conta de Tesouraria.
+ * Só `accounting.manageSettings` (não `treasury.manageAccounts`). Transaccional e auditado.
+ * Não "rouba" uma conta-razão já associada a outra conta de Tesouraria. Só afecta operações
+ * futuras — lançamentos históricos mantêm os seus próprios ledgerAccountId.
+ */
+export async function setTreasuryLedgerAccount(db: PrismaClient, ctx: RequestContext, treasuryAccountId: string, ledgerAccountId: string | null): Promise<void> {
+  requirePermission(ctx, 'accounting.manageSettings');
+  const companyId = requireCompany(ctx);
+  await db.$transaction(async (tx) => {
+    const ta = await tx.treasuryAccount.findFirst({ where: { companyId, id: treasuryAccountId } });
+    if (!ta) throw new NotFoundError('Conta de tesouraria não encontrada.');
+    if (ta.ledgerAccountId === ledgerAccountId) return;
+
+    if (ledgerAccountId !== null) {
+      const acc = await tx.ledgerAccount.findFirst({ where: { companyId, id: ledgerAccountId } });
+      if (!acc) throw new ValidationError('Conta-razão não encontrada nesta empresa.');
+      if (acc.accountType !== 'ASSET') throw new ValidationError('A conta-razão de uma conta de tesouraria tem de ser do tipo ASSET.');
+      if (!acc.isActive) throw new ValidationError('A conta-razão tem de estar activa.');
+      if (!acc.isPosting) throw new ValidationError('A conta-razão tem de ser de movimento (não agrupadora).');
+      const taken = await tx.treasuryAccount.findFirst({ where: { companyId, ledgerAccountId, NOT: { id: ta.id } } });
+      if (taken) throw new ConflictError(`A conta-razão já está associada à conta de tesouraria "${taken.name}".`);
+    }
+
+    await tx.treasuryAccount.update({ where: { id: ta.id }, data: { ledgerAccountId, updatedBy: ctx.userId } });
+    await writeAudit(tx, ctx, { action: 'accounting.treasury_mapping_set', entity: 'TreasuryAccount', entityId: ta.id, oldValues: { ledgerAccountId: ta.ledgerAccountId }, newValues: { ledgerAccountId } });
+  });
 }
 
 // ─────────────────────────────────────────────────────────────

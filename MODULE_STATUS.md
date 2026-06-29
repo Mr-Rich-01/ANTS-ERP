@@ -21,12 +21,14 @@ em [`CLAUDE.md`](CLAUDE.md).
 | 7.1 | Hardening da Tesouraria (imutabilidade, idempotência, estorno, saldo atómico, permissões split, fix de navegação) | ✅ |
 | **8a** | **Contabilidade — schema & seed** (7 modelos, migração, FKs compostas, constraints, permissões, seed do plano-base) | ✅ |
 | **8b** | **Contabilidade — domínio** (plano, exercícios/períodos, mappings, lançamentos, partidas dobradas, estorno) | ✅ |
-| 8c–8e | Contabilidade — integrações automáticas, ecrãs, testes finais | 🔨 **8c a seguir** |
+| **8c.1** | **Contabilidade — fundação das integrações** (mapping tesouraria↔razão, helpers de evento idempotentes/atómicos) | ✅ |
+| 8c.2–8e | Contabilidade — vendas/recebimentos, fornecedores, tesouraria, ecrãs, testes finais | 🔨 **8c.2 a seguir** |
 | 9 | RH & Salários | 🗺️ futuro |
 | X | RLS forçado em toda a BD (fase transversal, pré-produção) | 🗺️ futuro |
 
 **Validações actuais:** typecheck 6/6 · lint 6/6 · **testes unitários 44** · **integração de
-contabilidade 32/32** (`pnpm test:integration:accounting`) · `prisma validate` OK · seed idempotente.
+contabilidade 62/62** (8b 32 + 8c.1 30; `pnpm test:integration:accounting`, c1: `…:c1`) ·
+`prisma validate` OK · seed idempotente (2×).
 
 > ⚠️ **Build com falha PRÉ-EXISTENTE e AMBIENTAL (não causada por 8a/8b):** o `next build` falha no
 > prerender (`useContext null` no runtime do Next) de páginas estáticas. **git bisect** provou que
@@ -306,8 +308,20 @@ contabilidade 32/32** (`pnpm test:integration:accounting`) · `prisma validate` 
   helper interno (`createJournalEntryDraftTx`, all-or-none, idempotente). Novas permissões
   `accounting.prepare` e `accounting.unlockPeriods`. **Sem integrações nem ecrãs.** Validado:
   typecheck/lint/44 unit + **32/32 integração** (`pnpm test:integration:accounting`).
-- **8c — Integração automática**: recibo/pagamento/factura/transferência → `JournalEntry` na mesma
-  transacção do documento, **idempotente** (`companyId + sourceType + sourceId + accountingEvent`).
+- **8c — Integração automática** (por subfases): recibo/pagamento/factura/transferência → `JournalEntry`
+  na mesma transacção do documento, **idempotente** (`companyId + sourceType + sourceId + accountingEvent`).
+  - **8c.1 — Fundação** _(✅ concluída)_: migração `treasury_ledger_mapping` (relação 1:1
+    `TreasuryAccount.ledgerAccountId`, FK composta anti cross-company, `@@unique`); seed não destrutivo
+    (Caixa→111, BCI→112, M-Pesa→113, Millennium→**114**, e-Mola→**115**, com `provisioningKey`);
+    `setTreasuryLedgerAccount`/`listTreasuryLedgerMappings` (gate `accounting.manageSettings`); módulo
+    **interno** `accounting-events.ts` (`postAccountingEventTx`/`reverseAccountingEventTx`/
+    `resolveTreasuryLedgerTx`/`resolveJournalByTypeTx`) — sem gates contabilísticos de utilizador,
+    atómico, idempotente com **advisory lock** + comparação de payload completo, estorno por verdade
+    histórica. 30 testes (`pnpm test:integration:accounting:c1`). **Sem ligar a fluxos operacionais ainda.**
+  - **8c.2 — Vendas e recebimentos** _(próximo)_: hooks em `createInvoice`/`createPayment` (`accountId`
+    obrigatório). **8c.3** fornecedores (recepção valorizada — requer entidade `PurchaseReceipt`).
+    **8c.4** tesouraria manual (contrapartida) + transferências. **8c.5** backfill (dry-run) + validação.
+    Diferidos: COGS, cancelamentos operacionais.
 - **8d — Ecrãs**: plano de contas, diários, novo lançamento, detalhe, razão geral, balancete,
   extracto diário (linha a linha) + configuração contabilística (mapping de `systemKeys`).
 - **8e — Testes & validação final**: unidade + integração + isolamento multiempresa.

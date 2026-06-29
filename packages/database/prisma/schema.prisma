@@ -628,11 +628,17 @@ model TreasuryAccount {
   createdAt      DateTime            @default(now())
   updatedAt      DateTime            @updatedAt
 
+  /// Conta do razão associada (1:1 por empresa) — base da contabilização integrada (8c).
+  /// Resolvida sempre por ledgerAccountId, nunca por código/systemKey.
+  ledgerAccountId String?
+  ledgerAccount   LedgerAccount? @relation(fields: [companyId, ledgerAccountId], references: [companyId, id], onDelete: Restrict)
+
   movements    TreasuryMovement[]
   journalLines JournalEntryLine[]
 
   @@unique([companyId, name])
   @@unique([companyId, id])
+  @@unique([companyId, ledgerAccountId])
   @@index([companyId])
   @@map("treasury_accounts")
 }
@@ -832,8 +838,9 @@ model LedgerAccount {
   createdAt       DateTime          @default(now())
   updatedAt       DateTime          @updatedAt
 
-  lines    JournalEntryLine[]
-  mappings AccountingMapping[]
+  lines           JournalEntryLine[]
+  mappings        AccountingMapping[]
+  treasuryAccount TreasuryAccount?
   // + raw SQL: CHECK (level >= 1)
 
   @@unique([companyId, code])
