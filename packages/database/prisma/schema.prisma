@@ -16,71 +16,78 @@ datasource db {
 // ─────────────────────────────────────────────────────────────
 
 model Company {
-  id           String   @id @default(cuid())
-  legalName    String
-  tradeName    String?
-  nuit         String?
-  email        String?
-  phone        String?
-  status       CompanyStatus @default(ACTIVE)
+  id             String        @id @default(cuid())
+  legalName      String
+  tradeName      String?
+  nuit           String?
+  email          String?
+  phone          String?
+  status         CompanyStatus @default(ACTIVE)
   // Localização padrão (configurável por empresa)
-  currency     String   @default("MZN")
-  currencySymbol String @default("MT")
-  timezone     String   @default("Africa/Maputo")
-  locale       String   @default("pt-MZ")
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  currency       String        @default("MZN")
+  currencySymbol String        @default("MT")
+  timezone       String        @default("Africa/Maputo")
+  locale         String        @default("pt-MZ")
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
 
-  branches     Branch[]
-  settings     CompanySettings?
-  users        User[]
-  roles        Role[]
-  auditLogs    AuditLog[]
-  customers    Customer[]
-  suppliers    Supplier[]
-  products     Product[]
-  warehouses   Warehouse[]
-  stockLevels  StockLevel[]
-  stockMovements StockMovement[]
-  invoices     Invoice[]
-  invoiceLines InvoiceLine[]
-  payments     Payment[]
-  documentCounters DocumentCounter[]
-  purchaseOrders PurchaseOrder[]
+  branches           Branch[]
+  settings           CompanySettings?
+  users              User[]
+  roles              Role[]
+  auditLogs          AuditLog[]
+  customers          Customer[]
+  suppliers          Supplier[]
+  products           Product[]
+  warehouses         Warehouse[]
+  stockLevels        StockLevel[]
+  stockMovements     StockMovement[]
+  invoices           Invoice[]
+  invoiceLines       InvoiceLine[]
+  payments           Payment[]
+  documentCounters   DocumentCounter[]
+  purchaseOrders     PurchaseOrder[]
   purchaseOrderLines PurchaseOrderLine[]
-  supplierPayments SupplierPayment[]
-  treasuryAccounts TreasuryAccount[]
-  treasuryMovements TreasuryMovement[]
+  supplierPayments   SupplierPayment[]
+  treasuryAccounts   TreasuryAccount[]
+  treasuryMovements  TreasuryMovement[]
+  fiscalYears        FiscalYear[]
+  accountingPeriods  AccountingPeriod[]
+  ledgerAccounts     LedgerAccount[]
+  accountingJournals AccountingJournal[]
+  journalEntries     JournalEntry[]
+  journalEntryLines  JournalEntryLine[]
+  accountingMappings AccountingMapping[]
 
   @@index([status])
   @@map("companies")
 }
 
 model CompanySettings {
-  id            String   @id @default(cuid())
-  companyId     String   @unique
-  company       Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  id             String   @id @default(cuid())
+  companyId      String   @unique
+  company        Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
   // JSON flexível para taxas, séries documentais, rodapés, config de stock/contabilidade/salários
-  fiscal        Json?
+  fiscal         Json?
   documentSeries Json?
-  branding      Json?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  branding       Json?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
   @@map("company_settings")
 }
 
 model Branch {
-  id         String   @id @default(cuid())
-  companyId  String
-  company    Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  code       String
-  name       String
-  address    String?
-  phone      String?
-  status     RecordStatus @default(ACTIVE)
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  id        String       @id @default(cuid())
+  companyId String
+  company   Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  code      String
+  name      String
+  address   String?
+  phone     String?
+  status    RecordStatus @default(ACTIVE)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
 
   userBranches UserBranch[]
   warehouses   Warehouse[]
@@ -95,20 +102,20 @@ model Branch {
 // ─────────────────────────────────────────────────────────────
 
 model User {
-  id              String   @id @default(cuid())
-  companyId       String?  // null = Super Administrador da Plataforma
-  company         Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  email           String
-  passwordHash    String
-  name            String
-  isPlatformAdmin Boolean  @default(false)
-  mustChangePassword Boolean @default(true)
-  status          RecordStatus @default(ACTIVE)
-  lastLoginAt     DateTime?
-  failedLoginCount Int     @default(0)
-  lockedUntil     DateTime?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  id                 String       @id @default(cuid())
+  companyId          String? // null = Super Administrador da Plataforma
+  company            Company?     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  email              String
+  passwordHash       String
+  name               String
+  isPlatformAdmin    Boolean      @default(false)
+  mustChangePassword Boolean      @default(true)
+  status             RecordStatus @default(ACTIVE)
+  lastLoginAt        DateTime?
+  failedLoginCount   Int          @default(0)
+  lockedUntil        DateTime?
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
 
   userRoles    UserRole[]
   userBranches UserBranch[]
@@ -122,7 +129,7 @@ model User {
 
 model Role {
   id          String   @id @default(cuid())
-  companyId   String?  // null = perfil de sistema (template global)
+  companyId   String? // null = perfil de sistema (template global)
   company     Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
   name        String
   description String?
@@ -139,10 +146,10 @@ model Role {
 }
 
 model Permission {
-  id          String   @id @default(cuid())
-  key         String   @unique // ex.: "sales.create", "accounting.post"
+  id          String  @id @default(cuid())
+  key         String  @unique // ex.: "sales.create", "accounting.post"
   description String?
-  module      String   // ex.: "sales", "accounting"
+  module      String // ex.: "sales", "accounting"
 
   rolePermissions RolePermission[]
 
@@ -164,8 +171,8 @@ model RolePermission {
 model UserRole {
   userId String
   roleId String
-  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
-  role   Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role   Role   @relation(fields: [roleId], references: [id], onDelete: Cascade)
 
   @@id([userId, roleId])
   @@index([roleId])
@@ -188,16 +195,16 @@ model UserBranch {
 // ─────────────────────────────────────────────────────────────
 
 model Session {
-  id               String   @id @default(cuid())
+  id               String    @id @default(cuid())
   userId           String
-  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  refreshTokenHash String   // nunca guardar o token em claro
+  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  refreshTokenHash String // nunca guardar o token em claro
   ipAddress        String?
   userAgent        String?
   expiresAt        DateTime
   revokedAt        DateTime?
-  lastActivityAt   DateTime @default(now())
-  createdAt        DateTime @default(now())
+  lastActivityAt   DateTime  @default(now())
+  createdAt        DateTime  @default(now())
 
   @@index([userId])
   @@index([expiresAt])
@@ -205,21 +212,21 @@ model Session {
 }
 
 model AuditLog {
-  id         String   @id @default(cuid())
-  companyId  String?
-  company    Company? @relation(fields: [companyId], references: [id], onDelete: SetNull)
-  branchId   String?
-  userId     String?
-  action     String   // ex.: "invoice.issue"
-  entity     String   // ex.: "Invoice"
-  entityId   String?
-  oldValues  Json?
-  newValues  Json?
-  reason     String?
-  ipAddress  String?
-  userAgent  String?
-  result     String?  // "success" | "failure"
-  createdAt  DateTime @default(now())
+  id        String   @id @default(cuid())
+  companyId String?
+  company   Company? @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  branchId  String?
+  userId    String?
+  action    String // ex.: "invoice.issue"
+  entity    String // ex.: "Invoice"
+  entityId  String?
+  oldValues Json?
+  newValues Json?
+  reason    String?
+  ipAddress String?
+  userAgent String?
+  result    String? // "success" | "failure"
+  createdAt DateTime @default(now())
 
   @@index([companyId])
   @@index([entity, entityId])
@@ -232,34 +239,36 @@ model AuditLog {
 // ─────────────────────────────────────────────────────────────
 
 model Customer {
-  id           String   @id @default(cuid())
-  companyId    String
-  company      Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  name         String
-  type         CustomerType @default(COMPANY)
-  nuit         String?
-  email        String?
-  phone        String?
-  address      String?
-  province     String?
-  district     String?
+  id              String       @id @default(cuid())
+  companyId       String
+  company         Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  name            String
+  type            CustomerType @default(COMPANY)
+  nuit            String?
+  email           String?
+  phone           String?
+  address         String?
+  province        String?
+  district        String?
   /// Limite de crédito concedido (MZN).
-  creditLimit  Decimal  @default(0) @db.Decimal(14, 2)
+  creditLimit     Decimal      @default(0) @db.Decimal(14, 2)
   /// Saldo de conta-corrente: > 0 deve à empresa; < 0 saldo a favor.
-  balance      Decimal  @default(0) @db.Decimal(14, 2)
-  paymentTermDays Int   @default(0)
-  segment      String?
-  status       RecordStatus @default(ACTIVE)
-  notes        String?
-  createdBy    String?
-  updatedBy    String?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  balance         Decimal      @default(0) @db.Decimal(14, 2)
+  paymentTermDays Int          @default(0)
+  segment         String?
+  status          RecordStatus @default(ACTIVE)
+  notes           String?
+  createdBy       String?
+  updatedBy       String?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
 
   invoices     Invoice[]
   payments     Payment[]
+  journalLines JournalEntryLine[]
 
   @@unique([companyId, nuit])
+  @@unique([companyId, id])
   @@index([companyId])
   @@index([companyId, status])
   @@index([name])
@@ -271,34 +280,36 @@ model Customer {
 // ─────────────────────────────────────────────────────────────
 
 model Supplier {
-  id           String   @id @default(cuid())
-  companyId    String
-  company      Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  name         String
-  type         SupplierType @default(COMPANY)
-  nuit         String?
-  email        String?
-  phone        String?
-  address      String?
-  province     String?
-  district     String?
+  id              String       @id @default(cuid())
+  companyId       String
+  company         Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  name            String
+  type            SupplierType @default(COMPANY)
+  nuit            String?
+  email           String?
+  phone           String?
+  address         String?
+  province        String?
+  district        String?
   /// Limite de crédito concedido pelo fornecedor (MZN).
-  creditLimit  Decimal  @default(0) @db.Decimal(14, 2)
+  creditLimit     Decimal      @default(0) @db.Decimal(14, 2)
   /// Saldo de conta-corrente: > 0 a empresa deve ao fornecedor (a pagar); < 0 adiantamento.
-  balance      Decimal  @default(0) @db.Decimal(14, 2)
-  paymentTermDays Int   @default(0)
-  category     String?
-  status       RecordStatus @default(ACTIVE)
-  notes        String?
-  createdBy    String?
-  updatedBy    String?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  balance         Decimal      @default(0) @db.Decimal(14, 2)
+  paymentTermDays Int          @default(0)
+  category        String?
+  status          RecordStatus @default(ACTIVE)
+  notes           String?
+  createdBy       String?
+  updatedBy       String?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
 
   purchaseOrders PurchaseOrder[]
   payments       SupplierPayment[]
+  journalLines   JournalEntryLine[]
 
   @@unique([companyId, nuit])
+  @@unique([companyId, id])
   @@index([companyId])
   @@index([companyId, status])
   @@index([name])
@@ -310,33 +321,33 @@ model Supplier {
 // ─────────────────────────────────────────────────────────────
 
 model Product {
-  id           String   @id @default(cuid())
-  companyId    String
-  company      Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  sku          String
-  name         String
-  category     String?
-  brand        String?
-  unit         String   @default("un")
+  id        String       @id @default(cuid())
+  companyId String
+  company   Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  sku       String
+  name      String
+  category  String?
+  brand     String?
+  unit      String       @default("un")
   /// Preço de venda unitário (MZN, IVA incl.).
-  salePrice    Decimal  @default(0) @db.Decimal(14, 2)
+  salePrice Decimal      @default(0) @db.Decimal(14, 2)
   /// Custo médio ponderado (MZN).
-  avgCost      Decimal  @default(0) @db.Decimal(14, 2)
+  avgCost   Decimal      @default(0) @db.Decimal(14, 2)
   /// Taxa de IVA aplicável (%).
-  taxRate      Decimal  @default(16) @db.Decimal(5, 2)
+  taxRate   Decimal      @default(16) @db.Decimal(5, 2)
   /// Stock mínimo (alerta de reposição).
-  minStock     Int      @default(0)
-  barcode      String?
-  status       RecordStatus @default(ACTIVE)
-  notes        String?
-  createdBy    String?
-  updatedBy    String?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  minStock  Int          @default(0)
+  barcode   String?
+  status    RecordStatus @default(ACTIVE)
+  notes     String?
+  createdBy String?
+  updatedBy String?
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
 
-  stockLevels  StockLevel[]
-  movements    StockMovement[]
-  invoiceLines InvoiceLine[]
+  stockLevels        StockLevel[]
+  movements          StockMovement[]
+  invoiceLines       InvoiceLine[]
   purchaseOrderLines PurchaseOrderLine[]
 
   @@unique([companyId, sku])
@@ -347,20 +358,20 @@ model Product {
 }
 
 model Warehouse {
-  id           String   @id @default(cuid())
-  companyId    String
-  company      Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  branchId     String?
-  branch       Branch?  @relation(fields: [branchId], references: [id], onDelete: SetNull)
-  code         String
-  name         String
-  status       RecordStatus @default(ACTIVE)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id        String       @id @default(cuid())
+  companyId String
+  company   Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  branchId  String?
+  branch    Branch?      @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  code      String
+  name      String
+  status    RecordStatus @default(ACTIVE)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
 
-  stockLevels  StockLevel[]
-  movements    StockMovement[]
-  invoices     Invoice[]
+  stockLevels    StockLevel[]
+  movements      StockMovement[]
+  invoices       Invoice[]
   purchaseOrders PurchaseOrder[]
 
   @@unique([companyId, code])
@@ -369,15 +380,15 @@ model Warehouse {
 }
 
 model StockLevel {
-  id           String   @id @default(cuid())
-  companyId    String
-  company      Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  productId    String
-  product      Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
-  warehouseId  String
-  warehouse    Warehouse @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
-  quantity     Int      @default(0)
-  updatedAt    DateTime @updatedAt
+  id          String    @id @default(cuid())
+  companyId   String
+  company     Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  productId   String
+  product     Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  warehouseId String
+  warehouse   Warehouse @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+  quantity    Int       @default(0)
+  updatedAt   DateTime  @updatedAt
 
   @@unique([productId, warehouseId])
   @@index([companyId])
@@ -386,13 +397,13 @@ model StockLevel {
 }
 
 model StockMovement {
-  id           String   @id @default(cuid())
+  id           String            @id @default(cuid())
   companyId    String
-  company      Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  company      Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
   productId    String
-  product      Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  product      Product           @relation(fields: [productId], references: [id], onDelete: Cascade)
   warehouseId  String
-  warehouse    Warehouse @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+  warehouse    Warehouse         @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
   type         StockMovementType
   /// Delta com sinal: > 0 entrada · < 0 saída/ajuste negativo.
   quantity     Int
@@ -401,7 +412,7 @@ model StockMovement {
   document     String?
   reason       String?
   createdBy    String?
-  createdAt    DateTime @default(now())
+  createdAt    DateTime          @default(now())
 
   @@index([companyId, productId, createdAt])
   @@index([companyId, warehouseId])
@@ -413,36 +424,36 @@ model StockMovement {
 // ─────────────────────────────────────────────────────────────
 
 model Invoice {
-  id            String   @id @default(cuid())
+  id            String         @id @default(cuid())
   companyId     String
-  company       Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  company       Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
   branchId      String?
   /// Número do documento (ex.: "FT 2026/0001"), único por empresa.
   number        String
   customerId    String
-  customer      Customer @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  customer      Customer       @relation(fields: [customerId], references: [id], onDelete: Restrict)
   /// Snapshot dos dados do cliente no momento da emissão.
   customerName  String
   customerNuit  String?
   warehouseId   String
-  warehouse     Warehouse @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
-  issueDate     DateTime @default(now())
+  warehouse     Warehouse      @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
+  issueDate     DateTime       @default(now())
   dueDate       DateTime
-  status        InvoiceStatus @default(ISSUED)
-  subtotal      Decimal  @db.Decimal(14, 2)
-  discountTotal Decimal  @db.Decimal(14, 2)
-  taxableBase   Decimal  @db.Decimal(14, 2)
-  taxTotal      Decimal  @db.Decimal(14, 2)
-  total         Decimal  @db.Decimal(14, 2)
-  amountPaid    Decimal  @default(0) @db.Decimal(14, 2)
+  status        InvoiceStatus  @default(ISSUED)
+  subtotal      Decimal        @db.Decimal(14, 2)
+  discountTotal Decimal        @db.Decimal(14, 2)
+  taxableBase   Decimal        @db.Decimal(14, 2)
+  taxTotal      Decimal        @db.Decimal(14, 2)
+  total         Decimal        @db.Decimal(14, 2)
+  amountPaid    Decimal        @default(0) @db.Decimal(14, 2)
   paymentMethod PaymentMethod?
   notes         String?
   createdBy     String?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
 
-  lines         InvoiceLine[]
-  payments      Payment[]
+  lines    InvoiceLine[]
+  payments Payment[]
 
   @@unique([companyId, number])
   @@index([companyId, status])
@@ -452,21 +463,21 @@ model Invoice {
 }
 
 model InvoiceLine {
-  id             String   @id @default(cuid())
-  companyId      String
-  company        Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  invoiceId      String
-  invoice        Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
-  productId      String?
-  product        Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
-  sku            String?
-  description    String
-  unitPrice      Decimal  @db.Decimal(14, 2)
-  quantity       Int
-  discountPercent Decimal @default(0) @db.Decimal(5, 2)
-  taxRate        Decimal  @default(16) @db.Decimal(5, 2)
+  id              String   @id @default(cuid())
+  companyId       String
+  company         Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  invoiceId       String
+  invoice         Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  productId       String?
+  product         Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+  sku             String?
+  description     String
+  unitPrice       Decimal  @db.Decimal(14, 2)
+  quantity        Int
+  discountPercent Decimal  @default(0) @db.Decimal(5, 2)
+  taxRate         Decimal  @default(16) @db.Decimal(5, 2)
   /// Total da linha (líquido + imposto).
-  total          Decimal  @db.Decimal(14, 2)
+  total           Decimal  @db.Decimal(14, 2)
 
   @@index([companyId])
   @@index([invoiceId])
@@ -474,21 +485,21 @@ model InvoiceLine {
 }
 
 model Payment {
-  id          String   @id @default(cuid())
-  companyId   String
-  company     Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  id         String        @id @default(cuid())
+  companyId  String
+  company    Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
   /// Número do recibo (ex.: "REC 2026/0001"), único por empresa.
-  number      String
-  invoiceId   String?
-  invoice     Invoice? @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
-  customerId  String
-  customer    Customer @relation(fields: [customerId], references: [id], onDelete: Restrict)
-  amount      Decimal  @db.Decimal(14, 2)
-  method      PaymentMethod @default(CASH)
-  paidAt      DateTime @default(now())
-  notes       String?
-  createdBy   String?
-  createdAt   DateTime @default(now())
+  number     String
+  invoiceId  String?
+  invoice    Invoice?      @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
+  customerId String
+  customer   Customer      @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  amount     Decimal       @db.Decimal(14, 2)
+  method     PaymentMethod @default(CASH)
+  paidAt     DateTime      @default(now())
+  notes      String?
+  createdBy  String?
+  createdAt  DateTime      @default(now())
 
   @@unique([companyId, number])
   @@index([companyId, customerId])
@@ -497,12 +508,12 @@ model Payment {
 }
 
 model DocumentCounter {
-  id         String   @id @default(cuid())
-  companyId  String
-  company    Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
   /// Chave da série (ex.: "FT-2026", "REC-2026", "OC-2026", "PG-2026").
-  key        String
-  value      Int      @default(0)
+  key       String
+  value     Int     @default(0)
 
   @@unique([companyId, key])
   @@map("document_counters")
@@ -513,35 +524,35 @@ model DocumentCounter {
 // ─────────────────────────────────────────────────────────────
 
 model PurchaseOrder {
-  id            String   @id @default(cuid())
+  id            String         @id @default(cuid())
   companyId     String
-  company       Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  company       Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
   branchId      String?
   /// Número (ex.: "OC 2026/0001"), único por empresa.
   number        String
   supplierId    String
-  supplier      Supplier @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  supplier      Supplier       @relation(fields: [supplierId], references: [id], onDelete: Restrict)
   supplierName  String
   supplierNuit  String?
   /// Armazém de destino da recepção.
   warehouseId   String
-  warehouse     Warehouse @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
-  orderDate     DateTime @default(now())
+  warehouse     Warehouse      @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
+  orderDate     DateTime       @default(now())
   expectedDate  DateTime?
   status        PurchaseStatus @default(SENT)
-  subtotal      Decimal  @db.Decimal(14, 2)
-  taxTotal      Decimal  @db.Decimal(14, 2)
-  total         Decimal  @db.Decimal(14, 2)
+  subtotal      Decimal        @db.Decimal(14, 2)
+  taxTotal      Decimal        @db.Decimal(14, 2)
+  total         Decimal        @db.Decimal(14, 2)
   /// Valor já recebido (com imposto) — base da conta a pagar gerada.
-  receivedValue Decimal  @default(0) @db.Decimal(14, 2)
-  amountPaid    Decimal  @default(0) @db.Decimal(14, 2)
+  receivedValue Decimal        @default(0) @db.Decimal(14, 2)
+  amountPaid    Decimal        @default(0) @db.Decimal(14, 2)
   notes         String?
   createdBy     String?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
 
-  lines         PurchaseOrderLine[]
-  payments      SupplierPayment[]
+  lines    PurchaseOrderLine[]
+  payments SupplierPayment[]
 
   @@unique([companyId, number])
   @@index([companyId, status])
@@ -551,20 +562,20 @@ model PurchaseOrder {
 }
 
 model PurchaseOrderLine {
-  id            String   @id @default(cuid())
-  companyId     String
-  company       Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  orderId       String
-  order         PurchaseOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  productId     String?
-  product       Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
-  sku           String?
-  description   String
-  unitCost      Decimal  @db.Decimal(14, 2)
-  quantity      Int
-  receivedQty   Int      @default(0)
-  taxRate       Decimal  @default(16) @db.Decimal(5, 2)
-  total         Decimal  @db.Decimal(14, 2)
+  id          String        @id @default(cuid())
+  companyId   String
+  company     Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  orderId     String
+  order       PurchaseOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId   String?
+  product     Product?      @relation(fields: [productId], references: [id], onDelete: SetNull)
+  sku         String?
+  description String
+  unitCost    Decimal       @db.Decimal(14, 2)
+  quantity    Int
+  receivedQty Int           @default(0)
+  taxRate     Decimal       @default(16) @db.Decimal(5, 2)
+  total       Decimal       @db.Decimal(14, 2)
 
   @@index([companyId])
   @@index([orderId])
@@ -572,21 +583,21 @@ model PurchaseOrderLine {
 }
 
 model SupplierPayment {
-  id              String   @id @default(cuid())
+  id              String         @id @default(cuid())
   companyId       String
-  company         Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  company         Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
   /// Número (ex.: "PG 2026/0001"), único por empresa.
   number          String
   purchaseOrderId String?
   purchaseOrder   PurchaseOrder? @relation(fields: [purchaseOrderId], references: [id], onDelete: SetNull)
   supplierId      String
-  supplier        Supplier @relation(fields: [supplierId], references: [id], onDelete: Restrict)
-  amount          Decimal  @db.Decimal(14, 2)
-  method          PaymentMethod @default(TRANSFER)
-  paidAt          DateTime @default(now())
+  supplier        Supplier       @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  amount          Decimal        @db.Decimal(14, 2)
+  method          PaymentMethod  @default(TRANSFER)
+  paidAt          DateTime       @default(now())
   notes           String?
   createdBy       String?
-  createdAt       DateTime @default(now())
+  createdAt       DateTime       @default(now())
 
   @@unique([companyId, number])
   @@index([companyId, supplierId])
@@ -599,64 +610,66 @@ model SupplierPayment {
 // ─────────────────────────────────────────────────────────────
 
 model TreasuryAccount {
-  id            String   @id @default(cuid())
-  companyId     String
-  company       Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  name          String
-  type          TreasuryAccountType @default(BANK)
+  id             String              @id @default(cuid())
+  companyId      String
+  company        Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  name           String
+  type           TreasuryAccountType @default(BANK)
   /// Nº de conta / IBAN / nº de telemóvel (carteira), conforme o tipo.
-  reference     String?
-  currency      String   @default("MZN")
-  openingBalance Decimal @default(0) @db.Decimal(14, 2)
-  balance       Decimal  @default(0) @db.Decimal(14, 2)
+  reference      String?
+  currency       String              @default("MZN")
+  openingBalance Decimal             @default(0) @db.Decimal(14, 2)
+  balance        Decimal             @default(0) @db.Decimal(14, 2)
   /// Se a conta permite saldo negativo (descoberto). Caixa/carteiras: false por omissão.
-  allowNegative Boolean  @default(false)
-  status        RecordStatus @default(ACTIVE)
-  createdBy     String?
-  updatedBy     String?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  allowNegative  Boolean             @default(false)
+  status         RecordStatus        @default(ACTIVE)
+  createdBy      String?
+  updatedBy      String?
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
 
-  movements     TreasuryMovement[]
+  movements    TreasuryMovement[]
+  journalLines JournalEntryLine[]
 
   @@unique([companyId, name])
+  @@unique([companyId, id])
   @@index([companyId])
   @@map("treasury_accounts")
 }
 
 model TreasuryMovement {
-  id            String   @id @default(cuid())
-  companyId     String
-  company       Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  accountId     String
-  account       TreasuryAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  flow          TreasuryFlow
-  amount        Decimal  @db.Decimal(14, 2)
+  id                   String                 @id @default(cuid())
+  companyId            String
+  company              Company                @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  accountId            String
+  account              TreasuryAccount        @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  flow                 TreasuryFlow
+  amount               Decimal                @db.Decimal(14, 2)
   /// Saldo da conta após o movimento.
-  balanceAfter  Decimal  @db.Decimal(14, 2)
+  balanceAfter         Decimal                @db.Decimal(14, 2)
   /// Categoria: Recibo, Pagamento, Depósito, Levantamento, Transferência, Despesa, Receita.
-  category      String
-  description   String?
-  document      String?
+  category             String
+  description          String?
+  document             String?
   /// Conta de contrapartida (em transferências).
   counterpartAccountId String?
   /// Liga os dois movimentos de uma mesma transferência.
-  transferId    String?
+  transferId           String?
   /// Origem do movimento: MANUAL, RECEIPT, SUPPLIER_PAYMENT, TRANSFER, REVERSAL.
-  source        String   @default("MANUAL")
+  source               String                 @default("MANUAL")
   /// Idempotência: tipo/id do documento de origem e finalidade do movimento.
-  sourceType    String?
-  sourceId      String?
-  movementPurpose String?
+  sourceType           String?
+  sourceId             String?
+  movementPurpose      String?
   /// Estado: ACTIVE (em vigor) ou REVERSED (estornado por outro movimento).
-  status        TreasuryMovementStatus @default(ACTIVE)
+  status               TreasuryMovementStatus @default(ACTIVE)
   /// Estorno: este movimento reverte o original (reversesId) / foi revertido por (reversedById).
-  reversesId    String?  @unique
-  reverses      TreasuryMovement? @relation("TreasuryReversal", fields: [reversesId], references: [id])
-  reversedBy    TreasuryMovement? @relation("TreasuryReversal")
-  createdBy     String?
-  occurredAt    DateTime @default(now())
-  createdAt     DateTime @default(now())
+  reversesId           String?                @unique
+  reverses             TreasuryMovement?      @relation("TreasuryReversal", fields: [reversesId], references: [id])
+  reversedBy           TreasuryMovement?      @relation("TreasuryReversal")
+  createdBy            String?
+  occurredAt           DateTime               @default(now())
+  createdAt            DateTime               @default(now())
 
   @@unique([companyId, sourceType, sourceId, movementPurpose])
   @@index([companyId, accountId, occurredAt])
@@ -734,4 +747,261 @@ enum CompanyStatus {
 enum RecordStatus {
   ACTIVE
   INACTIVE
+}
+
+// ─────────────────────────────────────────────────────────────
+// Contabilidade (Fase 8a)
+//
+// Isolamento multiempresa reforçado por FKs COMPOSTAS [companyId, id]:
+// nenhuma relação contabilística consegue referenciar dados de outra
+// empresa, mesmo por SQL directo ou falha do scoping aplicacional.
+// Relações com Company em `Restrict`: o histórico financeiro nunca
+// desaparece por cascata (a empresa é soft-deleted via `status`).
+// ─────────────────────────────────────────────────────────────
+
+model FiscalYear {
+  id          String           @id @default(cuid())
+  companyId   String
+  company     Company          @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  name        String
+  startDate   DateTime         @db.Date
+  endDate     DateTime         @db.Date
+  status      FiscalYearStatus @default(OPEN)
+  isCurrent   Boolean          @default(false)
+  createdById String?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  periods        AccountingPeriod[]
+  journalEntries JournalEntry[]
+  // + raw SQL: CHECK start<=end · EXCLUDE sem sobreposição · índice parcial "um corrente"
+
+  @@unique([companyId, name])
+  @@unique([companyId, id])
+  @@index([companyId])
+  @@index([companyId, status])
+  @@map("fiscal_years")
+}
+
+model AccountingPeriod {
+  id           String                 @id @default(cuid())
+  companyId    String
+  company      Company                @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  fiscalYearId String
+  fiscalYear   FiscalYear             @relation(fields: [companyId, fiscalYearId], references: [companyId, id], onDelete: Restrict)
+  periodNumber Int
+  code         String
+  name         String
+  startDate    DateTime               @db.Date
+  endDate      DateTime               @db.Date
+  status       AccountingPeriodStatus @default(OPEN)
+  isAdjustment Boolean                @default(false)
+  createdAt    DateTime               @default(now())
+  updatedAt    DateTime               @updatedAt
+
+  journalEntries JournalEntry[]
+  // + raw SQL: CHECK start<=end · EXCLUDE sem sobreposição (excl. ajustamento)
+  // contenção período⊆exercício validada no domínio 8b (CHECK não cruza tabelas)
+
+  @@unique([companyId, code])
+  @@unique([companyId, fiscalYearId, periodNumber])
+  @@unique([companyId, id])
+  @@index([companyId, fiscalYearId])
+  @@index([companyId, status])
+  @@map("accounting_periods")
+}
+
+model LedgerAccount {
+  id              String            @id @default(cuid())
+  companyId       String
+  company         Company           @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  code            String
+  name            String
+  accountType     LedgerAccountType
+  normalBalance   NormalBalance
+  parentId        String?
+  parent          LedgerAccount?    @relation("LedgerHierarchy", fields: [companyId, parentId], references: [companyId, id], onDelete: Restrict)
+  children        LedgerAccount[]   @relation("LedgerHierarchy")
+  level           Int               @default(1)
+  isPosting       Boolean           @default(true)
+  isActive        Boolean           @default(true)
+  /// Só provisionamento/reparação idempotente do plano-base. NUNCA usado por
+  /// lançamentos ou integrações — a fonte funcional é AccountingMapping.systemKey.
+  provisioningKey String?
+  description     String?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  lines    JournalEntryLine[]
+  mappings AccountingMapping[]
+  // + raw SQL: CHECK (level >= 1)
+
+  @@unique([companyId, code])
+  @@unique([companyId, provisioningKey])
+  @@unique([companyId, id])
+  @@index([companyId])
+  @@index([companyId, accountType])
+  @@index([companyId, parentId])
+  @@index([companyId, isActive])
+  @@map("ledger_accounts")
+}
+
+model AccountingJournal {
+  id             String                @id @default(cuid())
+  companyId      String
+  company        Company               @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  code           String
+  name           String
+  journalType    AccountingJournalType
+  sequencePrefix String?
+  description    String?
+  isActive       Boolean               @default(true)
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+
+  journalEntries JournalEntry[]
+
+  @@unique([companyId, code])
+  @@unique([companyId, id])
+  @@index([companyId])
+  @@index([companyId, journalType])
+  @@map("accounting_journals")
+}
+
+model JournalEntry {
+  id                 String             @id @default(cuid())
+  companyId          String
+  company            Company            @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  fiscalYearId       String
+  fiscalYear         FiscalYear         @relation(fields: [companyId, fiscalYearId], references: [companyId, id], onDelete: Restrict)
+  accountingPeriodId String
+  accountingPeriod   AccountingPeriod   @relation(fields: [companyId, accountingPeriodId], references: [companyId, id], onDelete: Restrict)
+  journalId          String
+  journal            AccountingJournal  @relation(fields: [companyId, journalId], references: [companyId, id], onDelete: Restrict)
+  entryNumber        String
+  entryDate          DateTime           @db.Date
+  postingDate        DateTime?          @db.Date
+  description        String
+  reference          String?
+  status             JournalEntryStatus @default(DRAFT)
+  /// Origem + finalidade (idempotência fina): NULL nos três = lançamento manual.
+  sourceType         String?
+  sourceId           String?
+  accountingEvent    String?
+  /// Estorno: self-relation COMPOSTA, anti cross-company; estornado no máx. uma vez.
+  reversalOfId       String?
+  reversalOf         JournalEntry?      @relation("JournalReversal", fields: [companyId, reversalOfId], references: [companyId, id], onDelete: Restrict)
+  reversedBy         JournalEntry?      @relation("JournalReversal")
+  /// Materializados a partir das linhas (fonte de verdade) na transacção do 8b.
+  totalDebit         Decimal            @default(0) @db.Decimal(14, 2)
+  totalCredit        Decimal            @default(0) @db.Decimal(14, 2)
+  postedAt           DateTime?
+  postedById         String?
+  createdById        String?
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  lines JournalEntryLine[]
+  // + raw SQL: CHECK totais>=0 · CHECK origem all-null-or-all-set
+
+  @@unique([companyId, fiscalYearId, journalId, entryNumber])
+  @@unique([companyId, id])
+  @@unique([companyId, reversalOfId])
+  @@unique([companyId, sourceType, sourceId, accountingEvent])
+  @@index([companyId, status])
+  @@index([companyId, entryDate])
+  @@index([companyId, postingDate])
+  @@index([companyId, journalId])
+  @@index([companyId, accountingPeriodId])
+  @@index([companyId, fiscalYearId])
+  @@index([companyId, sourceType, sourceId])
+  @@map("journal_entries")
+}
+
+model JournalEntryLine {
+  id                String           @id @default(cuid())
+  companyId         String
+  company           Company          @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  journalEntryId    String
+  journalEntry      JournalEntry     @relation(fields: [companyId, journalEntryId], references: [companyId, id], onDelete: Restrict)
+  ledgerAccountId   String
+  ledgerAccount     LedgerAccount    @relation(fields: [companyId, ledgerAccountId], references: [companyId, id], onDelete: Restrict)
+  description       String?
+  debit             Decimal          @default(0) @db.Decimal(14, 2)
+  credit            Decimal          @default(0) @db.Decimal(14, 2)
+  lineNumber        Int
+  /// Dimensões analíticas opcionais — FKs COMPOSTAS anti cross-company.
+  customerId        String?
+  customer          Customer?        @relation(fields: [companyId, customerId], references: [companyId, id], onDelete: Restrict)
+  supplierId        String?
+  supplier          Supplier?        @relation(fields: [companyId, supplierId], references: [companyId, id], onDelete: Restrict)
+  treasuryAccountId String?
+  treasuryAccount   TreasuryAccount? @relation(fields: [companyId, treasuryAccountId], references: [companyId, id], onDelete: Restrict)
+  createdAt         DateTime         @default(now())
+  // + raw SQL: CHECK débito XOR crédito (>0) · CHECK nonneg · CHECK lineNumber>0
+
+  @@unique([companyId, journalEntryId, lineNumber])
+  @@index([companyId])
+  @@index([companyId, journalEntryId])
+  @@index([companyId, ledgerAccountId, createdAt])
+  @@map("journal_entry_lines")
+}
+
+model AccountingMapping {
+  id              String        @id @default(cuid())
+  companyId       String
+  company         Company       @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  /// Única configuração funcional consultada pelo domínio/integrações.
+  systemKey       String
+  ledgerAccountId String
+  ledgerAccount   LedgerAccount @relation(fields: [companyId, ledgerAccountId], references: [companyId, id], onDelete: Restrict)
+  description     String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@unique([companyId, systemKey])
+  @@index([companyId])
+  @@map("accounting_mappings")
+}
+
+enum FiscalYearStatus {
+  OPEN
+  CLOSED
+  LOCKED
+}
+
+enum AccountingPeriodStatus {
+  OPEN
+  CLOSED
+  LOCKED
+}
+
+enum LedgerAccountType {
+  ASSET
+  LIABILITY
+  EQUITY
+  REVENUE
+  EXPENSE
+}
+
+enum NormalBalance {
+  DEBIT
+  CREDIT
+}
+
+enum AccountingJournalType {
+  GENERAL
+  SALES
+  PURCHASES
+  CASH
+  BANK
+  PAYROLL
+  ADJUSTMENT
+  OPENING
+}
+
+enum JournalEntryStatus {
+  DRAFT
+  POSTED
+  REVERSED
 }

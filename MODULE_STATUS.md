@@ -19,10 +19,20 @@ em [`CLAUDE.md`](CLAUDE.md).
 | 6 | Compras (PurchaseOrder + recepção + SupplierPayment, extracto do fornecedor) | ✅ |
 | 7 | Tesouraria & Bancos (contas, movimentos, transferências, integração recibos/pagamentos, relatório diário) | ✅ |
 | 7.1 | Hardening da Tesouraria (imutabilidade, idempotência, estorno, saldo atómico, permissões split, fix de navegação) | ✅ |
-| **8** | **Contabilidade** (plano de contas, períodos, lançamentos, integração, relatórios) | 🔨 **a iniciar (8a)** |
+| **8a** | **Contabilidade — schema & seed** (7 modelos, migração, FKs compostas, constraints, permissões, seed do plano-base) | ✅ |
+| 8b–8e | Contabilidade — domínio, integrações automáticas, ecrãs, testes | 🔨 **8b a seguir** |
 | 9 | RH & Salários | 🗺️ futuro |
+| X | RLS forçado em toda a BD (fase transversal, pré-produção) | 🗺️ futuro |
 
-**Validações actuais:** typecheck 6/6 · lint 6/6 · **testes 34** · build OK.
+**Validações actuais:** typecheck 6/6 · lint 6/6 · **testes 35** · `prisma validate` OK · migração
+`accounting` aplicada · seed idempotente (2×) · smoke e2e de isolamento/constraints OK.
+
+> ⚠️ **Build com falha PRÉ-EXISTENTE (não causada pela Fase 8a):** o `next build` falha no
+> prerender de 7 páginas **mock ainda não ligadas** (`/`, `/contabilidade`, `/contratos`, `/pos`,
+> `/producao`, `/relatorios`, `/rh`) que não declaram `export const dynamic` sob o layout `(erp)`
+> autenticado (`requireSession()` usa cookies → dinâmico). Provado independente da 8a via `git stash`
+> das alterações. Correcção pendente: acrescentar `export const dynamic = 'force-dynamic'` a essas
+> páginas (convenção já usada por todas as páginas ligadas).
 
 > ⚠️ **Lembrete:** após cada `db:seed` que adicione **novas permissões**, as sessões antigas (JWT)
 > não as têm — é preciso **terminar e reiniciar sessão** para o gate passar a reconhecê-las.
@@ -272,10 +282,16 @@ em [`CLAUDE.md`](CLAUDE.md).
 
 **Sub-passos (incremental, validar cada etapa antes de avançar):**
 
-- **8a — Schema & seed** _(próximo)_: modelos `FiscalYear`, `AccountingPeriod`, `LedgerAccount`,
-  `AccountingJournal`, `JournalEntry`, `JournalEntryLine`, `AccountingMapping` + enums + migração +
-  `COMPANY_SCOPED`/RLS + permissões `accounting.*` + seed mínimo idempotente (plano-base moçambicano,
-  `systemKeys`, exercício/períodos 2026, diários, mappings). **Sem domínio/integrações ainda.**
+- **8a — Schema & seed** _(✅ concluída)_: modelos `FiscalYear`, `AccountingPeriod`, `LedgerAccount`,
+  `AccountingJournal`, `JournalEntry`, `JournalEntryLine`, `AccountingMapping` + 6 enums + migração
+  `accounting` + 7 modelos em `COMPANY_SCOPED` + permissões `accounting.*` (view/post/reverse/
+  manageAccounts/managePeriods/manageSettings) + seed idempotente (37 contas, 8 diários, 15 mappings,
+  exercício de calendário + 12 períodos). **FKs compostas `[companyId, id]` anti cross-company**,
+  exclusion constraints (sobreposição de exercícios/períodos via `btree_gist`), índice parcial
+  (um exercício corrente), CHECKs de débito/crédito/origem. **Sem lançamentos nem integrações.**
+  Decisões: isolamento por `COMPANY_SCOPED` (RLS real → fase transversal X); `provisioningKey` só
+  para provisionamento (fonte funcional = `AccountingMapping.systemKey`); `onDelete: Restrict` em
+  toda a contabilidade (histórico financeiro preservado). ⚠️ Build vermelho **pré-existente** (ver topo).
 - **8b — Domínio**: plano de contas, períodos, lançamentos com validação de partidas dobradas
   (débitos = créditos, ≥2 linhas, contas de movimento, período aberto), estorno.
 - **8c — Integração automática**: recibo/pagamento/factura/transferência → `JournalEntry` na mesma
@@ -298,6 +314,11 @@ em [`CLAUDE.md`](CLAUDE.md).
 
 ## 🗺️ Fases futuras (esboço)
 
+- **Fase X (transversal) — RLS forçado em toda a BD** _(pré-requisito de produção)_ — roles
+  separadas de runtime (`gc_app`) e migração (`gc_migrator`), `SET LOCAL app.current_company_id`
+  por transacção, `ENABLE`/`FORCE ROW LEVEL SECURITY` + policies por empresa em **todas** as
+  tabelas (não só Contabilidade), e testes de isolamento através da role real de runtime. O schema
+  actual já está RLS-ready (`companyId` + FKs compostas em todas as tabelas).
 - **Fase 9 — RH & Salários** — colaboradores, contratos, processamento salarial (liga à
   contabilidade via `systemKeys` `SALARIES_EXPENSE`/`SALARIES_PAYABLE` e à tesouraria).
 - **Extensões da Facturação** — POS, cotações, NC/ND.

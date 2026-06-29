@@ -42,8 +42,12 @@ const PERMISSIONS: Array<{ key: string; module: string; description: string }> =
   { key: 'suppliers.delete', module: 'suppliers', description: 'Eliminar fornecedores' },
   { key: 'purchases.create', module: 'purchases', description: 'Criar compras' },
   { key: 'purchases.approve', module: 'purchases', description: 'Aprovar compras' },
+  { key: 'accounting.view', module: 'accounting', description: 'Ver contabilidade (plano, lançamentos, relatórios)' },
   { key: 'accounting.post', module: 'accounting', description: 'Publicar lançamentos' },
   { key: 'accounting.reverse', module: 'accounting', description: 'Estornar lançamentos' },
+  { key: 'accounting.manageAccounts', module: 'accounting', description: 'Gerir plano de contas' },
+  { key: 'accounting.managePeriods', module: 'accounting', description: 'Gerir exercícios e períodos' },
+  { key: 'accounting.manageSettings', module: 'accounting', description: 'Gerir configuração contabilística (mappings)' },
   { key: 'payroll.process', module: 'payroll', description: 'Processar salários' },
   { key: 'payroll.approve', module: 'payroll', description: 'Aprovar salários' },
   { key: 'reports.export', module: 'reports', description: 'Exportar relatórios' },
@@ -157,9 +161,9 @@ async function main() {
     {
       name: 'Gestor',
       description: 'Gestão operacional e aprovações',
-      keys: ['clients.view', 'clients.create', 'suppliers.view', 'suppliers.create', 'sales.view', 'sales.create', 'sales.approve_discount', 'purchases.create', 'purchases.approve', 'products.view', 'products.create', 'products.update', 'stock.view', 'stock.adjust', 'treasury.view', 'treasury.createMovement', 'treasury.transfer', 'treasury.manageAccounts', 'treasury.viewReports', 'treasury.reverseMovement', 'reports.export', 'audit.view'],
+      keys: ['clients.view', 'clients.create', 'suppliers.view', 'suppliers.create', 'sales.view', 'sales.create', 'sales.approve_discount', 'purchases.create', 'purchases.approve', 'products.view', 'products.create', 'products.update', 'stock.view', 'stock.adjust', 'treasury.view', 'treasury.createMovement', 'treasury.transfer', 'treasury.manageAccounts', 'treasury.viewReports', 'treasury.reverseMovement', 'accounting.view', 'reports.export', 'audit.view'],
     },
-    { name: 'Contabilista', description: 'Contabilidade e relatórios', keys: ['accounting.post', 'accounting.reverse', 'payments.receive', 'suppliers.view', 'treasury.view', 'treasury.viewReports', 'reports.export', 'audit.view'] },
+    { name: 'Contabilista', description: 'Contabilidade e relatórios', keys: ['accounting.view', 'accounting.post', 'accounting.reverse', 'accounting.manageAccounts', 'accounting.managePeriods', 'accounting.manageSettings', 'payments.receive', 'suppliers.view', 'treasury.view', 'treasury.viewReports', 'reports.export', 'audit.view'] },
     { name: 'Caixa', description: 'Vendas e recebimentos', keys: ['sales.view', 'sales.create', 'invoices.issue', 'payments.receive', 'treasury.view', 'treasury.createMovement', 'treasury.viewReports'] },
     { name: 'Vendedor', description: 'Vendas e clientes', keys: ['sales.view', 'sales.create', 'clients.view', 'clients.create'] },
   ];
@@ -417,7 +421,188 @@ async function main() {
     });
   }
 
-  console.log('Seed concluído: empresa demo, filiais, permissões, perfis, utilizadores, clientes, fornecedores, produtos, stock e tesouraria.');
+  // 14) Contabilidade (Fase 8a) — plano-base, diários, exercício, períodos, mappings.
+  //
+  // Idempotente e NÃO destrutivo:
+  // - contas/diários/exercício/períodos: criados apenas se ausentes (nunca repõem
+  //   nome/código/natureza/hierarquia de algo personalizado pelo utilizador);
+  // - mappings: criados apenas se ausentes (não repõem repontagens manuais);
+  // - exercício corrente (Opção 1): se já existir um isCurrent=true, o novo fica
+  //   isCurrent=false; o seed nunca desmarca um exercício corrente existente.
+  //
+  // Decisão (Fase 8a): exercício de CALENDÁRIO (1 Jan–31 Dez). Não se inventa
+  // estrutura dentro de CompanySettings.fiscal; exercícios não-calendário ficam
+  // para configuração explícita futura. Sem período 13 nesta fase. Sem lançamentos.
+
+  // Plano de contas inicial (mínimo, hierárquico). provisioningKey = só provisionamento.
+  type Acct = {
+    code: string;
+    name: string;
+    type: 'ASSET' | 'LIABILITY' | 'EQUITY' | 'REVENUE' | 'EXPENSE';
+    normal: 'DEBIT' | 'CREDIT';
+    parent: string | null;
+    level: number;
+    posting: boolean;
+    provisioningKey?: string;
+  };
+  const chart: Acct[] = [
+    // Nível 1 — classes (agrupadoras)
+    { code: '1', name: 'Activo', type: 'ASSET', normal: 'DEBIT', parent: null, level: 1, posting: false },
+    { code: '2', name: 'Passivo', type: 'LIABILITY', normal: 'CREDIT', parent: null, level: 1, posting: false },
+    { code: '3', name: 'Capital próprio', type: 'EQUITY', normal: 'CREDIT', parent: null, level: 1, posting: false },
+    { code: '4', name: 'Proveitos', type: 'REVENUE', normal: 'CREDIT', parent: null, level: 1, posting: false },
+    { code: '5', name: 'Custos e perdas', type: 'EXPENSE', normal: 'DEBIT', parent: null, level: 1, posting: false },
+    // Nível 2 — grupos (agrupadoras)
+    { code: '11', name: 'Meios monetários', type: 'ASSET', normal: 'DEBIT', parent: '1', level: 2, posting: false },
+    { code: '12', name: 'Clientes', type: 'ASSET', normal: 'DEBIT', parent: '1', level: 2, posting: false },
+    { code: '13', name: 'Inventário', type: 'ASSET', normal: 'DEBIT', parent: '1', level: 2, posting: false },
+    { code: '14', name: 'Estado (activo)', type: 'ASSET', normal: 'DEBIT', parent: '1', level: 2, posting: false },
+    { code: '21', name: 'Fornecedores', type: 'LIABILITY', normal: 'CREDIT', parent: '2', level: 2, posting: false },
+    { code: '22', name: 'Estado (passivo)', type: 'LIABILITY', normal: 'CREDIT', parent: '2', level: 2, posting: false },
+    { code: '23', name: 'Pessoal', type: 'LIABILITY', normal: 'CREDIT', parent: '2', level: 2, posting: false },
+    { code: '31', name: 'Capital', type: 'EQUITY', normal: 'CREDIT', parent: '3', level: 2, posting: false },
+    { code: '32', name: 'Resultados', type: 'EQUITY', normal: 'CREDIT', parent: '3', level: 2, posting: false },
+    { code: '41', name: 'Vendas', type: 'REVENUE', normal: 'CREDIT', parent: '4', level: 2, posting: false },
+    { code: '51', name: 'Custo das vendas', type: 'EXPENSE', normal: 'DEBIT', parent: '5', level: 2, posting: false },
+    { code: '52', name: 'Compras', type: 'EXPENSE', normal: 'DEBIT', parent: '5', level: 2, posting: false },
+    { code: '53', name: 'Fornecimentos e serviços', type: 'EXPENSE', normal: 'DEBIT', parent: '5', level: 2, posting: false },
+    { code: '54', name: 'Custos com pessoal', type: 'EXPENSE', normal: 'DEBIT', parent: '5', level: 2, posting: false },
+    // Nível 3 — contas de movimento (posting)
+    { code: '111', name: 'Caixa', type: 'ASSET', normal: 'DEBIT', parent: '11', level: 3, posting: true, provisioningKey: 'CASH_MAIN' },
+    { code: '112', name: 'Bancos', type: 'ASSET', normal: 'DEBIT', parent: '11', level: 3, posting: true, provisioningKey: 'BANK_MAIN' },
+    { code: '113', name: 'Carteiras móveis', type: 'ASSET', normal: 'DEBIT', parent: '11', level: 3, posting: true, provisioningKey: 'MOBILE_MONEY' },
+    { code: '121', name: 'Clientes c/c', type: 'ASSET', normal: 'DEBIT', parent: '12', level: 3, posting: true, provisioningKey: 'ACCOUNTS_RECEIVABLE' },
+    { code: '131', name: 'Mercadorias', type: 'ASSET', normal: 'DEBIT', parent: '13', level: 3, posting: true, provisioningKey: 'INVENTORY' },
+    { code: '141', name: 'IVA dedutível', type: 'ASSET', normal: 'DEBIT', parent: '14', level: 3, posting: true, provisioningKey: 'VAT_INPUT' },
+    { code: '211', name: 'Fornecedores c/c', type: 'LIABILITY', normal: 'CREDIT', parent: '21', level: 3, posting: true, provisioningKey: 'ACCOUNTS_PAYABLE' },
+    { code: '221', name: 'IVA liquidado', type: 'LIABILITY', normal: 'CREDIT', parent: '22', level: 3, posting: true, provisioningKey: 'VAT_OUTPUT' },
+    { code: '231', name: 'Remunerações a pagar', type: 'LIABILITY', normal: 'CREDIT', parent: '23', level: 3, posting: true, provisioningKey: 'SALARIES_PAYABLE' },
+    { code: '311', name: 'Capital social', type: 'EQUITY', normal: 'CREDIT', parent: '31', level: 3, posting: true },
+    { code: '321', name: 'Resultado do exercício', type: 'EQUITY', normal: 'CREDIT', parent: '32', level: 3, posting: true },
+    { code: '322', name: 'Resultados transitados', type: 'EQUITY', normal: 'CREDIT', parent: '32', level: 3, posting: true },
+    { code: '411', name: 'Vendas de mercadorias', type: 'REVENUE', normal: 'CREDIT', parent: '41', level: 3, posting: true, provisioningKey: 'SALES_REVENUE' },
+    { code: '511', name: 'Custo das mercadorias vendidas', type: 'EXPENSE', normal: 'DEBIT', parent: '51', level: 3, posting: true, provisioningKey: 'COST_OF_GOODS_SOLD' },
+    { code: '521', name: 'Compras de mercadorias', type: 'EXPENSE', normal: 'DEBIT', parent: '52', level: 3, posting: true, provisioningKey: 'PURCHASES_EXPENSE' },
+    { code: '531', name: 'Despesas gerais', type: 'EXPENSE', normal: 'DEBIT', parent: '53', level: 3, posting: true, provisioningKey: 'GENERAL_EXPENSE' },
+    { code: '532', name: 'Diferenças de caixa', type: 'EXPENSE', normal: 'DEBIT', parent: '53', level: 3, posting: true, provisioningKey: 'CASH_DIFFERENCE' },
+    { code: '541', name: 'Salários', type: 'EXPENSE', normal: 'DEBIT', parent: '54', level: 3, posting: true, provisioningKey: 'SALARIES_EXPENSE' },
+  ];
+  // Inserção por ordem de nível (pais primeiro). Não destrutivo: existente → mantém-se.
+  const acctIdByCode = new Map<string, string>();
+  for (const a of chart) {
+    const existing = await prisma.ledgerAccount.findUnique({
+      where: { companyId_code: { companyId: company.id, code: a.code } },
+    });
+    if (existing) {
+      acctIdByCode.set(a.code, existing.id);
+      continue;
+    }
+    const created = await prisma.ledgerAccount.create({
+      data: {
+        companyId: company.id,
+        code: a.code,
+        name: a.name,
+        accountType: a.type,
+        normalBalance: a.normal,
+        parentId: a.parent ? acctIdByCode.get(a.parent) ?? null : null,
+        level: a.level,
+        isPosting: a.posting,
+        provisioningKey: a.provisioningKey ?? null,
+      },
+    });
+    acctIdByCode.set(a.code, created.id);
+  }
+
+  // Diários contabilísticos. Idempotente (upsert por companyId+code), não destrutivo.
+  const journals: Array<{ code: string; name: string; type: 'GENERAL' | 'SALES' | 'PURCHASES' | 'CASH' | 'BANK' | 'PAYROLL' | 'ADJUSTMENT' | 'OPENING'; prefix: string }> = [
+    { code: 'DG', name: 'Diário Geral', type: 'GENERAL', prefix: 'LG' },
+    { code: 'DV', name: 'Diário de Vendas', type: 'SALES', prefix: 'LV' },
+    { code: 'DC', name: 'Diário de Compras', type: 'PURCHASES', prefix: 'LC' },
+    { code: 'DCX', name: 'Diário de Caixa', type: 'CASH', prefix: 'CX' },
+    { code: 'DBC', name: 'Diário de Bancos', type: 'BANK', prefix: 'BC' },
+    { code: 'DSA', name: 'Diário de Salários', type: 'PAYROLL', prefix: 'SA' },
+    { code: 'DAJ', name: 'Diário de Ajustamentos', type: 'ADJUSTMENT', prefix: 'AJ' },
+    { code: 'DAB', name: 'Diário de Abertura', type: 'OPENING', prefix: 'AB' },
+  ];
+  for (const j of journals) {
+    await prisma.accountingJournal.upsert({
+      where: { companyId_code: { companyId: company.id, code: j.code } },
+      update: {},
+      create: { companyId: company.id, code: j.code, name: j.name, journalType: j.type, sequencePrefix: j.prefix },
+    });
+  }
+
+  // Mappings (systemKey → conta). Resolvidos por provisioningKey. Criados se ausentes.
+  const systemKeys = [
+    'CASH_MAIN', 'BANK_MAIN', 'MOBILE_MONEY', 'ACCOUNTS_RECEIVABLE', 'INVENTORY', 'VAT_INPUT',
+    'ACCOUNTS_PAYABLE', 'VAT_OUTPUT', 'SALARIES_PAYABLE', 'SALES_REVENUE', 'COST_OF_GOODS_SOLD',
+    'PURCHASES_EXPENSE', 'GENERAL_EXPENSE', 'CASH_DIFFERENCE', 'SALARIES_EXPENSE',
+  ];
+  for (const key of systemKeys) {
+    const acct = await prisma.ledgerAccount.findUnique({
+      where: { companyId_provisioningKey: { companyId: company.id, provisioningKey: key } },
+    });
+    if (!acct) continue;
+    const existing = await prisma.accountingMapping.findUnique({
+      where: { companyId_systemKey: { companyId: company.id, systemKey: key } },
+    });
+    if (!existing) {
+      await prisma.accountingMapping.create({
+        data: { companyId: company.id, systemKey: key, ledgerAccountId: acct.id },
+      });
+    }
+  }
+
+  // Exercício fiscal de calendário do ano corrente (fuso de Maputo). Opção 1 p/ isCurrent.
+  const currentYear = Number(
+    new Intl.DateTimeFormat('en-GB', { timeZone: 'Africa/Maputo', year: 'numeric' }).format(new Date()),
+  );
+  const fyName = String(currentYear);
+  let fiscalYear = await prisma.fiscalYear.findUnique({
+    where: { companyId_name: { companyId: company.id, name: fyName } },
+  });
+  if (!fiscalYear) {
+    const alreadyHasCurrent = await prisma.fiscalYear.findFirst({
+      where: { companyId: company.id, isCurrent: true },
+    });
+    fiscalYear = await prisma.fiscalYear.create({
+      data: {
+        companyId: company.id,
+        name: fyName,
+        startDate: new Date(Date.UTC(currentYear, 0, 1)),
+        endDate: new Date(Date.UTC(currentYear, 11, 31)),
+        status: 'OPEN',
+        isCurrent: !alreadyHasCurrent,
+        createdById: admin.id,
+      },
+    });
+  }
+
+  // 12 períodos normais (mensais). Sem período 13 nesta fase. Criados se ausentes.
+  const months = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+  for (let m = 1; m <= 12; m++) {
+    const code = `${fyName}-${String(m).padStart(2, '0')}`;
+    const existing = await prisma.accountingPeriod.findUnique({
+      where: { companyId_code: { companyId: company.id, code } },
+    });
+    if (!existing) {
+      await prisma.accountingPeriod.create({
+        data: {
+          companyId: company.id,
+          fiscalYearId: fiscalYear.id,
+          periodNumber: m,
+          code,
+          name: `${months[m - 1]} ${fyName}`,
+          startDate: new Date(Date.UTC(currentYear, m - 1, 1)),
+          endDate: new Date(Date.UTC(currentYear, m, 0)),
+          isAdjustment: false,
+          status: 'OPEN',
+        },
+      });
+    }
+  }
+
+  console.log('Seed concluído: empresa demo, filiais, permissões, perfis, utilizadores, clientes, fornecedores, produtos, stock, tesouraria e contabilidade (plano, diários, exercício, períodos, mappings).');
 }
 
 main()

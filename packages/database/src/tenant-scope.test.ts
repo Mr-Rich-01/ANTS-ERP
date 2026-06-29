@@ -83,6 +83,21 @@ describe('scopeArgs — isolamento multiempresa', () => {
     expect(scopeArgs('TreasuryMovement', 'create', { data: { amount: 10 } }, C)).toEqual({ data: { amount: 10, companyId: C } });
   });
 
+  it('Contabilidade (7 modelos da Fase 8a) está no âmbito: injecta companyId', () => {
+    // #1 dos testes obrigatórios: os 7 novos modelos respeitam o isolamento.
+    expect(scopeArgs('FiscalYear', 'findMany', undefined, C)).toEqual({ where: { companyId: C } });
+    expect(scopeArgs('AccountingPeriod', 'create', { data: { code: '2026-01' } }, C)).toEqual({ data: { code: '2026-01', companyId: C } });
+    expect(scopeArgs('LedgerAccount', 'findFirst', { where: { code: '111' } }, C)).toEqual({ where: { code: '111', companyId: C } });
+    expect(scopeArgs('AccountingJournal', 'findMany', undefined, C)).toEqual({ where: { companyId: C } });
+    expect(scopeArgs('JournalEntry', 'create', { data: { entryNumber: 'X' } }, C)).toEqual({ data: { entryNumber: 'X', companyId: C } });
+    expect(scopeArgs('JournalEntryLine', 'create', { data: { debit: 10 } }, C)).toEqual({ data: { debit: 10, companyId: C } });
+    expect(scopeArgs('AccountingMapping', 'upsert', { where: { id: '1' }, create: { systemKey: 'CASH_MAIN' }, update: {} }, C)).toEqual({
+      where: { id: '1', companyId: C },
+      create: { systemKey: 'CASH_MAIN', companyId: C },
+      update: {},
+    });
+  });
+
   it('NÃO altera modelos fora do âmbito (ex.: Permission)', () => {
     const args = { where: { key: 'sales.view' } };
     expect(scopeArgs('Permission', 'findMany', args, C)).toBe(args);
