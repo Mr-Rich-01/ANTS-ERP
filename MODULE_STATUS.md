@@ -1,9 +1,31 @@
 # MODULE_STATUS — ANTS ERP
 
-_Última actualização: 2026-06-28_
+_Última actualização: 2026-06-29_
 
 Estado vivo do projecto. O conhecimento permanente (arquitectura, regras, comandos) está
 em [`CLAUDE.md`](CLAUDE.md).
+
+---
+
+## 🧭 Estado num relance
+
+| Fase | Módulo | Estado |
+|------|--------|--------|
+| 1 | Auth, RBAC, isolamento Prisma (`forCompany`/`forContext`), auditoria, Admin CRUD | ✅ |
+| 2 | Clientes ponta-a-ponta | ✅ |
+| 3 | Fornecedores ponta-a-ponta | ✅ |
+| 4 | Produtos & Stock multi-armazém (catálogo, inventário, custo médio ponderado) | ✅ |
+| 5 | Vendas / Facturação (Invoice + Payment, bloqueio de stock, extracto do cliente) | ✅ |
+| 6 | Compras (PurchaseOrder + recepção + SupplierPayment, extracto do fornecedor) | ✅ |
+| 7 | Tesouraria & Bancos (contas, movimentos, transferências, integração recibos/pagamentos, relatório diário) | ✅ |
+| 7.1 | Hardening da Tesouraria (imutabilidade, idempotência, estorno, saldo atómico, permissões split, fix de navegação) | ✅ |
+| **8** | **Contabilidade** (plano de contas, períodos, lançamentos, integração, relatórios) | 🔨 **a iniciar (8a)** |
+| 9 | RH & Salários | 🗺️ futuro |
+
+**Validações actuais:** typecheck 6/6 · lint 6/6 · **testes 34** · build OK.
+
+> ⚠️ **Lembrete:** após cada `db:seed` que adicione **novas permissões**, as sessões antigas (JWT)
+> não as têm — é preciso **terminar e reiniciar sessão** para o gate passar a reconhecê-las.
 
 ---
 
@@ -242,11 +264,25 @@ em [`CLAUDE.md`](CLAUDE.md).
 
 ---
 
-## 🔨 Próximo — Fase 8: Contabilidade
+## 🔨 Próximo — Fase 8: Contabilidade _(plano apresentado e aprovado)_
 
 > Plano de contas + períodos + diários/lançamentos (partidas dobradas) + integração automática a
 > partir dos documentos (vendas/compras/tesouraria) + relatórios (razão, balancete, extracto diário).
 > `accounting.*`, `systemKeys` (sem códigos fixos), numeração por exercício, Decimal, idempotente.
+
+**Sub-passos (incremental, validar cada etapa antes de avançar):**
+
+- **8a — Schema & seed** _(próximo)_: modelos `FiscalYear`, `AccountingPeriod`, `LedgerAccount`,
+  `AccountingJournal`, `JournalEntry`, `JournalEntryLine`, `AccountingMapping` + enums + migração +
+  `COMPANY_SCOPED`/RLS + permissões `accounting.*` + seed mínimo idempotente (plano-base moçambicano,
+  `systemKeys`, exercício/períodos 2026, diários, mappings). **Sem domínio/integrações ainda.**
+- **8b — Domínio**: plano de contas, períodos, lançamentos com validação de partidas dobradas
+  (débitos = créditos, ≥2 linhas, contas de movimento, período aberto), estorno.
+- **8c — Integração automática**: recibo/pagamento/factura/transferência → `JournalEntry` na mesma
+  transacção do documento, **idempotente** (`companyId + sourceType + sourceId + accountingEvent`).
+- **8d — Ecrãs**: plano de contas, diários, novo lançamento, detalhe, razão geral, balancete,
+  extracto diário (linha a linha) + configuração contabilística (mapping de `systemKeys`).
+- **8e — Testes & validação final**: unidade + integração + isolamento multiempresa.
 
 ---
 
@@ -262,9 +298,11 @@ em [`CLAUDE.md`](CLAUDE.md).
 
 ## 🗺️ Fases futuras (esboço)
 
-- **Vendas / Facturação** — cotações, POS, facturas, recibos, NC/ND.
-- **Tesouraria & Bancos** — contas, movimentos, fluxo de caixa, conciliação, fecho de caixa.
-- **Contabilidade** — plano de contas, lançamentos (partidas dobradas), relatórios.
-- **RH & Salários** — colaboradores, contratos, processamento salarial.
+- **Fase 9 — RH & Salários** — colaboradores, contratos, processamento salarial (liga à
+  contabilidade via `systemKeys` `SALARIES_EXPENSE`/`SALARIES_PAYABLE` e à tesouraria).
+- **Extensões da Facturação** — POS, cotações, NC/ND.
+- **Extensões da Tesouraria** — conciliação bancária, fecho de caixa com contagem de denominações.
+- **Contabilidade (avançado)** — Balanço, Demonstração de Resultados, Fluxo de Caixa, mapa de
+  antiguidade de saldos.
 - _(mais tarde: Produção, Contratos/Subscrições, Relatórios/Dashboards, Notificações/Workflows,
   PWA/Offline, Deploy VPS+Cloudflare.)_
