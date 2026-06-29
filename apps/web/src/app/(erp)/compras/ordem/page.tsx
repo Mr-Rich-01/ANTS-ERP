@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { forCompany } from '@ants/database';
-import { getPurchaseOrder, hasPermission, DomainError, type PurchaseStatus } from '@ants/domain';
+import { getPurchaseOrder, hasPermission, listAccounts, DomainError, type PurchaseStatus } from '@ants/domain';
 import { getContext } from '@/lib/session';
 import { Icon } from '@/components/Icon';
 import { ACCENT } from '@/lib/erp-nav';
@@ -53,6 +53,7 @@ export default async function OcDetalhePage({ searchParams }: { searchParams: { 
   const [statusLabel, statusColor, statusBg] = STATUS[oc.status];
   const canReceive = (oc.status === 'SENT' || oc.status === 'PARTIAL') && hasPermission(ctx, 'purchases.create');
   const canPay = oc.outstanding > 0 && hasPermission(ctx, 'purchases.create');
+  const accounts = hasPermission(ctx, 'treasury.view') ? (await listAccounts(db, ctx)).filter((a) => a.status === 'ACTIVE').map((a) => ({ id: a.id, label: a.name })) : [];
 
   return (
     <div style={{ padding: '14px 26px 30px', display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -67,6 +68,7 @@ export default async function OcDetalhePage({ searchParams }: { searchParams: { 
               supplierId={oc.supplierId}
               purchaseOrderId={oc.id}
               suggested={oc.outstanding}
+              accounts={accounts}
               trigger={
                 <button style={{ display: 'flex', alignItems: 'center', gap: 7, height: 38, padding: '0 14px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--card)', color: 'var(--text2)', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>
                   <Icon name="banknote" size={15} />

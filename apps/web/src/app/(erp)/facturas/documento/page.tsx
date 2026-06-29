@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { forCompany } from '@ants/database';
-import { getCompanyIdentity, getInvoice, hasPermission, DomainError, type InvoiceDisplayStatus, type PaymentMethod } from '@ants/domain';
+import { getCompanyIdentity, getInvoice, hasPermission, listAccounts, DomainError, type InvoiceDisplayStatus, type PaymentMethod } from '@ants/domain';
 import { getContext } from '@/lib/session';
 import { Icon } from '@/components/Icon';
 import { PrintButton } from '@/components/PrintButton';
@@ -61,6 +61,7 @@ export default async function DocumentoPage({ searchParams }: { searchParams: { 
     throw e;
   }
   const company = await getCompanyIdentity(db, ctx);
+  const accounts = hasPermission(ctx, 'treasury.view') ? (await listAccounts(db, ctx)).filter((a) => a.status === 'ACTIVE').map((a) => ({ id: a.id, label: a.name })) : [];
 
   const [statusLabel, statusColor, statusBg] = STATUS[inv.displayStatus];
   const canReceive = hasPermission(ctx, 'payments.receive') && inv.outstanding > 0 && inv.status !== 'CANCELLED';
@@ -79,6 +80,7 @@ export default async function DocumentoPage({ searchParams }: { searchParams: { 
             <PaymentDialog
               invoiceId={inv.id}
               outstanding={inv.outstanding}
+              accounts={accounts}
               trigger={
                 <button style={{ ...topBtn, border: 'none', background: 'var(--accent-fg)', color: '#fff', cursor: 'pointer' }}>
                   <Icon name="banknote" size={16} />

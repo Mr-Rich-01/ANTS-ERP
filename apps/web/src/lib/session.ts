@@ -32,6 +32,7 @@ export async function getContext(): Promise<RequestContext> {
   return {
     companyId: user.companyId,
     userId: user.id,
+    userName: user.name ?? undefined,
     permissions: new Set(user.permissions),
     isPlatformAdmin: user.isPlatformAdmin,
   };

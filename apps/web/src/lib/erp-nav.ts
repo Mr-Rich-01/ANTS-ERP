@@ -82,6 +82,7 @@ const NAV_PERMISSION: Partial<Record<ScreenId, string>> = {
   clients: 'clients.view',
   purchases: 'purchases.create',
   products: 'stock.view',
+  cash: 'treasury.view',
   accounting: 'accounting.post',
   reports: 'reports.export',
   admin: 'users.manage',

@@ -43,6 +43,9 @@ const AUDIT_EXCLUDED = new Set<string>([
   'PurchaseOrder',
   'PurchaseOrderLine',
   'SupplierPayment',
+  // Tesouraria: movimentos e contas registam auditoria explícita.
+  'TreasuryAccount',
+  'TreasuryMovement',
 ]);
 
 /**

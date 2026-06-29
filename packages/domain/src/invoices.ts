@@ -6,6 +6,7 @@ import { requireCompany } from './context';
 import { requirePermission, hasPermission } from './permissions';
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from './errors';
 import { writeAudit } from './audit';
+import { postTreasuryMovementTx } from './treasury';
 
 export type InvoiceStatus = 'ISSUED' | 'PARTIAL' | 'PAID' | 'CANCELLED';
 /** Estado apresentado (inclui "vencido", derivado da data). */
@@ -406,6 +407,8 @@ const paymentInput = z.object({
   invoiceId: z.string().min(1, 'Factura inválida.'),
   amount: z.coerce.number().positive('O valor deve ser positivo.'),
   method: z.enum(['CASH', 'MPESA', 'EMOLA', 'CARD', 'TRANSFER']).default('CASH'),
+  /** Conta de tesouraria que recebe o dinheiro (opcional). */
+  accountId: z.string().optional(),
   notes: z.string().trim().max(500).optional(),
 });
 
@@ -450,6 +453,19 @@ export async function createPayment(db: PrismaClient, ctx: RequestContext, input
       data: { amountPaid: newPaid, status: newPaid >= total ? 'PAID' : 'PARTIAL' },
     });
     await tx.customer.update({ where: { id: invoice.customerId }, data: { balance: { decrement: amount } } });
+
+    if (data.accountId) {
+      await postTreasuryMovementTx(tx, companyId, ctx.userId, {
+        accountId: data.accountId,
+        flow: 'IN',
+        amount,
+        category: 'Recibo',
+        description: `Recibo ${number} — ${invoice.customerName}`,
+        document: number,
+        source: 'RECEIPT',
+      });
+    }
+
     await writeAudit(tx, ctx, {
       action: 'payment.receive',
       entity: 'Payment',

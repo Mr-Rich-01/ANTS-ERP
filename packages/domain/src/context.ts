@@ -7,6 +7,8 @@ export interface RequestContext {
   companyId: string | null;
   /** Utilizador autenticado. */
   userId: string;
+  /** Nome do utilizador (para apresentação, ex.: operador de caixa). */
+  userName?: string;
   /** Filial activa (opcional). */
   branchId?: string | null;
   /** Permissões efectivas do utilizador (chaves granulares, ex.: "sales.create"). */

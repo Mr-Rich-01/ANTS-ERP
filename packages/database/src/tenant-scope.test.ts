@@ -78,6 +78,11 @@ describe('scopeArgs — isolamento multiempresa', () => {
     expect(scopeArgs('SupplierPayment', 'create', { data: { amount: 50 } }, C)).toEqual({ data: { amount: 50, companyId: C } });
   });
 
+  it('Tesouraria (TreasuryAccount/TreasuryMovement) estão no âmbito: injecta companyId', () => {
+    expect(scopeArgs('TreasuryAccount', 'findMany', undefined, C)).toEqual({ where: { companyId: C } });
+    expect(scopeArgs('TreasuryMovement', 'create', { data: { amount: 10 } }, C)).toEqual({ data: { amount: 10, companyId: C } });
+  });
+
   it('NÃO altera modelos fora do âmbito (ex.: Permission)', () => {
     const args = { where: { key: 'sales.view' } };
     expect(scopeArgs('Permission', 'findMany', args, C)).toBe(args);

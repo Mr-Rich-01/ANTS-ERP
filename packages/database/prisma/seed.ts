@@ -24,6 +24,8 @@ const PERMISSIONS: Array<{ key: string; module: string; description: string }> =
   { key: 'invoices.cancel', module: 'invoices', description: 'Cancelar facturas' },
   { key: 'payments.receive', module: 'payments', description: 'Receber pagamentos' },
   { key: 'payments.cancel', module: 'payments', description: 'Cancelar pagamentos' },
+  { key: 'treasury.view', module: 'treasury', description: 'Ver tesouraria' },
+  { key: 'treasury.manage', module: 'treasury', description: 'Gerir tesouraria (movimentos)' },
   { key: 'products.view', module: 'products', description: 'Ver produtos' },
   { key: 'products.create', module: 'products', description: 'Criar produtos' },
   { key: 'products.update', module: 'products', description: 'Editar produtos' },
@@ -151,10 +153,10 @@ async function main() {
     {
       name: 'Gestor',
       description: 'Gestão operacional e aprovações',
-      keys: ['clients.view', 'clients.create', 'suppliers.view', 'suppliers.create', 'sales.view', 'sales.create', 'sales.approve_discount', 'purchases.create', 'purchases.approve', 'products.view', 'products.create', 'products.update', 'stock.view', 'stock.adjust', 'reports.export', 'audit.view'],
+      keys: ['clients.view', 'clients.create', 'suppliers.view', 'suppliers.create', 'sales.view', 'sales.create', 'sales.approve_discount', 'purchases.create', 'purchases.approve', 'products.view', 'products.create', 'products.update', 'stock.view', 'stock.adjust', 'treasury.view', 'treasury.manage', 'reports.export', 'audit.view'],
     },
-    { name: 'Contabilista', description: 'Contabilidade e relatórios', keys: ['accounting.post', 'accounting.reverse', 'payments.receive', 'suppliers.view', 'reports.export', 'audit.view'] },
-    { name: 'Caixa', description: 'Vendas e recebimentos', keys: ['sales.view', 'sales.create', 'invoices.issue', 'payments.receive'] },
+    { name: 'Contabilista', description: 'Contabilidade e relatórios', keys: ['accounting.post', 'accounting.reverse', 'payments.receive', 'suppliers.view', 'treasury.view', 'reports.export', 'audit.view'] },
+    { name: 'Caixa', description: 'Vendas e recebimentos', keys: ['sales.view', 'sales.create', 'invoices.issue', 'payments.receive', 'treasury.view', 'treasury.manage'] },
     { name: 'Vendedor', description: 'Vendas e clientes', keys: ['sales.view', 'sales.create', 'clients.view', 'clients.create'] },
   ];
 
@@ -393,7 +395,23 @@ async function main() {
     }
   }
 
-  console.log('Seed concluído: empresa demo, filiais, permissões, perfis, utilizadores, clientes, fornecedores, produtos e stock.');
+  // 13) Contas de tesouraria demo. Idempotente via @@unique([companyId, name]).
+  const treasuryAccounts: Array<{ name: string; type: 'CASH' | 'BANK' | 'MOBILE' | 'OTHER'; reference?: string; balance: number }> = [
+    { name: 'Caixa Principal', type: 'CASH', reference: 'Numerário', balance: 84300 },
+    { name: 'BCI', type: 'BANK', reference: 'IBAN ···· 1234567', balance: 192400 },
+    { name: 'Millennium BIM', type: 'BANK', reference: 'IBAN ···· 7654321', balance: 244950 },
+    { name: 'M-Pesa', type: 'MOBILE', reference: '84 555 1234', balance: 46200 },
+    { name: 'e-Mola', type: 'MOBILE', reference: '86 222 9090', balance: 18750 },
+  ];
+  for (const a of treasuryAccounts) {
+    await prisma.treasuryAccount.upsert({
+      where: { companyId_name: { companyId: company.id, name: a.name } },
+      update: { type: a.type, reference: a.reference, updatedBy: admin.id },
+      create: { companyId: company.id, name: a.name, type: a.type, reference: a.reference, openingBalance: a.balance, balance: a.balance, createdBy: admin.id },
+    });
+  }
+
+  console.log('Seed concluído: empresa demo, filiais, permissões, perfis, utilizadores, clientes, fornecedores, produtos, stock e tesouraria.');
 }
 
 main()

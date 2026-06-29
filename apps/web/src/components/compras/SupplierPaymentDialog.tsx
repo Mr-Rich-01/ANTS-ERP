@@ -29,12 +29,18 @@ const selectStyle: React.CSSProperties = {
   outline: 'none',
 };
 
-export function SupplierPaymentDialog({ supplierId, purchaseOrderId, suggested, trigger }: { supplierId: string; purchaseOrderId?: string; suggested: number; trigger: React.ReactNode }) {
+export interface AccountOption {
+  id: string;
+  label: string;
+}
+
+export function SupplierPaymentDialog({ supplierId, purchaseOrderId, suggested, accounts = [], trigger }: { supplierId: string; purchaseOrderId?: string; suggested: number; accounts?: AccountOption[]; trigger: React.ReactNode }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
   const [amount, setAmount] = useState(String(suggested));
   const [method, setMethod] = useState<'CASH' | 'MPESA' | 'EMOLA' | 'CARD' | 'TRANSFER'>('TRANSFER');
+  const [accountId, setAccountId] = useState(accounts[0]?.id ?? '');
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -49,7 +55,7 @@ export function SupplierPaymentDialog({ supplierId, purchaseOrderId, suggested, 
     const value = Number(amount);
     if (!Number.isFinite(value) || value <= 0) return setError('Indique um valor positivo.');
     startTransition(async () => {
-      const res = await createSupplierPaymentAction({ supplierId, purchaseOrderId, amount: value, method });
+      const res = await createSupplierPaymentAction({ supplierId, purchaseOrderId, amount: value, method, accountId: accountId || undefined });
       if (res.error) setError(res.error);
       else {
         setOpen(false);
@@ -82,6 +88,19 @@ export function SupplierPaymentDialog({ supplierId, purchaseOrderId, suggested, 
               <option value="CARD">Cartão</option>
             </select>
           </div>
+          {accounts.length > 0 && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <Label htmlFor="sp-account">Conta de tesouraria</Label>
+              <select id="sp-account" value={accountId} onChange={(e) => setAccountId(e.target.value)} style={selectStyle}>
+                <option value="">— Não lançar em tesouraria —</option>
+                {accounts.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
 
           {error && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, color: 'var(--bad)', background: 'var(--bad-bg)', padding: '9px 12px', borderRadius: 10 }}>

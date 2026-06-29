@@ -188,11 +188,39 @@ em [`CLAUDE.md`](CLAUDE.md).
 
 ---
 
+## ✅ Fase 7 — Tesouraria & Bancos _(concluída)_
+
+> Contas (caixa/banco/carteira) com saldo e extracto; movimentos manuais e transferências;
+> integração automática dos recibos de clientes e pagamentos a fornecedores; relatório diário por
+> conta. Verificado ao vivo no browser.
+
+- **Modelos + migração `20260629054706_treasury`**: `TreasuryAccount` (tipo CASH/BANK/MOBILE/OTHER,
+  saldo de abertura/actual) e `TreasuryMovement` (fluxo IN/OUT, saldo após, categoria, documento,
+  contrapartida, origem). Os 2 em `COMPANY_SCOPED` + teste; fora da auditoria automática.
+- **Permissões** novas `treasury.view`/`treasury.manage` (admin/Gestor/Caixa; Contabilista vê);
+  menu "Tesouraria" passa a exigir `treasury.view`. Seed de 5 contas (Caixa Principal, BCI,
+  Millennium BIM, M-Pesa, e-Mola). `RequestContext` ganhou `userName` (operador do relatório).
+- **Domínio** `treasury.ts`: `listAccounts`, `treasuryKpis`, `listMovements`, `dailyReport`,
+  `createAccount`, `recordMovement` (entrada/saída, valida saldo), `transfer` (dois movimentos
+  ligados) e `postTreasuryMovementTx` (helper transaccional reutilizado).
+- **Integração**: `createPayment` (recibo) e `createSupplierPayment` aceitam `accountId` e lançam
+  automaticamente um movimento de tesouraria (IN/OUT) na conta escolhida; selector de conta
+  adicionado aos diálogos de recibo e de pagamento a fornecedor.
+- **Server Actions** `createAccountAction`/`recordMovementAction`/`transferAction`.
+- **Ecrãs reais**: `/tesouraria` (KPIs + cartões de contas + movimentos + diálogos Movimento/
+  Transferência/Nova conta) e `/tesouraria/fecho` (relatório diário por conta/data: saldo inicial,
+  entradas, saídas, saldo final, operador e espaço para assinatura — sem contagem de notas).
+  Remove o mock `data/treasury.ts`.
+- **Validado**: typecheck 6/6 · lint 6/6 · testes 27 · build OK + smoke e2e (movimento, transferência,
+  integração recibo→conta, relatório) + verificação ao vivo no browser.
+
+---
+
 ## 🔨 Próximo (sugerido)
 
-> **Tesouraria & Bancos** (contas, caixas, fluxo de caixa, fecho de caixa) — centraliza recibos de
-> clientes e pagamentos a fornecedores. Ou **Contabilidade** (plano de contas + lançamentos por
-> partidas dobradas a partir dos documentos). **POS** e **NC/ND** ficam como extensões da facturação.
+> **Contabilidade** (plano de contas + lançamentos por partidas dobradas a partir dos documentos
+> de venda/compra/tesouraria) ou **RH & Salários**. **POS** e **NC/ND** ficam como extensões da
+> facturação; **Fecho de caixa com contagem de denominações** fica como extensão da tesouraria.
 
 ---
 

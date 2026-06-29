@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { forCompany } from '@ants/database';
-import { getCustomer, getSupplier, getCustomerStatement, getSupplierStatement, hasPermission, DomainError } from '@ants/domain';
+import { getCustomer, getSupplier, getCustomerStatement, getSupplierStatement, hasPermission, listAccounts, DomainError } from '@ants/domain';
 import { getContext } from '@/lib/session';
 import { Icon } from '@/components/Icon';
 import { ACCENT } from '@/lib/erp-nav';
@@ -71,6 +71,7 @@ export default async function PerfilContaPage({ searchParams }: { searchParams: 
   let editClient: CustomerFormValues | null = null;
   let editSupplier: SupplierFormValues | null = null;
   let supplierPayInfo: { id: string; balance: number } | null = null;
+  let payAccounts: { id: string; label: string }[] = [];
 
   const notFound = (message: string) => (
     <div style={{ padding: '14px 26px 30px', display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -179,6 +180,9 @@ export default async function PerfilContaPage({ searchParams }: { searchParams: 
       })),
     ];
     supplierPayInfo = { id: supplier.id, balance: supplier.balance };
+    if (hasPermission(ctx, 'treasury.view')) {
+      payAccounts = (await listAccounts(forCompany(ctx.companyId), ctx)).filter((a) => a.status === 'ACTIVE').map((a) => ({ id: a.id, label: a.name }));
+    }
     view = {
       ini: initials(supplier.name),
       name: supplier.name,
@@ -296,6 +300,7 @@ export default async function PerfilContaPage({ searchParams }: { searchParams: 
               <SupplierPaymentDialog
                 supplierId={supplierPayInfo.id}
                 suggested={supplierPayInfo.balance}
+                accounts={payAccounts}
                 trigger={
                   <button style={{ display: 'flex', alignItems: 'center', gap: 7, height: 38, padding: '0 15px', borderRadius: 10, border: 'none', background: ACCENT, color: '#fff', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>
                     <Icon name={pf.actionIcon} size={15} />

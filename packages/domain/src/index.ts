@@ -13,3 +13,4 @@ export * from './products';
 export * from './stock';
 export * from './invoices';
 export * from './purchases';
+export * from './treasury';

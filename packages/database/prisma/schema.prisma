@@ -49,6 +49,8 @@ model Company {
   purchaseOrders PurchaseOrder[]
   purchaseOrderLines PurchaseOrderLine[]
   supplierPayments SupplierPayment[]
+  treasuryAccounts TreasuryAccount[]
+  treasuryMovements TreasuryMovement[]
 
   @@index([status])
   @@map("companies")
@@ -593,8 +595,75 @@ model SupplierPayment {
 }
 
 // ─────────────────────────────────────────────────────────────
+// Tesouraria & Bancos (Fase 7)
+// ─────────────────────────────────────────────────────────────
+
+model TreasuryAccount {
+  id            String   @id @default(cuid())
+  companyId     String
+  company       Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  name          String
+  type          TreasuryAccountType @default(BANK)
+  /// Nº de conta / IBAN / nº de telemóvel (carteira), conforme o tipo.
+  reference     String?
+  currency      String   @default("MZN")
+  openingBalance Decimal @default(0) @db.Decimal(14, 2)
+  balance       Decimal  @default(0) @db.Decimal(14, 2)
+  status        RecordStatus @default(ACTIVE)
+  createdBy     String?
+  updatedBy     String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  movements     TreasuryMovement[]
+
+  @@unique([companyId, name])
+  @@index([companyId])
+  @@map("treasury_accounts")
+}
+
+model TreasuryMovement {
+  id            String   @id @default(cuid())
+  companyId     String
+  company       Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  accountId     String
+  account       TreasuryAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  flow          TreasuryFlow
+  amount        Decimal  @db.Decimal(14, 2)
+  /// Saldo da conta após o movimento.
+  balanceAfter  Decimal  @db.Decimal(14, 2)
+  /// Categoria: Recibo, Pagamento, Depósito, Levantamento, Transferência, Despesa, Receita.
+  category      String
+  description   String?
+  document      String?
+  /// Conta de contrapartida (em transferências).
+  counterpartAccountId String?
+  /// Origem do movimento: MANUAL, RECEIPT, SUPPLIER_PAYMENT, TRANSFER.
+  source        String   @default("MANUAL")
+  createdBy     String?
+  occurredAt    DateTime @default(now())
+  createdAt     DateTime @default(now())
+
+  @@index([companyId, accountId, occurredAt])
+  @@index([companyId, occurredAt])
+  @@map("treasury_movements")
+}
+
+// ─────────────────────────────────────────────────────────────
 // Enums
 // ─────────────────────────────────────────────────────────────
+
+enum TreasuryAccountType {
+  CASH
+  BANK
+  MOBILE
+  OTHER
+}
+
+enum TreasuryFlow {
+  IN
+  OUT
+}
 
 enum CustomerType {
   INDIVIDUAL

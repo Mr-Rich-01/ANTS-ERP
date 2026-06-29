@@ -6,6 +6,7 @@ import { requireCompany } from './context';
 import { requirePermission } from './permissions';
 import { ConflictError, NotFoundError, ValidationError } from './errors';
 import { writeAudit } from './audit';
+import { postTreasuryMovementTx } from './treasury';
 
 export type PurchaseStatus = 'DRAFT' | 'SENT' | 'PARTIAL' | 'RECEIVED' | 'CANCELLED';
 
@@ -350,6 +351,8 @@ const supplierPaymentInput = z.object({
   purchaseOrderId: z.string().optional(),
   amount: z.coerce.number().positive('O valor deve ser positivo.'),
   method: z.enum(['CASH', 'MPESA', 'EMOLA', 'CARD', 'TRANSFER']).default('TRANSFER'),
+  /** Conta de tesouraria de onde sai o dinheiro (opcional). */
+  accountId: z.string().optional(),
   notes: z.string().trim().max(500).optional(),
 });
 
@@ -384,6 +387,19 @@ export async function createSupplierPayment(db: PrismaClient, ctx: RequestContex
       data: { companyId, number, purchaseOrderId, supplierId: supplier.id, amount, method: data.method, notes: data.notes ?? null, createdBy: ctx.userId },
     });
     await tx.supplier.update({ where: { id: supplier.id }, data: { balance: { decrement: amount } } });
+
+    if (data.accountId) {
+      await postTreasuryMovementTx(tx, companyId, ctx.userId, {
+        accountId: data.accountId,
+        flow: 'OUT',
+        amount,
+        category: 'Pagamento',
+        description: `Pagamento ${number} — ${supplier.name}`,
+        document: number,
+        source: 'SUPPLIER_PAYMENT',
+      });
+    }
+
     await writeAudit(tx, ctx, { action: 'purchase.pay', entity: 'SupplierPayment', entityId: payment.id, newValues: { number, supplier: supplier.name, amount } });
 
     return { id: payment.id, number };
