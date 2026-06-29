@@ -20,19 +20,22 @@ em [`CLAUDE.md`](CLAUDE.md).
 | 7 | Tesouraria & Bancos (contas, movimentos, transferências, integração recibos/pagamentos, relatório diário) | ✅ |
 | 7.1 | Hardening da Tesouraria (imutabilidade, idempotência, estorno, saldo atómico, permissões split, fix de navegação) | ✅ |
 | **8a** | **Contabilidade — schema & seed** (7 modelos, migração, FKs compostas, constraints, permissões, seed do plano-base) | ✅ |
-| 8b–8e | Contabilidade — domínio, integrações automáticas, ecrãs, testes | 🔨 **8b a seguir** |
+| **8b** | **Contabilidade — domínio** (plano, exercícios/períodos, mappings, lançamentos, partidas dobradas, estorno) | ✅ |
+| 8c–8e | Contabilidade — integrações automáticas, ecrãs, testes finais | 🔨 **8c a seguir** |
 | 9 | RH & Salários | 🗺️ futuro |
 | X | RLS forçado em toda a BD (fase transversal, pré-produção) | 🗺️ futuro |
 
-**Validações actuais:** typecheck 6/6 · lint 6/6 · **testes 35** · `prisma validate` OK · migração
-`accounting` aplicada · seed idempotente (2×) · smoke e2e de isolamento/constraints OK.
+**Validações actuais:** typecheck 6/6 · lint 6/6 · **testes unitários 44** · **integração de
+contabilidade 32/32** (`pnpm test:integration:accounting`) · `prisma validate` OK · seed idempotente.
 
-> ⚠️ **Build com falha PRÉ-EXISTENTE (não causada pela Fase 8a):** o `next build` falha no
-> prerender de 7 páginas **mock ainda não ligadas** (`/`, `/contabilidade`, `/contratos`, `/pos`,
-> `/producao`, `/relatorios`, `/rh`) que não declaram `export const dynamic` sob o layout `(erp)`
-> autenticado (`requireSession()` usa cookies → dinâmico). Provado independente da 8a via `git stash`
-> das alterações. Correcção pendente: acrescentar `export const dynamic = 'force-dynamic'` a essas
-> páginas (convenção já usada por todas as páginas ligadas).
+> ⚠️ **Build com falha PRÉ-EXISTENTE e AMBIENTAL (não causada por 8a/8b):** o `next build` falha no
+> prerender (`useContext null` no runtime do Next) de páginas estáticas. **git bisect** provou que
+> falha desde o **1.º commit** do projecto nesta máquina, com Next 14.2.15/14.2.34/14.2.35 — enquanto
+> apps Next mínimas/isoladas compilam. Descartado: código/layout/ThemeProvider, Node, versão do Next,
+> `node_modules`, `@ants/ui` react devDep, pnpm hoist, transpilePackages, next-auth. É uma combinação
+> específica do repo neste ambiente (mismatch de instância de React no prerender). **Tarefa de ambiente
+> dedicada**, ortogonal a todas as fases de funcionalidades. Não bloqueia o domínio (8b validado por
+> typecheck/lint/testes/integração).
 
 > ⚠️ **Lembrete:** após cada `db:seed` que adicione **novas permissões**, as sessões antigas (JWT)
 > não as têm — é preciso **terminar e reiniciar sessão** para o gate passar a reconhecê-las.
@@ -292,8 +295,17 @@ em [`CLAUDE.md`](CLAUDE.md).
   Decisões: isolamento por `COMPANY_SCOPED` (RLS real → fase transversal X); `provisioningKey` só
   para provisionamento (fonte funcional = `AccountingMapping.systemKey`); `onDelete: Restrict` em
   toda a contabilidade (histórico financeiro preservado). ⚠️ Build vermelho **pré-existente** (ver topo).
-- **8b — Domínio**: plano de contas, períodos, lançamentos com validação de partidas dobradas
-  (débitos = créditos, ≥2 linhas, contas de movimento, período aberto), estorno.
+- **8b — Domínio** _(✅ concluída)_: `packages/domain/src/accounting.ts`. Plano de contas (árvore,
+  criar/editar/activar, anti-ciclo, agrupadora≠movimento), exercícios/períodos (OPEN/CLOSED/LOCKED;
+  reabrir LOCKED exige `accounting.unlockPeriods`), mappings (fonte funcional `systemKey` + resolver
+  interno para 8c), lançamentos: draft (desequilíbrio permitido, equilíbrio só no post), update/delete
+  de draft (snapshot na auditoria), **confirmação por partidas dobradas** (débito=crédito, ≥2 linhas,
+  total>0, exercício+período OPEN, `SELECT … FOR UPDATE`), **estorno** (mesmo diário ou ajustamentos
+  se inactivo; original→REVERSED). Numeração definitiva só no post (`AC:fy:journal`, placeholder
+  `RASCUNHO-{id}` no draft). Datas estritas `YYYY-MM-DD` (UTC, sem fuso). Origem automática só por
+  helper interno (`createJournalEntryDraftTx`, all-or-none, idempotente). Novas permissões
+  `accounting.prepare` e `accounting.unlockPeriods`. **Sem integrações nem ecrãs.** Validado:
+  typecheck/lint/44 unit + **32/32 integração** (`pnpm test:integration:accounting`).
 - **8c — Integração automática**: recibo/pagamento/factura/transferência → `JournalEntry` na mesma
   transacção do documento, **idempotente** (`companyId + sourceType + sourceId + accountingEvent`).
 - **8d — Ecrãs**: plano de contas, diários, novo lançamento, detalhe, razão geral, balancete,

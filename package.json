@@ -17,6 +17,7 @@
     "db:generate": "pnpm --filter @ants/database generate",
     "db:migrate": "pnpm --filter @ants/database migrate:dev",
     "db:seed": "pnpm --filter @ants/database seed",
+    "test:integration:accounting": "pnpm --filter @ants/domain test:integration",
     "docker:dev": "docker compose up -d postgres redis"
   },
   "devDependencies": {
