@@ -1,4 +1,4 @@
-import { redirect } from 'next/navigation';
+import { NoPermission } from '@/components/NoPermission';
 import { forCompany } from '@ants/database';
 import { customerKpis, hasPermission, listCustomers, type AccountState } from '@ants/domain';
 import { getContext } from '@/lib/session';
@@ -24,7 +24,7 @@ export default async function ClientesPage() {
       </div>
     );
   }
-  if (!hasPermission(ctx, 'clients.view')) redirect('/');
+  if (!hasPermission(ctx, 'clients.view')) return <NoPermission message="Não tem permissão para ver clientes." />;
 
   const db = forCompany(ctx.companyId);
   const [customers, kpi] = await Promise.all([listCustomers(db, ctx), customerKpis(db, ctx)]);

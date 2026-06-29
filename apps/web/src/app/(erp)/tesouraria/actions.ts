@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 import { forContext } from '@ants/database';
-import { createAccount, recordMovement, transfer, DomainError, type AccountInput, type MovementInput, type TransferInput } from '@ants/domain';
+import { createAccount, recordMovement, transfer, reverseMovement, setAccountStatus, DomainError, type AccountInput, type MovementInput, type TransferInput } from '@ants/domain';
 import { getContext } from '@/lib/session';
 
 export interface TreasuryResult {
@@ -41,6 +41,32 @@ export async function transferAction(input: TransferInput): Promise<TreasuryResu
   if (!ctx.companyId) return { error: 'Sem empresa activa.' };
   try {
     await transfer(forContext(ctx), ctx, input);
+    revalidatePath('/tesouraria');
+    return { ok: true };
+  } catch (e) {
+    if (e instanceof DomainError) return { error: e.message };
+    throw e;
+  }
+}
+
+export async function reverseMovementAction(movementId: string, reason?: string): Promise<TreasuryResult> {
+  const ctx = await getContext();
+  if (!ctx.companyId) return { error: 'Sem empresa activa.' };
+  try {
+    await reverseMovement(forContext(ctx), ctx, movementId, reason);
+    revalidatePath('/tesouraria');
+    return { ok: true };
+  } catch (e) {
+    if (e instanceof DomainError) return { error: e.message };
+    throw e;
+  }
+}
+
+export async function setAccountStatusAction(accountId: string, status: 'ACTIVE' | 'INACTIVE'): Promise<TreasuryResult> {
+  const ctx = await getContext();
+  if (!ctx.companyId) return { error: 'Sem empresa activa.' };
+  try {
+    await setAccountStatus(forContext(ctx), ctx, accountId, status);
     revalidatePath('/tesouraria');
     return { ok: true };
   } catch (e) {

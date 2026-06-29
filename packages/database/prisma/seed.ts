@@ -25,7 +25,11 @@ const PERMISSIONS: Array<{ key: string; module: string; description: string }> =
   { key: 'payments.receive', module: 'payments', description: 'Receber pagamentos' },
   { key: 'payments.cancel', module: 'payments', description: 'Cancelar pagamentos' },
   { key: 'treasury.view', module: 'treasury', description: 'Ver tesouraria' },
-  { key: 'treasury.manage', module: 'treasury', description: 'Gerir tesouraria (movimentos)' },
+  { key: 'treasury.createMovement', module: 'treasury', description: 'Registar movimentos de tesouraria' },
+  { key: 'treasury.transfer', module: 'treasury', description: 'Transferir entre contas' },
+  { key: 'treasury.manageAccounts', module: 'treasury', description: 'Gerir contas de tesouraria' },
+  { key: 'treasury.viewReports', module: 'treasury', description: 'Ver relatórios de tesouraria' },
+  { key: 'treasury.reverseMovement', module: 'treasury', description: 'Estornar movimentos de tesouraria' },
   { key: 'products.view', module: 'products', description: 'Ver produtos' },
   { key: 'products.create', module: 'products', description: 'Criar produtos' },
   { key: 'products.update', module: 'products', description: 'Editar produtos' },
@@ -153,10 +157,10 @@ async function main() {
     {
       name: 'Gestor',
       description: 'Gestão operacional e aprovações',
-      keys: ['clients.view', 'clients.create', 'suppliers.view', 'suppliers.create', 'sales.view', 'sales.create', 'sales.approve_discount', 'purchases.create', 'purchases.approve', 'products.view', 'products.create', 'products.update', 'stock.view', 'stock.adjust', 'treasury.view', 'treasury.manage', 'reports.export', 'audit.view'],
+      keys: ['clients.view', 'clients.create', 'suppliers.view', 'suppliers.create', 'sales.view', 'sales.create', 'sales.approve_discount', 'purchases.create', 'purchases.approve', 'products.view', 'products.create', 'products.update', 'stock.view', 'stock.adjust', 'treasury.view', 'treasury.createMovement', 'treasury.transfer', 'treasury.manageAccounts', 'treasury.viewReports', 'treasury.reverseMovement', 'reports.export', 'audit.view'],
     },
-    { name: 'Contabilista', description: 'Contabilidade e relatórios', keys: ['accounting.post', 'accounting.reverse', 'payments.receive', 'suppliers.view', 'treasury.view', 'reports.export', 'audit.view'] },
-    { name: 'Caixa', description: 'Vendas e recebimentos', keys: ['sales.view', 'sales.create', 'invoices.issue', 'payments.receive', 'treasury.view', 'treasury.manage'] },
+    { name: 'Contabilista', description: 'Contabilidade e relatórios', keys: ['accounting.post', 'accounting.reverse', 'payments.receive', 'suppliers.view', 'treasury.view', 'treasury.viewReports', 'reports.export', 'audit.view'] },
+    { name: 'Caixa', description: 'Vendas e recebimentos', keys: ['sales.view', 'sales.create', 'invoices.issue', 'payments.receive', 'treasury.view', 'treasury.createMovement', 'treasury.viewReports'] },
     { name: 'Vendedor', description: 'Vendas e clientes', keys: ['sales.view', 'sales.create', 'clients.view', 'clients.create'] },
   ];
 
@@ -404,10 +408,12 @@ async function main() {
     { name: 'e-Mola', type: 'MOBILE', reference: '86 222 9090', balance: 18750 },
   ];
   for (const a of treasuryAccounts) {
+    // Banco e "outras" permitem descoberto; caixa e carteiras móveis não.
+    const allowNegative = a.type === 'BANK' || a.type === 'OTHER';
     await prisma.treasuryAccount.upsert({
       where: { companyId_name: { companyId: company.id, name: a.name } },
-      update: { type: a.type, reference: a.reference, updatedBy: admin.id },
-      create: { companyId: company.id, name: a.name, type: a.type, reference: a.reference, openingBalance: a.balance, balance: a.balance, createdBy: admin.id },
+      update: { type: a.type, reference: a.reference, allowNegative, updatedBy: admin.id },
+      create: { companyId: company.id, name: a.name, type: a.type, reference: a.reference, allowNegative, openingBalance: a.balance, balance: a.balance, createdBy: admin.id },
     });
   }
 

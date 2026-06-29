@@ -1,4 +1,4 @@
-import { redirect } from 'next/navigation';
+import { NoPermission } from '@/components/NoPermission';
 import { forCompany } from '@ants/database';
 import { hasPermission, listProducts, productKpis, type StockStatus } from '@ants/domain';
 import { getContext } from '@/lib/session';
@@ -22,7 +22,7 @@ export default async function ProdutosPage() {
       </div>
     );
   }
-  if (!hasPermission(ctx, 'stock.view')) redirect('/');
+  if (!hasPermission(ctx, 'stock.view')) return <NoPermission message="Não tem permissão para ver produtos." />;
 
   const db = forCompany(ctx.companyId);
   const [products, kpi] = await Promise.all([listProducts(db, ctx), productKpis(db, ctx)]);

@@ -1,4 +1,4 @@
-import { redirect } from 'next/navigation';
+import { NoPermission } from '@/components/NoPermission';
 import { forCompany } from '@ants/database';
 import { hasPermission, invoiceKpis, listInvoices } from '@ants/domain';
 import { getContext } from '@/lib/session';
@@ -20,7 +20,7 @@ export default async function FacturasPage() {
       </div>
     );
   }
-  if (!hasPermission(ctx, 'sales.view')) redirect('/');
+  if (!hasPermission(ctx, 'sales.view')) return <NoPermission message="Não tem permissão para ver as facturas." />;
 
   const db = forCompany(ctx.companyId);
   const [invoices, kpi] = await Promise.all([listInvoices(db, ctx), invoiceKpis(db, ctx)]);

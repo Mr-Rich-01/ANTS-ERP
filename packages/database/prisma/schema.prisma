@@ -609,6 +609,8 @@ model TreasuryAccount {
   currency      String   @default("MZN")
   openingBalance Decimal @default(0) @db.Decimal(14, 2)
   balance       Decimal  @default(0) @db.Decimal(14, 2)
+  /// Se a conta permite saldo negativo (descoberto). Caixa/carteiras: false por omissão.
+  allowNegative Boolean  @default(false)
   status        RecordStatus @default(ACTIVE)
   createdBy     String?
   updatedBy     String?
@@ -638,14 +640,28 @@ model TreasuryMovement {
   document      String?
   /// Conta de contrapartida (em transferências).
   counterpartAccountId String?
-  /// Origem do movimento: MANUAL, RECEIPT, SUPPLIER_PAYMENT, TRANSFER.
+  /// Liga os dois movimentos de uma mesma transferência.
+  transferId    String?
+  /// Origem do movimento: MANUAL, RECEIPT, SUPPLIER_PAYMENT, TRANSFER, REVERSAL.
   source        String   @default("MANUAL")
+  /// Idempotência: tipo/id do documento de origem e finalidade do movimento.
+  sourceType    String?
+  sourceId      String?
+  movementPurpose String?
+  /// Estado: ACTIVE (em vigor) ou REVERSED (estornado por outro movimento).
+  status        TreasuryMovementStatus @default(ACTIVE)
+  /// Estorno: este movimento reverte o original (reversesId) / foi revertido por (reversedById).
+  reversesId    String?  @unique
+  reverses      TreasuryMovement? @relation("TreasuryReversal", fields: [reversesId], references: [id])
+  reversedBy    TreasuryMovement? @relation("TreasuryReversal")
   createdBy     String?
   occurredAt    DateTime @default(now())
   createdAt     DateTime @default(now())
 
+  @@unique([companyId, sourceType, sourceId, movementPurpose])
   @@index([companyId, accountId, occurredAt])
   @@index([companyId, occurredAt])
+  @@index([transferId])
   @@map("treasury_movements")
 }
 
@@ -663,6 +679,11 @@ enum TreasuryAccountType {
 enum TreasuryFlow {
   IN
   OUT
+}
+
+enum TreasuryMovementStatus {
+  ACTIVE
+  REVERSED
 }
 
 enum CustomerType {

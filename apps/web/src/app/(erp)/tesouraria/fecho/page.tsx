@@ -23,7 +23,7 @@ function todayISO(): string {
 
 export default async function FechoPage({ searchParams }: { searchParams: { account?: string; date?: string } }) {
   const ctx = await getContext();
-  if (!ctx.companyId || !hasPermission(ctx, 'treasury.view')) redirect('/tesouraria');
+  if (!ctx.companyId || !hasPermission(ctx, 'treasury.viewReports')) redirect('/tesouraria');
 
   const db = forCompany(ctx.companyId);
   const accounts = await listAccounts(db, ctx);

@@ -7,7 +7,7 @@ import { Button, Dialog, DialogContent, DialogDescription, DialogFooter, DialogH
 import { Icon } from '@/components/Icon';
 import { KpiCard, KpiGrid, type KpiCardData } from '@/components/ui/KpiCard';
 import { ACCENT } from '@/lib/erp-nav';
-import { createAccountAction, recordMovementAction, transferAction } from '@/app/(erp)/tesouraria/actions';
+import { createAccountAction, recordMovementAction, transferAction, reverseMovementAction, setAccountStatusAction } from '@/app/(erp)/tesouraria/actions';
 
 export interface AccountView {
   id: string;
@@ -27,6 +27,16 @@ export interface MovementView {
   document: string;
   amountStr: string;
   amountColor: string;
+  status: 'ACTIVE' | 'REVERSED';
+  reversal: boolean;
+  reversible: boolean;
+}
+export interface TreasuryPerms {
+  createMovement: boolean;
+  transfer: boolean;
+  manageAccounts: boolean;
+  reverse: boolean;
+  viewReports: boolean;
 }
 
 const th: React.CSSProperties = { padding: '11px 14px', textAlign: 'left', fontSize: 11, fontWeight: 600, letterSpacing: '.5px', color: 'var(--text3)', textTransform: 'uppercase', borderBottom: '1px solid var(--bd-soft)' };
@@ -135,7 +145,7 @@ function TransferDialog({ accounts, trigger }: { accounts: AccountView[]; trigge
       <DialogContent style={{ maxWidth: 460 }}>
         <DialogHeader>
           <DialogTitle>Transferência entre contas</DialogTitle>
-          <DialogDescription>Move dinheiro de uma conta para outra.</DialogDescription>
+          <DialogDescription>Move dinheiro de uma conta para outra (não é receita nem despesa).</DialogDescription>
         </DialogHeader>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 13 }}>
           <div style={field}>
@@ -227,7 +237,41 @@ function AccountDialog({ trigger }: { trigger: React.ReactNode }) {
   );
 }
 
-export function TesourariaClient({ kpis, accounts, movements, canManage }: { kpis: KpiCardData[]; accounts: AccountView[]; movements: MovementView[]; canManage: boolean }) {
+function AccountToggle({ account }: { account: AccountView }) {
+  const router = useRouter();
+  const [pending, start] = useTransition();
+  const next = account.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE';
+  return (
+    <button
+      onClick={() => start(async () => { await setAccountStatusAction(account.id, next); router.refresh(); })}
+      disabled={pending}
+      title={account.status === 'ACTIVE' ? 'Desactivar conta' : 'Activar conta'}
+      style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--text3)', fontSize: 11, fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 4 }}
+    >
+      <Icon name={account.status === 'ACTIVE' ? 'toggle-right' : 'toggle-left'} size={15} />
+      {account.status === 'ACTIVE' ? 'Desactivar' : 'Activar'}
+    </button>
+  );
+}
+
+function ReverseButton({ movementId }: { movementId: string }) {
+  const router = useRouter();
+  const [pending, start] = useTransition();
+  return (
+    <button
+      onClick={() => start(async () => { await reverseMovementAction(movementId); router.refresh(); })}
+      disabled={pending}
+      title="Estornar movimento"
+      style={{ border: '1px solid var(--border)', background: 'var(--card)', cursor: 'pointer', color: 'var(--bad)', fontSize: 11, fontWeight: 600, padding: '3px 8px', borderRadius: 7, display: 'inline-flex', alignItems: 'center', gap: 4 }}
+    >
+      <Icon name="undo-2" size={13} />
+      {pending ? '…' : 'Estornar'}
+    </button>
+  );
+}
+
+export function TesourariaClient({ kpis, accounts, movements, perms }: { kpis: KpiCardData[]; accounts: AccountView[]; movements: MovementView[]; perms: TreasuryPerms }) {
+  const activeAccounts = accounts.filter((a) => a.status === 'ACTIVE');
   return (
     <div style={{ padding: '14px 26px 30px', display: 'flex', flexDirection: 'column', gap: 14 }}>
       <KpiGrid>
@@ -239,33 +283,38 @@ export function TesourariaClient({ kpis, accounts, movements, canManage }: { kpi
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12, flexWrap: 'wrap' }}>
           <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)' }}>Contas</div>
           <div style={{ flex: 1 }} />
-          <Link href="/tesouraria/fecho" style={{ ...toolBtn, color: 'var(--accent-fg)' }}>
-            <Icon name="file-text" size={15} />
-            Relatório diário
-          </Link>
-          {canManage && (
-            <>
-              <MovementDialog accounts={accounts} trigger={<button style={toolBtn}><Icon name="plus-circle" size={15} />Movimento</button>} />
-              <TransferDialog accounts={accounts} trigger={<button style={toolBtn}><Icon name="arrow-left-right" size={15} />Transferência</button>} />
-              <AccountDialog trigger={<button style={{ display: 'flex', alignItems: 'center', gap: 7, height: 36, padding: '0 13px', borderRadius: 9, border: 'none', background: ACCENT, color: '#fff', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}><Icon name="plus" size={15} />Nova conta</button>} />
-            </>
+          {perms.viewReports && (
+            <Link href="/tesouraria/fecho" style={{ ...toolBtn, color: 'var(--accent-fg)' }}>
+              <Icon name="file-text" size={15} />
+              Relatório diário
+            </Link>
           )}
+          {perms.createMovement && <MovementDialog accounts={activeAccounts} trigger={<button style={toolBtn}><Icon name="plus-circle" size={15} />Movimento</button>} />}
+          {perms.transfer && <TransferDialog accounts={activeAccounts} trigger={<button style={toolBtn}><Icon name="arrow-left-right" size={15} />Transferência</button>} />}
+          {perms.manageAccounts && <AccountDialog trigger={<button style={{ display: 'flex', alignItems: 'center', gap: 7, height: 36, padding: '0 13px', borderRadius: 9, border: 'none', background: ACCENT, color: '#fff', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}><Icon name="plus" size={15} />Nova conta</button>} />}
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(220px,1fr))', gap: 12 }}>
-          {accounts.map((a) => (
-            <div key={a.id} style={{ border: '1px solid var(--border)', borderRadius: 13, padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
-                <span style={{ color: 'var(--accent-fg)', background: 'var(--accent-bg)', padding: 8, borderRadius: 9, display: 'inline-flex' }}>
-                  <Icon name={accIcon[a.type] ?? 'circle-dollar-sign'} size={16} />
-                </span>
-                <div>
-                  <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--text)' }}>{a.name}</div>
-                  <div style={{ fontSize: 11, color: 'var(--text3)' }}>{a.typeLabel}{a.reference ? ` · ${a.reference}` : ''}</div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(230px,1fr))', gap: 12 }}>
+          {accounts.map((a) => {
+            const inactive = a.status === 'INACTIVE';
+            return (
+              <div key={a.id} style={{ border: '1px solid var(--border)', borderRadius: 13, padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 8, opacity: inactive ? 0.6 : 1 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+                  <span style={{ color: 'var(--accent-fg)', background: 'var(--accent-bg)', padding: 8, borderRadius: 9, display: 'inline-flex' }}>
+                    <Icon name={accIcon[a.type] ?? 'circle-dollar-sign'} size={16} />
+                  </span>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--text)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                      {a.name}
+                      {inactive && <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--text2)', background: 'var(--bd-soft)', padding: '1px 6px', borderRadius: 20 }}>Inactiva</span>}
+                    </div>
+                    <div style={{ fontSize: 11, color: 'var(--text3)' }}>{a.typeLabel}{a.reference ? ` · ${a.reference}` : ''}</div>
+                  </div>
                 </div>
+                <div className="tnum" style={{ fontSize: 19, fontWeight: 700, color: 'var(--text)' }}>{a.balanceStr}</div>
+                {perms.manageAccounts && <AccountToggle account={a} />}
               </div>
-              <div className="tnum" style={{ fontSize: 19, fontWeight: 700, color: 'var(--text)' }}>{a.balanceStr}</div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
 
@@ -278,7 +327,7 @@ export function TesourariaClient({ kpis, accounts, movements, canManage }: { kpi
           <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)' }}>Movimentos recentes</div>
         </div>
         <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 820 }}>
             <thead>
               <tr style={{ background: 'var(--card2)' }}>
                 <th style={th}>Data</th>
@@ -286,26 +335,37 @@ export function TesourariaClient({ kpis, accounts, movements, canManage }: { kpi
                 <th style={th}>Categoria</th>
                 <th style={th}>Descrição</th>
                 <th style={{ ...th, textAlign: 'right' }}>Valor</th>
+                <th style={{ ...th, width: 90 }} />
               </tr>
             </thead>
             <tbody>
               {movements.length === 0 ? (
                 <tr>
-                  <td colSpan={5} style={{ padding: '34px 14px', textAlign: 'center', color: 'var(--text3)', fontSize: 13 }}>Ainda não há movimentos.</td>
+                  <td colSpan={6} style={{ padding: '34px 14px', textAlign: 'center', color: 'var(--text3)', fontSize: 13 }}>Ainda não há movimentos.</td>
                 </tr>
               ) : (
-                movements.map((m) => (
-                  <tr key={m.id} className="ants-row" style={{ borderBottom: '1px solid var(--bd-soft2)' }}>
-                    <td className="tnum" style={{ padding: '11px 14px', fontSize: 12.5, color: 'var(--text2)', whiteSpace: 'nowrap' }}>{m.when}</td>
-                    <td style={{ padding: '11px 14px', fontSize: 13, color: 'var(--text)', whiteSpace: 'nowrap' }}>{m.accountName}</td>
-                    <td style={{ padding: '11px 14px', fontSize: 12.5, color: 'var(--text2)' }}>{m.category}</td>
-                    <td style={{ padding: '11px 14px', fontSize: 12.5, color: 'var(--text2)' }}>
-                      {m.description}
-                      {m.document ? <span className="font-mono" style={{ color: 'var(--text3)' }}> · {m.document}</span> : null}
-                    </td>
-                    <td className="tnum" style={{ padding: '11px 14px', textAlign: 'right', fontSize: 13, fontWeight: 700, color: m.amountColor, whiteSpace: 'nowrap' }}>{m.amountStr}</td>
-                  </tr>
-                ))
+                movements.map((m) => {
+                  const reversed = m.status === 'REVERSED';
+                  return (
+                    <tr key={m.id} className="ants-row" style={{ borderBottom: '1px solid var(--bd-soft2)', opacity: reversed ? 0.55 : 1 }}>
+                      <td className="tnum" style={{ padding: '11px 14px', fontSize: 12.5, color: 'var(--text2)', whiteSpace: 'nowrap' }}>{m.when}</td>
+                      <td style={{ padding: '11px 14px', fontSize: 13, color: 'var(--text)', whiteSpace: 'nowrap' }}>{m.accountName}</td>
+                      <td style={{ padding: '11px 14px', fontSize: 12.5, color: 'var(--text2)' }}>
+                        {m.category}
+                        {reversed && <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--text2)', background: 'var(--bd-soft)', padding: '1px 6px', borderRadius: 20, marginLeft: 6 }}>Estornado</span>}
+                        {m.reversal && <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--info)', background: 'var(--info-bg)', padding: '1px 6px', borderRadius: 20, marginLeft: 6 }}>Estorno</span>}
+                      </td>
+                      <td style={{ padding: '11px 14px', fontSize: 12.5, color: 'var(--text2)' }}>
+                        {m.description}
+                        {m.document ? <span className="font-mono" style={{ color: 'var(--text3)' }}> · {m.document}</span> : null}
+                      </td>
+                      <td className="tnum" style={{ padding: '11px 14px', textAlign: 'right', fontSize: 13, fontWeight: 700, color: m.amountColor, whiteSpace: 'nowrap', textDecoration: reversed ? 'line-through' : undefined }}>{m.amountStr}</td>
+                      <td style={{ padding: '11px 10px', textAlign: 'right' }}>
+                        {perms.reverse && m.reversible && <ReverseButton movementId={m.id} />}
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>

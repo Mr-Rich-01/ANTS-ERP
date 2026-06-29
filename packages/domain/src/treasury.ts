@@ -9,6 +9,7 @@ import { writeAudit } from './audit';
 
 export type TreasuryAccountType = 'CASH' | 'BANK' | 'MOBILE' | 'OTHER';
 export type TreasuryFlow = 'IN' | 'OUT';
+export type TreasuryMovementStatus = 'ACTIVE' | 'REVERSED';
 
 export interface AccountItem {
   id: string;
@@ -16,6 +17,7 @@ export interface AccountItem {
   type: TreasuryAccountType;
   reference: string | null;
   balance: number;
+  allowNegative: boolean;
   status: 'ACTIVE' | 'INACTIVE';
 }
 
@@ -30,6 +32,10 @@ export interface TreasuryMovementItem {
   category: string;
   description: string | null;
   document: string | null;
+  transferId: string | null;
+  source: string;
+  status: TreasuryMovementStatus;
+  reversesId: string | null;
 }
 
 export interface TreasuryKpis {
@@ -55,18 +61,57 @@ function startOfDay(d: Date): Date {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate());
 }
 
+function mapMovement(m: {
+  id: string;
+  occurredAt: Date;
+  accountId: string;
+  account: { name: string };
+  flow: string;
+  amount: unknown;
+  balanceAfter: unknown;
+  category: string;
+  description: string | null;
+  document: string | null;
+  transferId: string | null;
+  source: string;
+  status: string;
+  reversesId: string | null;
+}): TreasuryMovementItem {
+  return {
+    id: m.id,
+    occurredAt: m.occurredAt,
+    accountId: m.accountId,
+    accountName: m.account.name,
+    flow: m.flow as TreasuryFlow,
+    amount: Number(m.amount),
+    balanceAfter: Number(m.balanceAfter),
+    category: m.category,
+    description: m.description,
+    document: m.document,
+    transferId: m.transferId,
+    source: m.source,
+    status: m.status as TreasuryMovementStatus,
+    reversesId: m.reversesId,
+  };
+}
+
 // ─────────────────────────── Leituras ───────────────────────────
 
-export async function listAccounts(db: PrismaClient, ctx: RequestContext): Promise<AccountItem[]> {
+/** Lista contas. Por omissão só activas; `includeInactive` para extractos históricos. */
+export async function listAccounts(db: PrismaClient, ctx: RequestContext, includeInactive = false): Promise<AccountItem[]> {
   requirePermission(ctx, 'treasury.view');
   requireCompany(ctx);
-  const rows = await db.treasuryAccount.findMany({ orderBy: [{ type: 'asc' }, { name: 'asc' }] });
+  const rows = await db.treasuryAccount.findMany({
+    where: includeInactive ? undefined : { status: 'ACTIVE' },
+    orderBy: [{ type: 'asc' }, { name: 'asc' }],
+  });
   return rows.map((a) => ({
     id: a.id,
     name: a.name,
     type: a.type as TreasuryAccountType,
     reference: a.reference,
     balance: Number(a.balance),
+    allowNegative: a.allowNegative,
     status: a.status,
   }));
 }
@@ -78,7 +123,11 @@ export async function treasuryKpis(db: PrismaClient, ctx: RequestContext): Promi
   const dayStart = startOfDay(now);
   const [accounts, todays] = await Promise.all([
     db.treasuryAccount.findMany({ where: { status: 'ACTIVE' }, select: { type: true, balance: true } }),
-    db.treasuryMovement.findMany({ where: { occurredAt: { gte: dayStart } }, select: { flow: true, amount: true } }),
+    // KPIs consolidados ignoram transferências internas e movimentos estornados.
+    db.treasuryMovement.findMany({
+      where: { occurredAt: { gte: dayStart }, status: 'ACTIVE', source: { not: 'TRANSFER' } },
+      select: { flow: true, amount: true },
+    }),
   ]);
   let cashTotal = 0;
   let bankTotal = 0;
@@ -104,23 +153,12 @@ export async function listMovements(db: PrismaClient, ctx: RequestContext, opts:
     take: opts.limit ?? 50,
     include: { account: { select: { name: true } } },
   });
-  return rows.map((m) => ({
-    id: m.id,
-    occurredAt: m.occurredAt,
-    accountId: m.accountId,
-    accountName: m.account.name,
-    flow: m.flow as TreasuryFlow,
-    amount: Number(m.amount),
-    balanceAfter: Number(m.balanceAfter),
-    category: m.category,
-    description: m.description,
-    document: m.document,
-  }));
+  return rows.map(mapMovement);
 }
 
 /** Relatório diário de uma conta (saldo inicial, entradas, saídas, saldo final). */
 export async function dailyReport(db: PrismaClient, ctx: RequestContext, accountId: string, dateISO?: string): Promise<DailyReport> {
-  requirePermission(ctx, 'treasury.view');
+  requirePermission(ctx, 'treasury.viewReports');
   requireCompany(ctx);
   const account = await db.treasuryAccount.findFirst({ where: { id: accountId } });
   if (!account) throw new NotFoundError('Conta não encontrada.');
@@ -134,8 +172,7 @@ export async function dailyReport(db: PrismaClient, ctx: RequestContext, account
     orderBy: { occurredAt: 'asc' },
     include: { account: { select: { name: true } } },
   });
-  // Movimentos posteriores ao dia (para derivar o saldo de fecho do dia).
-  const after = await db.treasuryMovement.findMany({ where: { accountId, occurredAt: { gte: dayEnd } }, select: { flow: true, amount: true } });
+  const after = await db.treasuryMovement.findMany({ where: { accountId, occurredAt: { gte: dayEnd }, status: 'ACTIVE' }, select: { flow: true, amount: true } });
 
   const currentBalance = Number(account.balance);
   const netAfter = after.reduce((acc, m) => acc + (m.flow === 'IN' ? Number(m.amount) : -Number(m.amount)), 0);
@@ -143,6 +180,7 @@ export async function dailyReport(db: PrismaClient, ctx: RequestContext, account
   let totalIn = 0;
   let totalOut = 0;
   for (const m of dayMovements) {
+    if (m.status !== 'ACTIVE') continue;
     if (m.flow === 'IN') totalIn += Number(m.amount);
     else totalOut += Number(m.amount);
   }
@@ -157,39 +195,65 @@ export async function dailyReport(db: PrismaClient, ctx: RequestContext, account
     totalOut: round2(totalOut),
     closingBalance,
     operator: ctx.userName ?? 'Operador',
-    movements: dayMovements.map((m) => ({
-      id: m.id,
-      occurredAt: m.occurredAt,
-      accountId: m.accountId,
-      accountName: m.account.name,
-      flow: m.flow as TreasuryFlow,
-      amount: Number(m.amount),
-      balanceAfter: Number(m.balanceAfter),
-      category: m.category,
-      description: m.description,
-      document: m.document,
-    })),
+    movements: dayMovements.map(mapMovement),
   };
 }
 
 // ─────────────────────────── Helper transaccional ───────────────────────────
 
 /**
- * Lança um movimento numa conta dentro de uma transacção (reutilizado pelos
- * recibos de clientes e pagamentos a fornecedores). Devolve o saldo após.
+ * Lança um movimento numa conta dentro de uma transacção. Aplica a regra de saldo
+ * negativo (conta.allowNegative) e idempotência por (sourceType, sourceId, purpose):
+ * se já existir o movimento para a mesma origem, é um no-op (devolve o saldo actual).
+ * Reutilizado por recibos de clientes e pagamentos a fornecedores.
  */
 export async function postTreasuryMovementTx(
   tx: Prisma.TransactionClient,
   companyId: string,
   userId: string,
-  input: { accountId: string; flow: TreasuryFlow; amount: number; category: string; description?: string; document?: string; source?: string; counterpartAccountId?: string },
-): Promise<number> {
+  input: {
+    accountId: string;
+    flow: TreasuryFlow;
+    amount: number;
+    category: string;
+    description?: string;
+    document?: string;
+    source?: string;
+    counterpartAccountId?: string;
+    transferId?: string;
+    sourceType?: string;
+    sourceId?: string;
+    movementPurpose?: string;
+    occurredAt?: Date;
+  },
+): Promise<{ balanceAfter: number; movementId: string; created: boolean }> {
+  // Idempotência: se a origem já gerou este movimento, não duplica.
+  if (input.sourceType && input.sourceId && input.movementPurpose) {
+    const existing = await tx.treasuryMovement.findFirst({
+      where: { companyId, sourceType: input.sourceType, sourceId: input.sourceId, movementPurpose: input.movementPurpose },
+    });
+    if (existing) return { balanceAfter: Number(existing.balanceAfter), movementId: existing.id, created: false };
+  }
+
   const account = await tx.treasuryAccount.findFirst({ where: { id: input.accountId, companyId } });
   if (!account) throw new NotFoundError('Conta de tesouraria não encontrada.');
+  if (account.status !== 'ACTIVE') throw new ConflictError('A conta está inactiva.');
+
   const amount = round2(input.amount);
-  const balanceAfter = round2(Number(account.balance) + (input.flow === 'IN' ? amount : -amount));
-  await tx.treasuryAccount.update({ where: { id: account.id }, data: { balance: balanceAfter } });
-  await tx.treasuryMovement.create({
+  if (amount <= 0) throw new ValidationError('O valor deve ser positivo.');
+
+  // Actualização ATÓMICA do saldo (increment/decrement) — bloqueia a linha até ao
+  // commit, evitando lost updates em movimentos concorrentes na mesma conta.
+  const updated = await tx.treasuryAccount.update({
+    where: { id: account.id },
+    data: input.flow === 'IN' ? { balance: { increment: amount } } : { balance: { decrement: amount } },
+  });
+  const balanceAfter = round2(Number(updated.balance));
+  if (input.flow === 'OUT' && balanceAfter < 0 && !account.allowNegative) {
+    // Reverte a transacção inteira (o decremento não é persistido).
+    throw new ValidationError(`Saldo insuficiente na conta ${account.name}.`);
+  }
+  const created = await tx.treasuryMovement.create({
     data: {
       companyId,
       accountId: account.id,
@@ -200,11 +264,16 @@ export async function postTreasuryMovementTx(
       description: input.description ?? null,
       document: input.document ?? null,
       counterpartAccountId: input.counterpartAccountId ?? null,
+      transferId: input.transferId ?? null,
       source: input.source ?? 'MANUAL',
+      sourceType: input.sourceType ?? null,
+      sourceId: input.sourceId ?? null,
+      movementPurpose: input.movementPurpose ?? null,
       createdBy: userId,
+      occurredAt: input.occurredAt ?? new Date(),
     },
   });
-  return balanceAfter;
+  return { balanceAfter, movementId: created.id, created: true };
 }
 
 // ─────────────────────────── Mutações ───────────────────────────
@@ -214,11 +283,12 @@ const accountInput = z.object({
   type: z.enum(['CASH', 'BANK', 'MOBILE', 'OTHER']).default('BANK'),
   reference: z.string().trim().max(80).optional(),
   openingBalance: z.coerce.number().default(0),
+  allowNegative: z.coerce.boolean().optional(),
 });
 export type AccountInput = z.input<typeof accountInput>;
 
 export async function createAccount(db: PrismaClient, ctx: RequestContext, input: AccountInput): Promise<{ id: string }> {
-  requirePermission(ctx, 'treasury.manage');
+  requirePermission(ctx, 'treasury.manageAccounts');
   const companyId = requireCompany(ctx);
   const parsed = accountInput.safeParse(input);
   if (!parsed.success) throw new ValidationError(parsed.error.issues[0]?.message ?? 'Dados inválidos.');
@@ -227,11 +297,24 @@ export async function createAccount(db: PrismaClient, ctx: RequestContext, input
   const dup = await db.treasuryAccount.findFirst({ where: { name: data.name } });
   if (dup) throw new ConflictError('Já existe uma conta com este nome.');
 
+  // Por omissão, caixa/carteiras não permitem descoberto; banco/outras permitem.
+  const allowNegative = data.allowNegative ?? (data.type === 'BANK' || data.type === 'OTHER');
   const created = await db.treasuryAccount.create({
-    data: { companyId, name: data.name, type: data.type, reference: data.reference ?? null, openingBalance: round2(data.openingBalance), balance: round2(data.openingBalance), createdBy: ctx.userId } as never,
+    data: { companyId, name: data.name, type: data.type, reference: data.reference ?? null, allowNegative, openingBalance: round2(data.openingBalance), balance: round2(data.openingBalance), createdBy: ctx.userId } as never,
   });
-  await writeAudit(db, ctx, { action: 'treasury.account_create', entity: 'TreasuryAccount', entityId: created.id, newValues: { name: data.name, type: data.type, openingBalance: data.openingBalance } });
+  await writeAudit(db, ctx, { action: 'treasury.account_create', entity: 'TreasuryAccount', entityId: created.id, newValues: { name: data.name, type: data.type, openingBalance: data.openingBalance, allowNegative } });
   return { id: created.id };
+}
+
+/** Activa/desactiva uma conta. Contas com movimentos não são eliminadas — apenas desactivadas. */
+export async function setAccountStatus(db: PrismaClient, ctx: RequestContext, accountId: string, status: 'ACTIVE' | 'INACTIVE'): Promise<void> {
+  requirePermission(ctx, 'treasury.manageAccounts');
+  const companyId = requireCompany(ctx);
+  const account = await db.treasuryAccount.findFirst({ where: { id: accountId, companyId } });
+  if (!account) throw new NotFoundError('Conta não encontrada.');
+  if (account.status === status) return;
+  await db.treasuryAccount.update({ where: { id: account.id }, data: { status, updatedBy: ctx.userId } });
+  await writeAudit(db, ctx, { action: 'treasury.account_status', entity: 'TreasuryAccount', entityId: account.id, oldValues: { status: account.status }, newValues: { status } });
 }
 
 const movementInput = z.object({
@@ -245,20 +328,22 @@ export type MovementInput = z.input<typeof movementInput>;
 
 /** Movimento manual (entrada/saída) numa conta. */
 export async function recordMovement(db: PrismaClient, ctx: RequestContext, input: MovementInput): Promise<{ balanceAfter: number }> {
-  requirePermission(ctx, 'treasury.manage');
+  requirePermission(ctx, 'treasury.createMovement');
   const companyId = requireCompany(ctx);
   const parsed = movementInput.safeParse(input);
   if (!parsed.success) throw new ValidationError(parsed.error.issues[0]?.message ?? 'Dados inválidos.');
   const data = parsed.data;
 
   return db.$transaction(async (tx) => {
-    const account = await tx.treasuryAccount.findFirst({ where: { id: data.accountId, companyId } });
-    if (!account) throw new NotFoundError('Conta não encontrada.');
-    if (data.flow === 'OUT' && round2(data.amount) > round2(Number(account.balance))) {
-      throw new ValidationError('Saldo insuficiente na conta.');
-    }
-    const balanceAfter = await postTreasuryMovementTx(tx, companyId, ctx.userId, { accountId: data.accountId, flow: data.flow, amount: data.amount, category: data.category, description: data.description, source: 'MANUAL' });
-    await writeAudit(tx, ctx, { action: 'treasury.movement', entity: 'TreasuryAccount', entityId: data.accountId, newValues: { flow: data.flow, amount: round2(data.amount), category: data.category } });
+    const { balanceAfter, movementId } = await postTreasuryMovementTx(tx, companyId, ctx.userId, {
+      accountId: data.accountId,
+      flow: data.flow,
+      amount: data.amount,
+      category: data.category,
+      description: data.description,
+      source: 'MANUAL',
+    });
+    await writeAudit(tx, ctx, { action: 'treasury.movement', entity: 'TreasuryMovement', entityId: movementId, newValues: { flow: data.flow, amount: round2(data.amount), category: data.category } });
     return { balanceAfter };
   });
 }
@@ -271,24 +356,75 @@ const transferInput = z.object({
 });
 export type TransferInput = z.input<typeof transferInput>;
 
-/** Transferência entre contas (gera dois movimentos ligados). */
-export async function transfer(db: PrismaClient, ctx: RequestContext, input: TransferInput): Promise<void> {
-  requirePermission(ctx, 'treasury.manage');
+/** Transferência entre contas: dois movimentos ligados por transferId, atomicamente. */
+export async function transfer(db: PrismaClient, ctx: RequestContext, input: TransferInput): Promise<{ transferId: string }> {
+  requirePermission(ctx, 'treasury.transfer');
   const companyId = requireCompany(ctx);
   const parsed = transferInput.safeParse(input);
   if (!parsed.success) throw new ValidationError(parsed.error.issues[0]?.message ?? 'Dados inválidos.');
   const data = parsed.data;
   if (data.fromAccountId === data.toAccountId) throw new ValidationError('As contas de origem e destino têm de ser diferentes.');
 
+  const transferId = `TRF-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   await db.$transaction(async (tx) => {
     const from = await tx.treasuryAccount.findFirst({ where: { id: data.fromAccountId, companyId } });
     const to = await tx.treasuryAccount.findFirst({ where: { id: data.toAccountId, companyId } });
     if (!from || !to) throw new NotFoundError('Conta não encontrada.');
-    if (round2(data.amount) > round2(Number(from.balance))) throw new ValidationError('Saldo insuficiente na conta de origem.');
-
     const desc = data.description ?? `Transferência ${from.name} → ${to.name}`;
-    await postTreasuryMovementTx(tx, companyId, ctx.userId, { accountId: from.id, flow: 'OUT', amount: data.amount, category: 'Transferência', description: desc, source: 'TRANSFER', counterpartAccountId: to.id });
-    await postTreasuryMovementTx(tx, companyId, ctx.userId, { accountId: to.id, flow: 'IN', amount: data.amount, category: 'Transferência', description: desc, source: 'TRANSFER', counterpartAccountId: from.id });
-    await writeAudit(tx, ctx, { action: 'treasury.transfer', entity: 'TreasuryAccount', entityId: from.id, newValues: { from: from.name, to: to.name, amount: round2(data.amount) } });
+    // Saída na origem (valida saldo via allowNegative) e entrada no destino — ou falha tudo.
+    await postTreasuryMovementTx(tx, companyId, ctx.userId, { accountId: from.id, flow: 'OUT', amount: data.amount, category: 'Transferência', description: desc, source: 'TRANSFER', counterpartAccountId: to.id, transferId });
+    await postTreasuryMovementTx(tx, companyId, ctx.userId, { accountId: to.id, flow: 'IN', amount: data.amount, category: 'Transferência', description: desc, source: 'TRANSFER', counterpartAccountId: from.id, transferId });
+    await writeAudit(tx, ctx, { action: 'treasury.transfer', entity: 'TreasuryMovement', entityId: transferId, newValues: { from: from.name, to: to.name, amount: round2(data.amount), transferId } });
+  });
+  return { transferId };
+}
+
+/**
+ * Estorna um movimento: cria um contra-movimento (ACTIVE) ligado ao original
+ * (reversesId), marca o original como REVERSED e ajusta o saldo da conta.
+ * Movimentos nunca são editados/eliminados — só estornados.
+ */
+export async function reverseMovement(db: PrismaClient, ctx: RequestContext, movementId: string, reason?: string): Promise<{ reversalId: string }> {
+  requirePermission(ctx, 'treasury.reverseMovement');
+  const companyId = requireCompany(ctx);
+
+  return db.$transaction(async (tx) => {
+    const original = await tx.treasuryMovement.findFirst({ where: { id: movementId, companyId } });
+    if (!original) throw new NotFoundError('Movimento não encontrado.');
+    if (original.status === 'REVERSED') throw new ConflictError('O movimento já foi estornado.');
+    const already = await tx.treasuryMovement.findFirst({ where: { reversesId: original.id } });
+    if (already) throw new ConflictError('O movimento já tem um estorno.');
+
+    const account = await tx.treasuryAccount.findFirst({ where: { id: original.accountId, companyId } });
+    if (!account) throw new NotFoundError('Conta não encontrada.');
+
+    const amount = Number(original.amount);
+    const reverseFlow: TreasuryFlow = original.flow === 'IN' ? 'OUT' : 'IN';
+    const updated = await tx.treasuryAccount.update({
+      where: { id: account.id },
+      data: reverseFlow === 'IN' ? { balance: { increment: amount } } : { balance: { decrement: amount } },
+    });
+    const balanceAfter = round2(Number(updated.balance));
+    if (reverseFlow === 'OUT' && balanceAfter < 0 && !account.allowNegative) {
+      throw new ValidationError(`Saldo insuficiente para estornar na conta ${account.name}.`);
+    }
+    const reversal = await tx.treasuryMovement.create({
+      data: {
+        companyId,
+        accountId: account.id,
+        flow: reverseFlow,
+        amount,
+        balanceAfter,
+        category: original.category,
+        description: `Estorno de ${original.category}${reason ? ` — ${reason}` : ''}`,
+        document: original.document,
+        source: 'REVERSAL',
+        reversesId: original.id,
+        createdBy: ctx.userId,
+      },
+    });
+    await tx.treasuryMovement.update({ where: { id: original.id }, data: { status: 'REVERSED' } });
+    await writeAudit(tx, ctx, { action: 'treasury.reverse', entity: 'TreasuryMovement', entityId: original.id, oldValues: { status: 'ACTIVE' }, newValues: { status: 'REVERSED', reversalId: reversal.id, reason: reason ?? null } });
+    return { reversalId: reversal.id };
   });
 }

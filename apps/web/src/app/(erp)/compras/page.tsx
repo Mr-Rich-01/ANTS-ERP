@@ -1,4 +1,4 @@
-import { redirect } from 'next/navigation';
+import { NoPermission } from '@/components/NoPermission';
 import { forCompany } from '@ants/database';
 import { hasPermission, listPurchaseOrders, purchaseKpis } from '@ants/domain';
 import { getContext } from '@/lib/session';
@@ -22,7 +22,7 @@ export default async function ComprasPage() {
       </div>
     );
   }
-  if (!hasPermission(ctx, 'purchases.create')) redirect('/');
+  if (!hasPermission(ctx, 'purchases.create')) return <NoPermission message="Não tem permissão para ver as compras." />;
 
   const db = forCompany(ctx.companyId);
   const [orders, kpi] = await Promise.all([listPurchaseOrders(db, ctx), purchaseKpis(db, ctx)]);

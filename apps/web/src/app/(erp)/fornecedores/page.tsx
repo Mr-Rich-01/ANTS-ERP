@@ -1,4 +1,4 @@
-import { redirect } from 'next/navigation';
+import { NoPermission } from '@/components/NoPermission';
 import { forCompany } from '@ants/database';
 import { hasPermission, listSuppliers, supplierKpis, type PayableState } from '@ants/domain';
 import { getContext } from '@/lib/session';
@@ -24,7 +24,7 @@ export default async function FornecedoresPage() {
       </div>
     );
   }
-  if (!hasPermission(ctx, 'suppliers.view')) redirect('/');
+  if (!hasPermission(ctx, 'suppliers.view')) return <NoPermission message="Não tem permissão para ver fornecedores." />;
 
   const db = forCompany(ctx.companyId);
   const [suppliers, kpi] = await Promise.all([listSuppliers(db, ctx), supplierKpis(db, ctx)]);

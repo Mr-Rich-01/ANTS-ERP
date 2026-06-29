@@ -1,9 +1,9 @@
-import { redirect } from 'next/navigation';
 import { forCompany } from '@ants/database';
 import { hasPermission, listAccounts, listMovements, treasuryKpis } from '@ants/domain';
 import { getContext } from '@/lib/session';
 import { fmt } from '@/lib/format';
 import type { KpiCardData } from '@/components/ui/KpiCard';
+import { NoPermission } from '@/components/NoPermission';
 import { TesourariaClient, type AccountView, type MovementView } from './TesourariaClient';
 
 export const dynamic = 'force-dynamic';
@@ -23,10 +23,11 @@ export default async function TesourariaPage() {
       </div>
     );
   }
-  if (!hasPermission(ctx, 'treasury.view')) redirect('/');
+  if (!hasPermission(ctx, 'treasury.view')) return <NoPermission message="Não tem permissão para ver a tesouraria." />;
 
   const db = forCompany(ctx.companyId);
-  const [accounts, movements, kpi] = await Promise.all([listAccounts(db, ctx), listMovements(db, ctx, { limit: 30 }), treasuryKpis(db, ctx)]);
+  // Inclui contas inactivas (extracto histórico); os selectores de movimento usam só activas.
+  const [accounts, movements, kpi] = await Promise.all([listAccounts(db, ctx, true), listMovements(db, ctx, { limit: 30 }), treasuryKpis(db, ctx)]);
 
   const accountViews: AccountView[] = accounts.map((a) => ({ id: a.id, name: a.name, type: a.type, typeLabel: TYPE_LABEL[a.type] ?? a.type, reference: a.reference ?? '', balanceStr: fmt(a.balance), status: a.status }));
   const movementViews: MovementView[] = movements.map((m) => ({
@@ -38,6 +39,9 @@ export default async function TesourariaPage() {
     document: m.document ?? '',
     amountStr: `${m.flow === 'IN' ? '+ ' : '− '}${fmt(m.amount)}`,
     amountColor: m.flow === 'IN' ? 'var(--ok)' : 'var(--bad)',
+    status: m.status,
+    reversal: m.source === 'REVERSAL',
+    reversible: m.status === 'ACTIVE' && m.source !== 'REVERSAL',
   }));
 
   const kpis: KpiCardData[] = [
@@ -47,5 +51,18 @@ export default async function TesourariaPage() {
     { label: 'Saídas hoje', valueStr: fmt(kpi.todayOut), tone: 'red', icon: 'arrow-up-right', sub: 'movimentos do dia', valueColor: 'var(--bad)' },
   ];
 
-  return <TesourariaClient kpis={kpis} accounts={accountViews} movements={movementViews} canManage={hasPermission(ctx, 'treasury.manage')} />;
+  return (
+    <TesourariaClient
+      kpis={kpis}
+      accounts={accountViews}
+      movements={movementViews}
+      perms={{
+        createMovement: hasPermission(ctx, 'treasury.createMovement'),
+        transfer: hasPermission(ctx, 'treasury.transfer'),
+        manageAccounts: hasPermission(ctx, 'treasury.manageAccounts'),
+        reverse: hasPermission(ctx, 'treasury.reverseMovement'),
+        viewReports: hasPermission(ctx, 'treasury.viewReports'),
+      }}
+    />
+  );
 }

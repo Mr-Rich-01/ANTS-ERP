@@ -216,11 +216,37 @@ em [`CLAUDE.md`](CLAUDE.md).
 
 ---
 
-## 🔨 Próximo (sugerido)
+## ✅ Fase 7.1 — Hardening da Tesouraria _(concluída)_
 
-> **Contabilidade** (plano de contas + lançamentos por partidas dobradas a partir dos documentos
-> de venda/compra/tesouraria) ou **RH & Salários**. **POS** e **NC/ND** ficam como extensões da
-> facturação; **Fecho de caixa com contagem de denominações** fica como extensão da tesouraria.
+> Robustez financeira: imutabilidade, idempotência, concorrência, regras de saldo, estados e auditoria.
+
+- **Auditoria financeira**: contas/movimentos têm `companyId`, `createdBy`, `occurredAt`, `source`.
+  Excluídos da auditoria automática **de propósito** (o movimento é o trilho imutável); cada acção
+  (criar conta, estado, movimento, transferência, estorno) escreve `AuditLog` explícito e semântico.
+- **Imutabilidade**: movimentos não se editam/eliminam — só **estorno** (`reverseMovement`), que cria
+  contra-movimento ligado por `reversesId`, marca o original `REVERSED` e mantém ambos no extracto.
+- **Idempotência**: `@@unique([companyId, sourceType, sourceId, movementPurpose])` + pré-verificação
+  (no-op) em `postTreasuryMovementTx` — um recibo/pagamento nunca gera 2 movimentos.
+- **Concorrência/atomicidade**: tudo em `$transaction`; saldo actualizado por **increment/decrement
+  atómico** (bloqueia a linha → sem lost updates); transferência cria os 2 movimentos ou falha tudo.
+- **Regras de saldo**: `allowNegative` por conta (Caixa/Carteiras `false`, Banco/Outras `true`).
+- **Estado das contas**: activar/desactivar (`setAccountStatus`), sem eliminação; inactivas saem dos
+  selectores de pagamento mas ficam nos extractos.
+- **Transferências**: `transferId` liga os dois movimentos; KPIs consolidados ignoram transferências
+  e estornados.
+- **Permissões split**: `treasury.view/createMovement/transfer/manageAccounts/viewReports/reverseMovement`.
+- **Bug de navegação**: `redirect('/')` por permissão → vista `NoPermission` (sem salto para o dashboard).
+- **Testes**: unitários de permissões por função (vitest) + smoke e2e dos 9 cenários (duplo recibo/
+  pagamento, saldo insuficiente, concorrência, transferência falhada, estorno, conta inactiva,
+  isolamento). typecheck 6/6 · lint 6/6 · testes 34 · build OK.
+
+---
+
+## 🔨 Próximo — Fase 8: Contabilidade
+
+> Plano de contas + períodos + diários/lançamentos (partidas dobradas) + integração automática a
+> partir dos documentos (vendas/compras/tesouraria) + relatórios (razão, balancete, extracto diário).
+> `accounting.*`, `systemKeys` (sem códigos fixos), numeração por exercício, Decimal, idempotente.
 
 ---
 

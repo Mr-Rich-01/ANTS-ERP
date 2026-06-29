@@ -1,4 +1,4 @@
-import { redirect } from 'next/navigation';
+import { NoPermission } from '@/components/NoPermission';
 import { forCompany } from '@ants/database';
 import { getCompanyIdentity, hasPermission, listCompanyUsers, listPermissions, listRecentAudit, listRoles } from '@ants/domain';
 import { getContext } from '@/lib/session';
@@ -16,7 +16,7 @@ export default async function AdminPage() {
       </div>
     );
   }
-  if (!hasPermission(ctx, 'users.manage')) redirect('/');
+  if (!hasPermission(ctx, 'users.manage')) return <NoPermission message="Não tem permissão para a Administração." />;
 
   // Cliente isolado pela empresa activa (2.ª barreira: filtra companyId automaticamente).
   const db = forCompany(ctx.companyId);

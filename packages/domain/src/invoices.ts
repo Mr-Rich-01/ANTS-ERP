@@ -463,6 +463,9 @@ export async function createPayment(db: PrismaClient, ctx: RequestContext, input
         description: `Recibo ${number} — ${invoice.customerName}`,
         document: number,
         source: 'RECEIPT',
+        sourceType: 'RECEIPT',
+        sourceId: payment.id,
+        movementPurpose: 'RECEIPT_IN',
       });
     }
 

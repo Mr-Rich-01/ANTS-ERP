@@ -397,6 +397,9 @@ export async function createSupplierPayment(db: PrismaClient, ctx: RequestContex
         description: `Pagamento ${number} — ${supplier.name}`,
         document: number,
         source: 'SUPPLIER_PAYMENT',
+        sourceType: 'SUPPLIER_PAYMENT',
+        sourceId: payment.id,
+        movementPurpose: 'SUPPLIER_PAYMENT_OUT',
       });
     }
 
