@@ -162,12 +162,37 @@ em [`CLAUDE.md`](CLAUDE.md).
 
 ---
 
+## ✅ Fase 6 — Compras (ordens + recepção + pagamentos) _(concluída)_
+
+> Ordem de compra → recepção (parcial/total) que dá entrada de stock (IN), recalcula o custo médio
+> ponderado e gera conta a pagar; pagamento ao fornecedor baixa o saldo. Verificado ao vivo no browser.
+
+- **Modelos + migração `20260628190432_purchases`**: `PurchaseOrder` (série OC, snapshot do
+  fornecedor, totais, estado, valor recebido/pago), `PurchaseOrderLine` (custo, qtd encomendada/
+  recebida), `SupplierPayment` (série PG). Reutiliza `DocumentCounter` (OC/GR/PG). Os 3 em
+  `COMPANY_SCOPED` + teste; fora da auditoria automática (acções registam auditoria explícita).
+- **Domínio** `purchases.ts`: `listPurchaseOrders`, `getPurchaseOrder`, `purchaseKpis`,
+  `createPurchaseOrder` (estado SENT), `receivePurchaseOrder` (transaccional — movimentos IN,
+  **custo médio ponderado**, conta a pagar, estado PARTIAL/RECEIVED, **bloqueia excesso**,
+  auditoria `purchase.receive`), `createSupplierPayment` (baixa saldo, auditoria `purchase.pay`),
+  `getSupplierStatement` (extracto do fornecedor).
+- **Permissões**: usa `purchases.create` (admin/Gestor já têm) — sem novas permissões.
+- **Server Actions** `createPurchaseOrderAction`/`receivePurchaseOrderAction`/`createSupplierPaymentAction`.
+- **Ecrãs reais**: `/compras` (lista + KPIs + pesquisa + **Nova ordem** + botão Receber),
+  `/compras/ordem/nova` (fornecedor + linhas com custo + armazém), `/compras/ordem?id=…` (detalhe +
+  **Receber mercadoria** + **Registar pagamento**), `/recepcao?order=…` (folha de recepção por linha
+  → entrada de stock). O **extracto do fornecedor** em `/contas/perfil?type=supplier` mostra
+  recepções/pagamentos reais; "Novo pagamento" ligado. Remove o mock `data/purchases.ts`.
+- **Validado**: typecheck 6/6 · lint 6/6 · testes 26 · build OK + smoke e2e (OC→recepção parcial/
+  total com custo médio, conta a pagar, pagamento, extracto, bloqueio) + verificação ao vivo no browser.
+
+---
+
 ## 🔨 Próximo (sugerido)
 
-> **Compras** (encomendas a fornecedores + recepção `/recepcao` gerando movimentos `IN` e contas a
-> pagar) para fechar o ciclo de stock/fornecedores; ou **Tesouraria & Bancos** (contas, fluxo de
-> caixa, fecho de caixa) que recebe os recibos. **POS** e **NC/ND** também ficam disponíveis como
-> extensões da facturação.
+> **Tesouraria & Bancos** (contas, caixas, fluxo de caixa, fecho de caixa) — centraliza recibos de
+> clientes e pagamentos a fornecedores. Ou **Contabilidade** (plano de contas + lançamentos por
+> partidas dobradas a partir dos documentos). **POS** e **NC/ND** ficam como extensões da facturação.
 
 ---
 

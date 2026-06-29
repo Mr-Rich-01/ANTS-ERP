@@ -73,6 +73,11 @@ describe('scopeArgs — isolamento multiempresa', () => {
     });
   });
 
+  it('Compras (PurchaseOrder/SupplierPayment) estão no âmbito: injecta companyId', () => {
+    expect(scopeArgs('PurchaseOrder', 'findMany', { where: { status: 'SENT' } }, C)).toEqual({ where: { status: 'SENT', companyId: C } });
+    expect(scopeArgs('SupplierPayment', 'create', { data: { amount: 50 } }, C)).toEqual({ data: { amount: 50, companyId: C } });
+  });
+
   it('NÃO altera modelos fora do âmbito (ex.: Permission)', () => {
     const args = { where: { key: 'sales.view' } };
     expect(scopeArgs('Permission', 'findMany', args, C)).toBe(args);

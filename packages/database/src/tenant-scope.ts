@@ -24,6 +24,9 @@ export const COMPANY_SCOPED = new Set<string>([
   'InvoiceLine',
   'Payment',
   'DocumentCounter',
+  'PurchaseOrder',
+  'PurchaseOrderLine',
+  'SupplierPayment',
 ]);
 
 /** Operações cujo `where` deve ser filtrado por companyId. */

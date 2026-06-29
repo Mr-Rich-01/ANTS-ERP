@@ -46,6 +46,9 @@ model Company {
   invoiceLines InvoiceLine[]
   payments     Payment[]
   documentCounters DocumentCounter[]
+  purchaseOrders PurchaseOrder[]
+  purchaseOrderLines PurchaseOrderLine[]
+  supplierPayments SupplierPayment[]
 
   @@index([status])
   @@map("companies")
@@ -290,6 +293,9 @@ model Supplier {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
+  purchaseOrders PurchaseOrder[]
+  payments       SupplierPayment[]
+
   @@unique([companyId, nuit])
   @@index([companyId])
   @@index([companyId, status])
@@ -329,6 +335,7 @@ model Product {
   stockLevels  StockLevel[]
   movements    StockMovement[]
   invoiceLines InvoiceLine[]
+  purchaseOrderLines PurchaseOrderLine[]
 
   @@unique([companyId, sku])
   @@index([companyId])
@@ -352,6 +359,7 @@ model Warehouse {
   stockLevels  StockLevel[]
   movements    StockMovement[]
   invoices     Invoice[]
+  purchaseOrders PurchaseOrder[]
 
   @@unique([companyId, code])
   @@index([companyId])
@@ -490,12 +498,98 @@ model DocumentCounter {
   id         String   @id @default(cuid())
   companyId  String
   company    Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  /// Chave da série (ex.: "FT-2026", "REC-2026").
+  /// Chave da série (ex.: "FT-2026", "REC-2026", "OC-2026", "PG-2026").
   key        String
   value      Int      @default(0)
 
   @@unique([companyId, key])
   @@map("document_counters")
+}
+
+// ─────────────────────────────────────────────────────────────
+// Compras (Fase 6)
+// ─────────────────────────────────────────────────────────────
+
+model PurchaseOrder {
+  id            String   @id @default(cuid())
+  companyId     String
+  company       Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  branchId      String?
+  /// Número (ex.: "OC 2026/0001"), único por empresa.
+  number        String
+  supplierId    String
+  supplier      Supplier @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  supplierName  String
+  supplierNuit  String?
+  /// Armazém de destino da recepção.
+  warehouseId   String
+  warehouse     Warehouse @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
+  orderDate     DateTime @default(now())
+  expectedDate  DateTime?
+  status        PurchaseStatus @default(SENT)
+  subtotal      Decimal  @db.Decimal(14, 2)
+  taxTotal      Decimal  @db.Decimal(14, 2)
+  total         Decimal  @db.Decimal(14, 2)
+  /// Valor já recebido (com imposto) — base da conta a pagar gerada.
+  receivedValue Decimal  @default(0) @db.Decimal(14, 2)
+  amountPaid    Decimal  @default(0) @db.Decimal(14, 2)
+  notes         String?
+  createdBy     String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  lines         PurchaseOrderLine[]
+  payments      SupplierPayment[]
+
+  @@unique([companyId, number])
+  @@index([companyId, status])
+  @@index([companyId, supplierId])
+  @@index([companyId, orderDate])
+  @@map("purchase_orders")
+}
+
+model PurchaseOrderLine {
+  id            String   @id @default(cuid())
+  companyId     String
+  company       Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  orderId       String
+  order         PurchaseOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId     String?
+  product       Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+  sku           String?
+  description   String
+  unitCost      Decimal  @db.Decimal(14, 2)
+  quantity      Int
+  receivedQty   Int      @default(0)
+  taxRate       Decimal  @default(16) @db.Decimal(5, 2)
+  total         Decimal  @db.Decimal(14, 2)
+
+  @@index([companyId])
+  @@index([orderId])
+  @@map("purchase_order_lines")
+}
+
+model SupplierPayment {
+  id              String   @id @default(cuid())
+  companyId       String
+  company         Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  /// Número (ex.: "PG 2026/0001"), único por empresa.
+  number          String
+  purchaseOrderId String?
+  purchaseOrder   PurchaseOrder? @relation(fields: [purchaseOrderId], references: [id], onDelete: SetNull)
+  supplierId      String
+  supplier        Supplier @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  amount          Decimal  @db.Decimal(14, 2)
+  method          PaymentMethod @default(TRANSFER)
+  paidAt          DateTime @default(now())
+  notes           String?
+  createdBy       String?
+  createdAt       DateTime @default(now())
+
+  @@unique([companyId, number])
+  @@index([companyId, supplierId])
+  @@index([companyId, paidAt])
+  @@map("supplier_payments")
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -531,6 +625,14 @@ enum PaymentMethod {
   EMOLA
   CARD
   TRANSFER
+}
+
+enum PurchaseStatus {
+  DRAFT
+  SENT
+  PARTIAL
+  RECEIVED
+  CANCELLED
 }
 
 enum CompanyStatus {

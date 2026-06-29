@@ -15,6 +15,7 @@ export interface ProductListItem {
   brand: string | null;
   unit: string;
   salePrice: number;
+  avgCost: number;
   minStock: number;
   stock: number;
   status: 'ACTIVE' | 'INACTIVE';
@@ -61,6 +62,7 @@ type ProductWithLevels = {
   brand: string | null;
   unit: string;
   salePrice: unknown;
+  avgCost: unknown;
   minStock: number;
   status: 'ACTIVE' | 'INACTIVE';
   stockLevels: { quantity: number }[];
@@ -76,6 +78,7 @@ function toListItem(p: ProductWithLevels): ProductListItem {
     brand: p.brand,
     unit: p.unit,
     salePrice: Number(p.salePrice),
+    avgCost: Number(p.avgCost),
     minStock: p.minStock,
     stock,
     status: p.status,

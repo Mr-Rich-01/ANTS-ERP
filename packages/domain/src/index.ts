@@ -12,3 +12,4 @@ export * from './suppliers';
 export * from './products';
 export * from './stock';
 export * from './invoices';
+export * from './purchases';

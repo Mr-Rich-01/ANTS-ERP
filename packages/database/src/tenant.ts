@@ -39,6 +39,10 @@ const AUDIT_EXCLUDED = new Set<string>([
   'InvoiceLine',
   'Payment',
   'DocumentCounter',
+  // Compras: criação de OC, recepção e pagamento registam auditoria explícita.
+  'PurchaseOrder',
+  'PurchaseOrderLine',
+  'SupplierPayment',
 ]);
 
 /**

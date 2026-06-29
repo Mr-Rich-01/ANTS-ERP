@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { forCompany } from '@ants/database';
-import { getCustomer, getSupplier, getCustomerStatement, hasPermission, DomainError } from '@ants/domain';
+import { getCustomer, getSupplier, getCustomerStatement, getSupplierStatement, hasPermission, DomainError } from '@ants/domain';
 import { getContext } from '@/lib/session';
 import { Icon } from '@/components/Icon';
 import { ACCENT } from '@/lib/erp-nav';
@@ -10,6 +10,7 @@ import { initials } from '@/lib/ui-format';
 import { getProfile, type ProfileType } from '@/lib/data/profile';
 import { CustomerFormDialog, type CustomerFormValues } from '@/components/clientes/CustomerFormDialog';
 import { SupplierFormDialog, type SupplierFormValues } from '@/components/fornecedores/SupplierFormDialog';
+import { SupplierPaymentDialog } from '@/components/compras/SupplierPaymentDialog';
 
 export const dynamic = 'force-dynamic';
 
@@ -69,6 +70,7 @@ export default async function PerfilContaPage({ searchParams }: { searchParams: 
   let view: ProfileView;
   let editClient: CustomerFormValues | null = null;
   let editSupplier: SupplierFormValues | null = null;
+  let supplierPayInfo: { id: string; balance: number } | null = null;
 
   const notFound = (message: string) => (
     <div style={{ padding: '14px 26px 30px', display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -162,6 +164,21 @@ export default async function PerfilContaPage({ searchParams }: { searchParams: 
     }
 
     const available = supplier.creditLimit - supplier.balance;
+    const sStatement = await getSupplierStatement(forCompany(ctx.companyId), ctx, supplier.id);
+    const sExtract: ExtractRow[] = [
+      { date: '—', doc: '—', desc: 'Saldo inicial', debStr: '—', credStr: '—', debCol: 'var(--text4)', credCol: 'var(--text4)', saldoStr: fmt(sStatement.openingBalance) },
+      ...sStatement.rows.map((r) => ({
+        date: fmtDate(r.date),
+        doc: r.doc,
+        desc: r.description,
+        debStr: r.debit > 0 ? fmtNoSymbol(r.debit) : '—',
+        credStr: r.credit > 0 ? fmtNoSymbol(r.credit) : '—',
+        debCol: r.debit > 0 ? 'var(--text)' : 'var(--text4)',
+        credCol: r.credit > 0 ? 'var(--ok)' : 'var(--text4)',
+        saldoStr: fmt(r.balance),
+      })),
+    ];
+    supplierPayInfo = { id: supplier.id, balance: supplier.balance };
     view = {
       ini: initials(supplier.name),
       name: supplier.name,
@@ -180,8 +197,8 @@ export default async function PerfilContaPage({ searchParams }: { searchParams: 
         { label: 'Crédito disponível', value: fmt(available), color: available < 0 ? 'var(--bad)' : 'var(--text)' },
         { label: 'Prazo de pagamento', value: `${supplier.paymentTermDays} dias`, color: 'var(--text)' },
       ],
-      extract: [],
-      saldoFinalStr: fmt(supplier.balance),
+      extract: sStatement.rows.length === 0 ? [] : sExtract,
+      saldoFinalStr: fmt(sStatement.closingBalance),
     };
     editSupplier = {
       id: supplier.id,
@@ -274,10 +291,28 @@ export default async function PerfilContaPage({ searchParams }: { searchParams: 
               <Icon name={pf.actionIcon} size={15} />
               {pf.actionLabel}
             </Link>
+          ) : supplierPayInfo ? (
+            supplierPayInfo.balance > 0 ? (
+              <SupplierPaymentDialog
+                supplierId={supplierPayInfo.id}
+                suggested={supplierPayInfo.balance}
+                trigger={
+                  <button style={{ display: 'flex', alignItems: 'center', gap: 7, height: 38, padding: '0 15px', borderRadius: 10, border: 'none', background: ACCENT, color: '#fff', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>
+                    <Icon name={pf.actionIcon} size={15} />
+                    {pf.actionLabel}
+                  </button>
+                }
+              />
+            ) : (
+              <button disabled title="Sem saldo a pagar" style={{ display: 'flex', alignItems: 'center', gap: 7, height: 38, padding: '0 15px', borderRadius: 10, border: 'none', background: ACCENT, color: '#fff', fontSize: 12.5, fontWeight: 600, opacity: 0.55, cursor: 'not-allowed' }}>
+                <Icon name={pf.actionIcon} size={15} />
+                {pf.actionLabel}
+              </button>
+            )
           ) : (
             <button
               disabled={isReal}
-              title={isReal ? 'Disponível na fase de Tesouraria' : undefined}
+              title={isReal ? 'Disponível numa fase futura' : undefined}
               style={{ display: 'flex', alignItems: 'center', gap: 7, height: 38, padding: '0 15px', borderRadius: 10, border: 'none', background: ACCENT, color: '#fff', fontSize: 12.5, fontWeight: 600, opacity: isReal ? 0.55 : 1, cursor: isReal ? 'not-allowed' : 'pointer' }}
             >
               <Icon name={pf.actionIcon} size={15} />
