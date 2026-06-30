@@ -5,6 +5,10 @@ _Última actualização: 2026-06-29_
 Estado vivo do projecto. O conhecimento permanente (arquitectura, regras, comandos) está
 em [`CLAUDE.md`](CLAUDE.md).
 
+**Último commit funcional:** `acef72b`
+**Fase concluída:** `8c.2a — Idempotência operacional`
+**Próximo passo:** `8c.2b — Integração contabilística de factura e recibo`
+
 ---
 
 ## 🧭 Estado num relance
@@ -31,17 +35,33 @@ em [`CLAUDE.md`](CLAUDE.md).
 contabilidade 80/80** (8b 32 + 8c.1 30 + 8c.2a 18; `pnpm test:integration:accounting`, sub: `…:c1`,
 `…:c2a`) · `prisma validate` OK · seed idempotente (2×).
 
-> ⚠️ **Build com falha PRÉ-EXISTENTE e AMBIENTAL (não causada por 8a/8b):** o `next build` falha no
-> prerender (`useContext null` no runtime do Next) de páginas estáticas. **git bisect** provou que
-> falha desde o **1.º commit** do projecto nesta máquina, com Next 14.2.15/14.2.34/14.2.35 — enquanto
-> apps Next mínimas/isoladas compilam. Descartado: código/layout/ThemeProvider, Node, versão do Next,
-> `node_modules`, `@ants/ui` react devDep, pnpm hoist, transpilePackages, next-auth. É uma combinação
-> específica do repo neste ambiente (mismatch de instância de React no prerender). **Tarefa de ambiente
-> dedicada**, ortogonal a todas as fases de funcionalidades. Não bloqueia o domínio (8b validado por
-> typecheck/lint/testes/integração).
-
 > ⚠️ **Lembrete:** após cada `db:seed` que adicione **novas permissões**, as sessões antigas (JWT)
 > não as têm — é preciso **terminar e reiniciar sessão** para o gate passar a reconhecê-las.
+
+## Problemas conhecidos
+
+### Build de produção do Next.js
+
+O comando `next build` falha durante o prerender com um erro
+`useContext null`.
+
+A falha foi reproduzida desde o primeiro commit do repositório neste
+ambiente e não foi introduzida pelas fases recentes.
+
+A causa técnica definitiva ainda não foi identificada.
+
+As fases funcionais têm sido verificadas através de:
+
+- Prisma format, validate e generate;
+- typecheck;
+- lint;
+- testes unitários;
+- suites de integração;
+- validações directas na base de dados;
+- verificação funcional em modo de desenvolvimento quando aplicável.
+
+A investigação e correcção do build constituem uma tarefa técnica
+separada e não devem ser misturadas com as fases funcionais.
 
 ---
 
