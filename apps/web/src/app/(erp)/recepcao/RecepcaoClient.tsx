@@ -14,21 +14,49 @@ export interface ReceiveLine {
   ordered: number;
   alreadyReceived: number;
   remaining: number;
+  unitCost: number;
+  taxRate: number;
 }
 
 const th: React.CSSProperties = { padding: '11px 14px', textAlign: 'left', fontSize: 11, fontWeight: 600, letterSpacing: '.5px', color: 'var(--text3)', textTransform: 'uppercase', borderBottom: '1px solid var(--bd-soft)' };
 const meta: React.CSSProperties = { fontSize: 12.5, color: 'var(--text2)', display: 'flex', alignItems: 'center', gap: 6 };
 const iconBtn: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 22, height: 22, borderRadius: 6, border: 'none', background: 'none', cursor: 'pointer' };
 
+function createIdempotencyKey(): string {
+  if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
+  const bytes = new Uint8Array(16);
+  globalThis.crypto.getRandomValues(bytes);
+  bytes[6] = (bytes[6]! & 0x0f) | 0x40;
+  bytes[8] = (bytes[8]! & 0x3f) | 0x80;
+  const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
 export function RecepcaoClient({ orderId, orderNumber, supplierName, warehouseName, lines }: { orderId: string; orderNumber: string; supplierName: string; warehouseName: string; lines: ReceiveLine[] }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
+  const [idempotencyKey, setIdempotencyKey] = useState(() => createIdempotencyKey());
   const [recv, setRecv] = useState<Record<string, number>>(() => Object.fromEntries(lines.map((l) => [l.lineId, l.remaining])));
   const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
 
   const setQty = (id: string, max: number, val: number) => setRecv((p) => ({ ...p, [id]: Math.max(0, Math.min(max, Math.trunc(val))) }));
 
-  const totalToReceive = useMemo(() => lines.reduce((a, l) => a + (recv[l.lineId] ?? 0), 0), [recv, lines]);
+  const totals = useMemo(() => {
+    let quantity = 0;
+    let net = 0;
+    let tax = 0;
+    for (const l of lines) {
+      const qty = recv[l.lineId] ?? 0;
+      quantity += qty;
+      const lineNet = Math.round(qty * l.unitCost * 100) / 100;
+      const lineTax = Math.round(lineNet * (l.taxRate / 100) * 100) / 100;
+      net += lineNet;
+      tax += lineTax;
+    }
+    net = Math.round(net * 100) / 100;
+    tax = Math.round(tax * 100) / 100;
+    return { quantity, net, tax, total: Math.round((net + tax) * 100) / 100 };
+  }, [recv, lines]);
 
   const submit = () => {
     setMsg(null);
@@ -38,10 +66,11 @@ export function RecepcaoClient({ orderId, orderNumber, supplierName, warehouseNa
       return;
     }
     startTransition(async () => {
-      const res = await receivePurchaseOrderAction(orderId, items);
+      const res = await receivePurchaseOrderAction(orderId, items, { idempotencyKey });
       if (res.error) setMsg({ kind: 'err', text: res.error });
       else {
         setMsg({ kind: 'ok', text: `Recepção ${res.number} registada. Stock e conta a pagar actualizados.` });
+        setIdempotencyKey(createIdempotencyKey());
         router.push(`/compras/ordem?id=${orderId}`);
       }
     });
@@ -154,12 +183,24 @@ export function RecepcaoClient({ orderId, orderNumber, supplierName, warehouseNa
                   Total de unidades a receber
                 </td>
                 <td className="tnum" style={{ padding: '13px 14px', textAlign: 'center', fontSize: 14, fontWeight: 700, color: 'var(--accent-fg)' }}>
-                  {totalToReceive}
+                  {totals.quantity}
                 </td>
               </tr>
             </tfoot>
           </table>
         </div>
+      </div>
+      <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 16, padding: '14px 18px', display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
+        {[
+          ['Líquido', totals.net],
+          ['IVA', totals.tax],
+          ['Total', totals.total],
+        ].map(([label, value]) => (
+          <div key={label} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <span style={{ fontSize: 11.5, color: 'var(--text3)', fontWeight: 600, textTransform: 'uppercase' }}>{label}</span>
+            <span className="tnum" style={{ fontSize: 15, color: label === 'Total' ? 'var(--accent-fg)' : 'var(--text)', fontWeight: 700 }}>{Number(value).toFixed(2)} MT</span>
+          </div>
+        ))}
       </div>
     </div>
   );

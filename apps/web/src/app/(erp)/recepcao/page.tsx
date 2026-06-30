@@ -39,7 +39,7 @@ export default async function RecepcaoPage({ searchParams }: { searchParams: { o
   if (oc.status === 'CANCELLED') return notice(`A ordem ${oc.number} está cancelada.`);
 
   const lines: ReceiveLine[] = oc.lines
-    .map((l) => ({ lineId: l.id, sku: l.sku ?? '—', name: l.description, ordered: l.quantity, alreadyReceived: l.receivedQty, remaining: l.quantity - l.receivedQty }))
+    .map((l) => ({ lineId: l.id, sku: l.sku ?? '—', name: l.description, ordered: l.quantity, alreadyReceived: l.receivedQty, remaining: l.quantity - l.receivedQty, unitCost: l.unitCost, taxRate: l.taxRate }))
     .filter((l) => l.remaining > 0);
 
   return (

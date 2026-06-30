@@ -42,6 +42,8 @@ const AUDIT_EXCLUDED = new Set<string>([
   // Compras: criação de OC, recepção e pagamento registam auditoria explícita.
   'PurchaseOrder',
   'PurchaseOrderLine',
+  'PurchaseReceipt',
+  'PurchaseReceiptItem',
   'SupplierPayment',
   // Tesouraria: movimentos e contas registam auditoria explícita.
   'TreasuryAccount',

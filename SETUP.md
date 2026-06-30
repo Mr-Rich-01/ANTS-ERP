@@ -144,7 +144,7 @@ pnpm test:integration:accounting
 ```
 
 Este comando executa as suites contabilísticas de integração existentes
-(8b, 8c.1, 8c.2a e 8c.2b).
+(8b, 8c.1, 8c.2a, 8c.2b e 8c.3).
 
 Testes contabilísticos da 8c.1:
 
@@ -162,6 +162,12 @@ Testes contabilísticos da 8c.2b:
 
 ```bash
 pnpm test:integration:accounting:c2
+```
+
+Testes contabilísticos da 8c.3:
+
+```bash
+pnpm test:integration:accounting:c3
 ```
 
 Build:

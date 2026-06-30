@@ -42,6 +42,8 @@ model Company {
   warehouses           Warehouse[]
   stockLevels          StockLevel[]
   stockMovements       StockMovement[]
+  purchaseReceipts     PurchaseReceipt[]
+  purchaseReceiptItems PurchaseReceiptItem[]
   invoices             Invoice[]
   invoiceLines         InvoiceLine[]
   payments             Payment[]
@@ -305,9 +307,10 @@ model Supplier {
   createdAt       DateTime     @default(now())
   updatedAt       DateTime     @updatedAt
 
-  purchaseOrders PurchaseOrder[]
-  payments       SupplierPayment[]
-  journalLines   JournalEntryLine[]
+  purchaseOrders   PurchaseOrder[]
+  purchaseReceipts PurchaseReceipt[]
+  payments         SupplierPayment[]
+  journalLines     JournalEntryLine[]
 
   @@unique([companyId, nuit])
   @@unique([companyId, id])
@@ -346,12 +349,14 @@ model Product {
   createdAt DateTime     @default(now())
   updatedAt DateTime     @updatedAt
 
-  stockLevels        StockLevel[]
-  movements          StockMovement[]
-  invoiceLines       InvoiceLine[]
-  purchaseOrderLines PurchaseOrderLine[]
+  stockLevels          StockLevel[]
+  movements            StockMovement[]
+  invoiceLines         InvoiceLine[]
+  purchaseOrderLines   PurchaseOrderLine[]
+  purchaseReceiptItems PurchaseReceiptItem[]
 
   @@unique([companyId, sku])
+  @@unique([companyId, id])
   @@index([companyId])
   @@index([companyId, status])
   @@index([name])
@@ -370,12 +375,14 @@ model Warehouse {
   createdAt DateTime     @default(now())
   updatedAt DateTime     @updatedAt
 
-  stockLevels    StockLevel[]
-  movements      StockMovement[]
-  invoices       Invoice[]
-  purchaseOrders PurchaseOrder[]
+  stockLevels      StockLevel[]
+  movements        StockMovement[]
+  invoices         Invoice[]
+  purchaseOrders   PurchaseOrder[]
+  purchaseReceipts PurchaseReceipt[]
 
   @@unique([companyId, code])
+  @@unique([companyId, id])
   @@index([companyId])
   @@map("warehouses")
 }
@@ -398,25 +405,28 @@ model StockLevel {
 }
 
 model StockMovement {
-  id           String            @id @default(cuid())
-  companyId    String
-  company      Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  productId    String
-  product      Product           @relation(fields: [productId], references: [id], onDelete: Cascade)
-  warehouseId  String
-  warehouse    Warehouse         @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
-  type         StockMovementType
+  id                String            @id @default(cuid())
+  companyId         String
+  company           Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  productId         String
+  product           Product           @relation(fields: [productId], references: [id], onDelete: Cascade)
+  warehouseId       String
+  warehouse         Warehouse         @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+  purchaseReceiptId String?
+  purchaseReceipt   PurchaseReceipt?  @relation(fields: [companyId, purchaseReceiptId], references: [companyId, id], onDelete: Restrict)
+  type              StockMovementType
   /// Delta com sinal: > 0 entrada · < 0 saída/ajuste negativo.
-  quantity     Int
+  quantity          Int
   /// Saldo do produto no armazém após o movimento.
-  balanceAfter Int
-  document     String?
-  reason       String?
-  createdBy    String?
-  createdAt    DateTime          @default(now())
+  balanceAfter      Int
+  document          String?
+  reason            String?
+  createdBy         String?
+  createdAt         DateTime          @default(now())
 
   @@index([companyId, productId, createdAt])
   @@index([companyId, warehouseId])
+  @@index([companyId, purchaseReceiptId])
   @@map("stock_movements")
 }
 
@@ -554,8 +564,10 @@ model PurchaseOrder {
 
   lines    PurchaseOrderLine[]
   payments SupplierPayment[]
+  receipts PurchaseReceipt[]
 
   @@unique([companyId, number])
+  @@unique([companyId, id])
   @@index([companyId, status])
   @@index([companyId, supplierId])
   @@index([companyId, orderDate])
@@ -578,9 +590,65 @@ model PurchaseOrderLine {
   taxRate     Decimal       @default(16) @db.Decimal(5, 2)
   total       Decimal       @db.Decimal(14, 2)
 
+  receiptItems PurchaseReceiptItem[]
+
+  @@unique([companyId, id])
   @@index([companyId])
   @@index([orderId])
   @@map("purchase_order_lines")
+}
+
+model PurchaseReceipt {
+  id              String        @id @default(cuid())
+  companyId       String
+  company         Company       @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  purchaseOrderId String
+  purchaseOrder   PurchaseOrder @relation(fields: [companyId, purchaseOrderId], references: [companyId, id], onDelete: Restrict)
+  supplierId      String
+  supplier        Supplier      @relation(fields: [companyId, supplierId], references: [companyId, id], onDelete: Restrict)
+  warehouseId     String
+  warehouse       Warehouse     @relation(fields: [companyId, warehouseId], references: [companyId, id], onDelete: Restrict)
+  receiptNumber   String
+  receiptDate     DateTime      @db.Date
+  netAmount       Decimal       @db.Decimal(14, 2)
+  taxAmount       Decimal       @db.Decimal(14, 2)
+  totalAmount     Decimal       @db.Decimal(14, 2)
+  notes           String?
+  createdById     String?
+  createdAt       DateTime      @default(now())
+
+  items          PurchaseReceiptItem[]
+  stockMovements StockMovement[]
+
+  @@unique([companyId, receiptNumber])
+  @@unique([companyId, id])
+  @@index([companyId, purchaseOrderId])
+  @@index([companyId, supplierId])
+  @@index([companyId, receiptDate])
+  @@map("purchase_receipts")
+}
+
+model PurchaseReceiptItem {
+  id                  String            @id @default(cuid())
+  companyId           String
+  company             Company           @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  purchaseReceiptId   String
+  purchaseReceipt     PurchaseReceipt   @relation(fields: [companyId, purchaseReceiptId], references: [companyId, id], onDelete: Restrict)
+  purchaseOrderLineId String
+  purchaseOrderLine   PurchaseOrderLine @relation(fields: [companyId, purchaseOrderLineId], references: [companyId, id], onDelete: Restrict)
+  productId           String
+  product             Product           @relation(fields: [companyId, productId], references: [companyId, id], onDelete: Restrict)
+  quantity            Int
+  unitCost            Decimal           @db.Decimal(14, 2)
+  taxRate             Decimal           @default(0) @db.Decimal(5, 2)
+  netAmount           Decimal           @db.Decimal(14, 2)
+  taxAmount           Decimal           @db.Decimal(14, 2)
+  totalAmount         Decimal           @db.Decimal(14, 2)
+
+  @@unique([companyId, purchaseReceiptId, purchaseOrderLineId])
+  @@index([companyId, purchaseOrderLineId])
+  @@index([companyId, productId])
+  @@map("purchase_receipt_items")
 }
 
 model SupplierPayment {
@@ -1026,6 +1094,8 @@ enum JournalEntryStatus {
 enum OperationIdempotencyScope {
   INVOICE_CREATE
   CUSTOMER_PAYMENT_CREATE
+  PURCHASE_RECEIPT_CREATE
+  SUPPLIER_PAYMENT_CREATE
 }
 
 model OperationIdempotency {

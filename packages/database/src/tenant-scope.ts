@@ -26,6 +26,8 @@ export const COMPANY_SCOPED = new Set<string>([
   'DocumentCounter',
   'PurchaseOrder',
   'PurchaseOrderLine',
+  'PurchaseReceipt',
+  'PurchaseReceiptItem',
   'SupplierPayment',
   'TreasuryAccount',
   'TreasuryMovement',

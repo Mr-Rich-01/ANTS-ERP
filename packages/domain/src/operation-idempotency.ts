@@ -13,8 +13,8 @@ import { requireCompany } from './context';
 import { ConflictError, ValidationError } from './errors';
 import { writeAudit } from './audit';
 
-export type OperationScope = 'INVOICE_CREATE' | 'CUSTOMER_PAYMENT_CREATE';
-const SCOPES: ReadonlySet<string> = new Set<OperationScope>(['INVOICE_CREATE', 'CUSTOMER_PAYMENT_CREATE']);
+export type OperationScope = 'INVOICE_CREATE' | 'CUSTOMER_PAYMENT_CREATE' | 'PURCHASE_RECEIPT_CREATE' | 'SUPPLIER_PAYMENT_CREATE';
+const SCOPES: ReadonlySet<string> = new Set<OperationScope>(['INVOICE_CREATE', 'CUSTOMER_PAYMENT_CREATE', 'PURCHASE_RECEIPT_CREATE', 'SUPPLIER_PAYMENT_CREATE']);
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** Versão actual do algoritmo de canonicalização. Estável a partir da Fase 8c.2a. */

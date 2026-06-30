@@ -29,10 +29,11 @@ Módulos já implementados: Auth/RBAC/Admin, Clientes, Fornecedores, Produtos &
 Stock, Vendas/Facturação, Compras, Tesouraria & Bancos, Hardening da
 Tesouraria, Contabilidade 8a, 8b, 8c.1, 8c.2a e 8c.2b.
 
-Estado actual da Contabilidade: Fase 8c.2b concluída com integração
-contabilística de factura (`SALE_ISSUED`) e recibo (`RECEIPT_POSTED`), usando
-idempotência operacional. A próxima fase é 8c.3, sujeita à definição exacta em
-`MODULE_STATUS.md`. Não iniciar a fase seguinte automaticamente.
+Estado actual da Contabilidade: Fase 8c.3 concluída com integração
+contabilística de recepção de compra (`PURCHASE_RECEIVED`) e pagamento a
+fornecedor (`SUPPLIER_PAYMENT_POSTED`), usando idempotência operacional. A
+próxima fase é cancelamentos/estornos ou subfase seguinte, sujeita à definição
+exacta em `MODULE_STATUS.md`. Não iniciar a fase seguinte automaticamente.
 
 ## Arquitectura Obrigatória
 
@@ -185,9 +186,9 @@ passwords não demonstrativas.
 
 ## Estado Actual
 
-- Fase 8c.2b concluída.
+- Fase 8c.3 concluída.
 - Commit base funcional: `acef72b`.
-- Próxima fase: 8c.3 — Fornecedores e compras, conforme detalhe em `MODULE_STATUS.md`.
+- Próxima fase: cancelamentos/estornos ou subfase seguinte, conforme detalhe em `MODULE_STATUS.md`.
 - `MODULE_STATUS.md` é a fonte principal para progresso e próximos passos.
 - `CLAUDE.md` deve ser preservado.
 - Quando `AGENTS.md` e `CLAUDE.md` divergirem, apresentar a divergência antes

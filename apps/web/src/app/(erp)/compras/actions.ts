@@ -8,6 +8,7 @@ import {
   createSupplierPayment,
   DomainError,
   type PurchaseInput,
+  type ReceivePurchaseOptions,
   type SupplierPaymentInput,
 } from '@ants/domain';
 import { getContext } from '@/lib/session';
@@ -32,11 +33,11 @@ export async function createPurchaseOrderAction(input: PurchaseInput): Promise<P
   }
 }
 
-export async function receivePurchaseOrderAction(orderId: string, items: Array<{ lineId: string; quantity: number }>): Promise<PurchaseActionResult> {
+export async function receivePurchaseOrderAction(orderId: string, items: Array<{ lineId: string; quantity: number }>, options: ReceivePurchaseOptions = {}): Promise<PurchaseActionResult> {
   const ctx = await getContext();
   if (!ctx.companyId) return { error: 'Sem empresa activa.' };
   try {
-    const { number } = await receivePurchaseOrder(forContext(ctx), ctx, orderId, items);
+    const { number } = await receivePurchaseOrder(forContext(ctx), ctx, orderId, items, options);
     revalidatePath('/compras');
     revalidatePath('/compras/ordem');
     revalidatePath('/produtos');

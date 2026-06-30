@@ -5,9 +5,9 @@ _Última actualização: 2026-06-30_
 Estado vivo do projecto. O conhecimento permanente (arquitectura, regras, comandos) está
 em [`CLAUDE.md`](CLAUDE.md).
 
-**Último commit funcional:** este commit (`feat(accounting): integrate invoices and customer receipts`)
-**Fase concluída:** `8c.2b — Integração contabilística de factura e recibo`
-**Próximo passo:** `8c.3 — Fornecedores e compras`
+**Último commit funcional:** este commit (`feat(accounting): integrate purchase receipts and supplier payments`)
+**Fase concluída:** `8c.3 — Fornecedores, recepções e pagamentos`
+**Próximo passo:** `8c.4 — cancelamentos/estornos ou subfase seguinte` _(não iniciado)_
 
 ---
 
@@ -28,16 +28,17 @@ em [`CLAUDE.md`](CLAUDE.md).
 | **8c.1** | **Contabilidade — fundação das integrações** (mapping tesouraria↔razão, helpers de evento idempotentes/atómicos) | ✅ |
 | **8c.2a** | **Idempotência operacional** (modelo `OperationIdempotency`, fingerprint canónico `v1`, helper transaccional) | ✅ |
 | **8c.2b** | **Contabilidade — integração factura/recibo** (factura `SALE_ISSUED`, recibo `RECEIPT_POSTED`, idempotência operacional nos formulários/actions) | ✅ |
-| 8c.3–8e | Contabilidade — fornecedores/compras, tesouraria, ecrãs, testes finais | 🔨 **8c.3 a seguir** |
+| **8c.3** | **Contabilidade — fornecedores/compras** (`PurchaseReceipt`, `PurchaseReceiptItem`, recepção `PURCHASE_RECEIVED`, pagamento `SUPPLIER_PAYMENT_POSTED`) | ✅ |
+| 8c.4–8e | Contabilidade — cancelamentos/estornos, tesouraria, ecrãs, testes finais | 🗺️ **a seguir** |
 | 9 | RH & Salários | 🗺️ futuro |
 | X | RLS forçado em toda a BD (fase transversal, pré-produção) | 🗺️ futuro |
 
 **Validações actuais:** typecheck 6/6 · lint 6/6 · **testes unitários 45** · **integração de
-contabilidade 108/108** (8b 32 + 8c.1 30 + 8c.2a 18 + 8c.2b 28; `pnpm test:integration:accounting`,
-sub: `…:c1`, `…:c2a`, `…:c2`) · `prisma format` OK · `prisma validate` OK · `pnpm build` OK
+contabilidade 124/124** (8b 32 + 8c.1 30 + 8c.2a 18 + 8c.2b 28 + 8c.3 16; `pnpm test:integration:accounting`,
+sub: `…:c1`, `…:c2a`, `…:c2`, `…:c3`) · `prisma format` OK · `prisma validate` OK · `pnpm build` OK
 em Windows nativo (28/28 páginas) e Docker Linux com Node 20 + OpenSSL · seed idempotente (2×).
 
-**Commit da 8c.2b:** este commit exclusivo, `feat(accounting): integrate invoices and customer receipts`.
+**Commit da 8c.3:** este commit exclusivo, `feat(accounting): integrate purchase receipts and supplier payments`.
 
 > ⚠️ **Lembrete:** após cada `db:seed` que adicione **novas permissões**, as sessões antigas (JWT)
 > não as têm — é preciso **terminar e reiniciar sessão** para o gate passar a reconhecê-las.
@@ -347,9 +348,16 @@ db:generate` e `pnpm build`.
     Formulário de nova factura e diálogo de recibo geram chaves UUID estáveis por tentativa; `accountId`
     é obrigatório para novos recibos. Testes: 28 cenários (`pnpm test:integration:accounting:c2`).
     Sem COGS, fornecedores, compras, cancelamentos ou transferências nesta fase.
-  - **8c.3** fornecedores (recepção valorizada — requer entidade `PurchaseReceipt`). **8c.4** tesouraria
-    manual (contrapartida) + transferências. **8c.5** backfill (dry-run) + validação.
-    Diferidos: COGS, cancelamentos operacionais.
+  - **8c.3 — Fornecedores/compras** _(✅ concluída)_: `receivePurchaseOrder()` continua a API pública,
+    cria internamente `PurchaseReceipt` e `PurchaseReceiptItem`, gera `receiptNumber` por
+    `DocumentCounter`, liga `StockMovement.purchaseReceiptId` e publica `PURCHASE_RECEIVED` no diário
+    `PURCHASES` respeitando período/exercício aberto pela `receiptDate`. `SupplierPayment` exige
+    `idempotencyKey` + `accountId`, usa `SUPPLIER_PAYMENT_CREATE`, gera `TreasuryMovement` e publica
+    `SUPPLIER_PAYMENT_POSTED` em `CASH`/`BANK` por tipo de conta (`MOBILE` → `BANK`, `OTHER` rejeitado).
+    Sem novas permissões; a fase mantém `purchases.create`. Testes: 16 cenários
+    (`pnpm test:integration:accounting:c3`).
+  - **8c.4** cancelamentos/estornos ou subfase seguinte. **8c.5** backfill (dry-run) + validação.
+    Diferidos: COGS e ecrãs contabilísticos finais.
 - **8d — Ecrãs**: plano de contas, diários, novo lançamento, detalhe, razão geral, balancete,
   extracto diário (linha a linha) + configuração contabilística (mapping de `systemKeys`).
 - **8e — Testes & validação final**: unidade + integração + isolamento multiempresa.

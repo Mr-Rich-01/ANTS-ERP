@@ -73,8 +73,14 @@ describe('scopeArgs — isolamento multiempresa', () => {
     });
   });
 
-  it('Compras (PurchaseOrder/SupplierPayment) estão no âmbito: injecta companyId', () => {
+  it('Compras (PurchaseOrder/PurchaseReceipt/SupplierPayment) estão no âmbito: injecta companyId', () => {
     expect(scopeArgs('PurchaseOrder', 'findMany', { where: { status: 'SENT' } }, C)).toEqual({ where: { status: 'SENT', companyId: C } });
+    expect(scopeArgs('PurchaseReceipt', 'create', { data: { receiptNumber: 'GR 2026/0001' } }, C)).toEqual({
+      data: { receiptNumber: 'GR 2026/0001', companyId: C },
+    });
+    expect(scopeArgs('PurchaseReceiptItem', 'findMany', { where: { purchaseReceiptId: 'r1' } }, C)).toEqual({
+      where: { purchaseReceiptId: 'r1', companyId: C },
+    });
     expect(scopeArgs('SupplierPayment', 'create', { data: { amount: 50 } }, C)).toEqual({ data: { amount: 50, companyId: C } });
   });
 
