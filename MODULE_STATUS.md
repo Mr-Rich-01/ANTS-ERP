@@ -22,13 +22,14 @@ em [`CLAUDE.md`](CLAUDE.md).
 | **8a** | **Contabilidade — schema & seed** (7 modelos, migração, FKs compostas, constraints, permissões, seed do plano-base) | ✅ |
 | **8b** | **Contabilidade — domínio** (plano, exercícios/períodos, mappings, lançamentos, partidas dobradas, estorno) | ✅ |
 | **8c.1** | **Contabilidade — fundação das integrações** (mapping tesouraria↔razão, helpers de evento idempotentes/atómicos) | ✅ |
-| 8c.2–8e | Contabilidade — vendas/recebimentos, fornecedores, tesouraria, ecrãs, testes finais | 🔨 **8c.2 a seguir** |
+| **8c.2a** | **Idempotência operacional** (modelo `OperationIdempotency`, fingerprint canónico `v1`, helper transaccional) | ✅ |
+| 8c.2b–8e | Contabilidade — integração factura/recibo, fornecedores, tesouraria, ecrãs, testes finais | 🔨 **8c.2b a seguir** |
 | 9 | RH & Salários | 🗺️ futuro |
 | X | RLS forçado em toda a BD (fase transversal, pré-produção) | 🗺️ futuro |
 
-**Validações actuais:** typecheck 6/6 · lint 6/6 · **testes unitários 44** · **integração de
-contabilidade 62/62** (8b 32 + 8c.1 30; `pnpm test:integration:accounting`, c1: `…:c1`) ·
-`prisma validate` OK · seed idempotente (2×).
+**Validações actuais:** typecheck 6/6 · lint 6/6 · **testes unitários 45** · **integração de
+contabilidade 80/80** (8b 32 + 8c.1 30 + 8c.2a 18; `pnpm test:integration:accounting`, sub: `…:c1`,
+`…:c2a`) · `prisma validate` OK · seed idempotente (2×).
 
 > ⚠️ **Build com falha PRÉ-EXISTENTE e AMBIENTAL (não causada por 8a/8b):** o `next build` falha no
 > prerender (`useContext null` no runtime do Next) de páginas estáticas. **git bisect** provou que
@@ -318,9 +319,16 @@ contabilidade 62/62** (8b 32 + 8c.1 30; `pnpm test:integration:accounting`, c1: 
     `resolveTreasuryLedgerTx`/`resolveJournalByTypeTx`) — sem gates contabilísticos de utilizador,
     atómico, idempotente com **advisory lock** + comparação de payload completo, estorno por verdade
     histórica. 30 testes (`pnpm test:integration:accounting:c1`). **Sem ligar a fluxos operacionais ainda.**
-  - **8c.2 — Vendas e recebimentos** _(próximo)_: hooks em `createInvoice`/`createPayment` (`accountId`
-    obrigatório). **8c.3** fornecedores (recepção valorizada — requer entidade `PurchaseReceipt`).
-    **8c.4** tesouraria manual (contrapartida) + transferências. **8c.5** backfill (dry-run) + validação.
+  - **8c.2a — Idempotência operacional** _(✅ concluída)_: modelo `OperationIdempotency`
+    (`@@unique([companyId, scope, idempotencyKey])`, FK `Restrict`) + migração `operation_idempotency`
+    + `COMPANY_SCOPED`; módulo interno `operation-idempotency.ts` (`runIdempotentOperation` com advisory
+    lock + replay/conflito por `requestFingerprint`; fingerprint canónico **`v1:`** sha256, arrays como
+    multiset). 18 testes (`pnpm test:integration:accounting:c2a`). **Sem alterar createInvoice/createPayment.**
+  - **8c.2b — Integração factura/recibo** _(próximo)_: ligar `createInvoice` (`SALE_ISSUED`) e
+    `createPayment` (`RECEIPT_POSTED`, `accountId` obrigatório, diário por tipo de conta) + chave de
+    idempotência nos formulários/actions + 40 cenários.
+  - **8c.3** fornecedores (recepção valorizada — requer entidade `PurchaseReceipt`). **8c.4** tesouraria
+    manual (contrapartida) + transferências. **8c.5** backfill (dry-run) + validação.
     Diferidos: COGS, cancelamentos operacionais.
 - **8d — Ecrãs**: plano de contas, diários, novo lançamento, detalhe, razão geral, balancete,
   extracto diário (linha a linha) + configuração contabilística (mapping de `systemKeys`).

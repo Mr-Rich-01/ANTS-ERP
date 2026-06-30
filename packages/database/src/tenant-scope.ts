@@ -36,6 +36,7 @@ export const COMPANY_SCOPED = new Set<string>([
   'JournalEntry',
   'JournalEntryLine',
   'AccountingMapping',
+  'OperationIdempotency',
 ]);
 
 /** Operações cujo `where` deve ser filtrado por companyId. */

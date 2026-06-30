@@ -19,6 +19,7 @@
     "db:seed": "pnpm --filter @ants/database seed",
     "test:integration:accounting": "pnpm --filter @ants/domain test:integration",
     "test:integration:accounting:c1": "pnpm --filter @ants/domain test:integration:c1",
+    "test:integration:accounting:c2a": "pnpm --filter @ants/domain test:integration:c2a",
     "docker:dev": "docker compose up -d postgres redis"
   },
   "devDependencies": {

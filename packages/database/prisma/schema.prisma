@@ -31,33 +31,34 @@ model Company {
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
 
-  branches           Branch[]
-  settings           CompanySettings?
-  users              User[]
-  roles              Role[]
-  auditLogs          AuditLog[]
-  customers          Customer[]
-  suppliers          Supplier[]
-  products           Product[]
-  warehouses         Warehouse[]
-  stockLevels        StockLevel[]
-  stockMovements     StockMovement[]
-  invoices           Invoice[]
-  invoiceLines       InvoiceLine[]
-  payments           Payment[]
-  documentCounters   DocumentCounter[]
-  purchaseOrders     PurchaseOrder[]
-  purchaseOrderLines PurchaseOrderLine[]
-  supplierPayments   SupplierPayment[]
-  treasuryAccounts   TreasuryAccount[]
-  treasuryMovements  TreasuryMovement[]
-  fiscalYears        FiscalYear[]
-  accountingPeriods  AccountingPeriod[]
-  ledgerAccounts     LedgerAccount[]
-  accountingJournals AccountingJournal[]
-  journalEntries     JournalEntry[]
-  journalEntryLines  JournalEntryLine[]
-  accountingMappings AccountingMapping[]
+  branches             Branch[]
+  settings             CompanySettings?
+  users                User[]
+  roles                Role[]
+  auditLogs            AuditLog[]
+  customers            Customer[]
+  suppliers            Supplier[]
+  products             Product[]
+  warehouses           Warehouse[]
+  stockLevels          StockLevel[]
+  stockMovements       StockMovement[]
+  invoices             Invoice[]
+  invoiceLines         InvoiceLine[]
+  payments             Payment[]
+  documentCounters     DocumentCounter[]
+  purchaseOrders       PurchaseOrder[]
+  purchaseOrderLines   PurchaseOrderLine[]
+  supplierPayments     SupplierPayment[]
+  treasuryAccounts     TreasuryAccount[]
+  treasuryMovements    TreasuryMovement[]
+  fiscalYears          FiscalYear[]
+  accountingPeriods    AccountingPeriod[]
+  ledgerAccounts       LedgerAccount[]
+  accountingJournals   AccountingJournal[]
+  journalEntries       JournalEntry[]
+  journalEntryLines    JournalEntryLine[]
+  accountingMappings   AccountingMapping[]
+  operationIdempotency OperationIdempotency[]
 
   @@index([status])
   @@map("companies")
@@ -1011,4 +1012,38 @@ enum JournalEntryStatus {
   DRAFT
   POSTED
   REVERSED
+}
+
+// ─────────────────────────────────────────────────────────────
+// Idempotência operacional (Fase 8c.2a)
+//
+// Impede a CRIAÇÃO duplicada do documento (nível operacional) — complementa a
+// idempotência contabilística por (companyId, sourceType, sourceId, accountingEvent).
+// A chave é fornecida pelo cliente (estável por tentativa); o fingerprint é calculado
+// no servidor a partir do payload validado. Sem TTL/limpeza automática nesta fase.
+// ─────────────────────────────────────────────────────────────
+
+enum OperationIdempotencyScope {
+  INVOICE_CREATE
+  CUSTOMER_PAYMENT_CREATE
+}
+
+model OperationIdempotency {
+  id                 String                    @id @default(cuid())
+  companyId          String
+  company            Company                   @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  scope              OperationIdempotencyScope
+  idempotencyKey     String
+  /// Fingerprint versionado do payload (ex.: "v1:<sha256>").
+  requestFingerprint String
+  resourceType       String?
+  resourceId         String?
+  /// Actor (escalar, como AuditLog.userId — sem FK).
+  createdById        String?
+  createdAt          DateTime                  @default(now())
+  completedAt        DateTime?
+
+  @@unique([companyId, scope, idempotencyKey])
+  @@index([companyId, resourceType, resourceId])
+  @@map("operation_idempotency")
 }

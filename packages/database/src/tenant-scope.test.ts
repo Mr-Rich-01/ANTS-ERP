@@ -98,6 +98,15 @@ describe('scopeArgs — isolamento multiempresa', () => {
     });
   });
 
+  it('OperationIdempotency (Fase 8c.2a) está no âmbito: injecta companyId', () => {
+    expect(scopeArgs('OperationIdempotency', 'findFirst', { where: { scope: 'INVOICE_CREATE', idempotencyKey: 'k' } }, C)).toEqual({
+      where: { scope: 'INVOICE_CREATE', idempotencyKey: 'k', companyId: C },
+    });
+    expect(scopeArgs('OperationIdempotency', 'create', { data: { scope: 'INVOICE_CREATE', idempotencyKey: 'k', requestFingerprint: 'v1:x' } }, C)).toEqual({
+      data: { scope: 'INVOICE_CREATE', idempotencyKey: 'k', requestFingerprint: 'v1:x', companyId: C },
+    });
+  });
+
   it('NÃO altera modelos fora do âmbito (ex.: Permission)', () => {
     const args = { where: { key: 'sales.view' } };
     expect(scopeArgs('Permission', 'findMany', args, C)).toBe(args);
