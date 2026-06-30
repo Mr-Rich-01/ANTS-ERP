@@ -27,12 +27,12 @@ pnpm + Turborepo:
 
 Módulos já implementados: Auth/RBAC/Admin, Clientes, Fornecedores, Produtos &
 Stock, Vendas/Facturação, Compras, Tesouraria & Bancos, Hardening da
-Tesouraria, Contabilidade 8a, 8b, 8c.1 e 8c.2a.
+Tesouraria, Contabilidade 8a, 8b, 8c.1, 8c.2a e 8c.2b.
 
-Estado actual da Contabilidade: Fase 8c.2a concluída com o modelo
-`OperationIdempotency`, fingerprint canónico `v1:` e helper transaccional de
-idempotência operacional. A próxima fase é 8c.2b, integração contabilística de
-factura e recibo. Não iniciar a fase seguinte automaticamente.
+Estado actual da Contabilidade: Fase 8c.2b concluída com integração
+contabilística de factura (`SALE_ISSUED`) e recibo (`RECEIPT_POSTED`), usando
+idempotência operacional. A próxima fase é 8c.3, sujeita à definição exacta em
+`MODULE_STATUS.md`. Não iniciar a fase seguinte automaticamente.
 
 ## Arquitectura Obrigatória
 
@@ -156,6 +156,7 @@ pnpm test
 pnpm test:integration:accounting
 pnpm test:integration:accounting:c1
 pnpm test:integration:accounting:c2a
+pnpm test:integration:accounting:c2
 pnpm build
 ```
 
@@ -164,6 +165,7 @@ Testes de integração contabilísticos:
 - 8b: `pnpm test:integration:accounting`
 - 8c.1: `pnpm test:integration:accounting:c1`
 - 8c.2a: `pnpm test:integration:accounting:c2a`
+- 8c.2b: `pnpm test:integration:accounting:c2`
 
 ## Credenciais de Teste Versionadas
 
@@ -183,9 +185,9 @@ passwords não demonstrativas.
 
 ## Estado Actual
 
-- Fase 8c.2a concluída.
+- Fase 8c.2b concluída.
 - Commit base funcional: `acef72b`.
-- Próxima fase: 8c.2b — Integração contabilística de factura e recibo.
+- Próxima fase: 8c.3 — Fornecedores e compras, conforme detalhe em `MODULE_STATUS.md`.
 - `MODULE_STATUS.md` é a fonte principal para progresso e próximos passos.
 - `CLAUDE.md` deve ser preservado.
 - Quando `AGENTS.md` e `CLAUDE.md` divergirem, apresentar a divergência antes

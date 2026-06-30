@@ -61,7 +61,7 @@ export interface ReverseEventInput {
 // ─────────────────────────── Resolvers ───────────────────────────
 
 /** Resolve a conta-razão de uma conta de Tesouraria (operações NOVAS: exige tudo activo). */
-export async function resolveTreasuryLedgerTx(tx: Prisma.TransactionClient, companyId: string, treasuryAccountId: string): Promise<{ treasuryAccountId: string; ledgerAccountId: string; ledgerCode: string }> {
+export async function resolveTreasuryLedgerTx(tx: Prisma.TransactionClient, companyId: string, treasuryAccountId: string): Promise<{ treasuryAccountId: string; treasuryType: 'CASH' | 'BANK' | 'MOBILE' | 'OTHER'; ledgerAccountId: string; ledgerCode: string }> {
   const ta = await tx.treasuryAccount.findFirst({ where: { companyId, id: treasuryAccountId } });
   if (!ta) throw new NotFoundError('Conta de tesouraria não encontrada.');
   if (ta.status !== 'ACTIVE') throw new ConflictError(`A conta de tesouraria «${ta.name}» está inactiva.`);
@@ -70,7 +70,8 @@ export async function resolveTreasuryLedgerTx(tx: Prisma.TransactionClient, comp
   if (!acc) throw new ValidationError('Conta-razão da tesouraria não encontrada.');
   if (!acc.isActive) throw new ValidationError(`A conta-razão «${acc.code}» da tesouraria está inactiva.`);
   if (!acc.isPosting) throw new ValidationError(`A conta-razão «${acc.code}» da tesouraria não é de movimento.`);
-  return { treasuryAccountId: ta.id, ledgerAccountId: acc.id, ledgerCode: acc.code };
+  if (acc.accountType !== 'ASSET') throw new ValidationError(`A conta-razão «${acc.code}» da tesouraria tem de ser do tipo ASSET.`);
+  return { treasuryAccountId: ta.id, treasuryType: ta.type as 'CASH' | 'BANK' | 'MOBILE' | 'OTHER', ledgerAccountId: acc.id, ledgerCode: acc.code };
 }
 
 /** Resolve o diário activo de um tipo. Erro se nenhum (config) ou ambíguo (mais de um). */
@@ -180,6 +181,12 @@ export async function postAccountingEventTx(
       linesSignature(existing.lines.map((l) => ({ ledgerAccountId: l.ledgerAccountId, debit: Number(l.debit), credit: Number(l.credit), customerId: l.customerId, supplierId: l.supplierId, treasuryAccountId: l.treasuryAccountId }))) ===
       linesSignature(lines);
     if (sameHeader && sameLines) {
+      await writeAudit(tx, ctx, {
+        action: 'ACCOUNTING_EVENT_IDEMPOTENT',
+        entity: 'JournalEntry',
+        entityId: existing.id,
+        newValues: { sourceType: o.sourceType, sourceId: o.sourceId, accountingEvent: o.accountingEvent, entryNumber: existing.entryNumber },
+      });
       return { id: existing.id, entryNumber: existing.entryNumber, created: false };
     }
     throw new ConflictError('Já existe um lançamento para esta origem com conteúdo diferente (conflito de integridade).');

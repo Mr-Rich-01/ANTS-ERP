@@ -34,18 +34,31 @@ export interface AccountOption {
   label: string;
 }
 
+function createIdempotencyKey(): string {
+  if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
+  const bytes = new Uint8Array(16);
+  globalThis.crypto.getRandomValues(bytes);
+  bytes[6] = (bytes[6]! & 0x0f) | 0x40;
+  bytes[8] = (bytes[8]! & 0x3f) | 0x80;
+  const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
 export function PaymentDialog({ invoiceId, outstanding, accounts, trigger }: { invoiceId: string; outstanding: number; accounts: AccountOption[]; trigger: React.ReactNode }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
+  const [idempotencyKey, setIdempotencyKey] = useState('');
   const [amount, setAmount] = useState(String(outstanding));
   const [method, setMethod] = useState<'CASH' | 'MPESA' | 'EMOLA' | 'CARD' | 'TRANSFER'>('CASH');
-  const [accountId, setAccountId] = useState(accounts[0]?.id ?? '');
+  const [accountId, setAccountId] = useState('');
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (open) {
+      setIdempotencyKey(createIdempotencyKey());
       setAmount(String(outstanding));
+      setAccountId('');
       setError(null);
     }
   }, [open, outstanding]);
@@ -54,11 +67,13 @@ export function PaymentDialog({ invoiceId, outstanding, accounts, trigger }: { i
     setError(null);
     const value = Number(amount);
     if (!Number.isFinite(value) || value <= 0) return setError('Indique um valor positivo.');
+    if (!accountId) return setError('Seleccione a conta de caixa, banco ou carteira móvel para concluir o pagamento.');
     startTransition(async () => {
-      const res = await createPaymentAction({ invoiceId, amount: value, method, accountId: accountId || undefined });
+      const res = await createPaymentAction({ idempotencyKey, invoiceId, amount: value, method, accountId });
       if (res.error) setError(res.error);
       else {
         setOpen(false);
+        setIdempotencyKey('');
         router.refresh();
       }
     });
@@ -88,19 +103,17 @@ export function PaymentDialog({ invoiceId, outstanding, accounts, trigger }: { i
               <option value="TRANSFER">Transferência</option>
             </select>
           </div>
-          {accounts.length > 0 && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              <Label htmlFor="pay-account">Conta de tesouraria</Label>
-              <select id="pay-account" value={accountId} onChange={(e) => setAccountId(e.target.value)} style={selectStyle}>
-                <option value="">— Não lançar em tesouraria —</option>
-                {accounts.map((a) => (
-                  <option key={a.id} value={a.id}>
-                    {a.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <Label htmlFor="pay-account">Conta de tesouraria</Label>
+            <select id="pay-account" value={accountId} onChange={(e) => setAccountId(e.target.value)} style={selectStyle}>
+              <option value="">— Seleccione a conta —</option>
+              {accounts.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.label}
+                </option>
+              ))}
+            </select>
+          </div>
 
           {error && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, color: 'var(--bad)', background: 'var(--bad-bg)', padding: '9px 12px', borderRadius: 10 }}>

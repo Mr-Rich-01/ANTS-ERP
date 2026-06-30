@@ -13,6 +13,7 @@
     "test": "vitest run",
     "test:integration": "vitest run --config vitest.integration.config.ts",
     "test:integration:c1": "vitest run --config vitest.integration.config.ts accounting.c1.integration",
+    "test:integration:c2": "vitest run --config vitest.integration.config.ts accounting.c2.integration",
     "test:integration:c2a": "vitest run --config vitest.integration.config.ts accounting.c2a.integration"
   },
   "dependencies": {

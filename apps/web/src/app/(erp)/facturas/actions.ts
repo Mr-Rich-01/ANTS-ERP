@@ -34,6 +34,7 @@ export async function createPaymentAction(input: PaymentInput): Promise<InvoiceA
     const { id, number } = await createPayment(forContext(ctx), ctx, input);
     revalidatePath('/facturas');
     revalidatePath('/contas/perfil');
+    revalidatePath('/tesouraria');
     return { ok: true, id, number };
   } catch (e) {
     if (e instanceof DomainError) return { error: e.message };

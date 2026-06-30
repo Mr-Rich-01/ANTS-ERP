@@ -1,13 +1,13 @@
 # MODULE_STATUS — ANTS ERP
 
-_Última actualização: 2026-06-29_
+_Última actualização: 2026-06-30_
 
 Estado vivo do projecto. O conhecimento permanente (arquitectura, regras, comandos) está
 em [`CLAUDE.md`](CLAUDE.md).
 
-**Último commit funcional:** `acef72b`
-**Fase concluída:** `8c.2a — Idempotência operacional`
-**Próximo passo:** `8c.2b — Integração contabilística de factura e recibo`
+**Último commit funcional:** este commit (`feat(accounting): integrate invoices and customer receipts`)
+**Fase concluída:** `8c.2b — Integração contabilística de factura e recibo`
+**Próximo passo:** `8c.3 — Fornecedores e compras`
 
 ---
 
@@ -27,14 +27,17 @@ em [`CLAUDE.md`](CLAUDE.md).
 | **8b** | **Contabilidade — domínio** (plano, exercícios/períodos, mappings, lançamentos, partidas dobradas, estorno) | ✅ |
 | **8c.1** | **Contabilidade — fundação das integrações** (mapping tesouraria↔razão, helpers de evento idempotentes/atómicos) | ✅ |
 | **8c.2a** | **Idempotência operacional** (modelo `OperationIdempotency`, fingerprint canónico `v1`, helper transaccional) | ✅ |
-| 8c.2b–8e | Contabilidade — integração factura/recibo, fornecedores, tesouraria, ecrãs, testes finais | 🔨 **8c.2b a seguir** |
+| **8c.2b** | **Contabilidade — integração factura/recibo** (factura `SALE_ISSUED`, recibo `RECEIPT_POSTED`, idempotência operacional nos formulários/actions) | ✅ |
+| 8c.3–8e | Contabilidade — fornecedores/compras, tesouraria, ecrãs, testes finais | 🔨 **8c.3 a seguir** |
 | 9 | RH & Salários | 🗺️ futuro |
 | X | RLS forçado em toda a BD (fase transversal, pré-produção) | 🗺️ futuro |
 
 **Validações actuais:** typecheck 6/6 · lint 6/6 · **testes unitários 45** · **integração de
-contabilidade 80/80** (8b 32 + 8c.1 30 + 8c.2a 18; `pnpm test:integration:accounting`, sub: `…:c1`,
-`…:c2a`) · `prisma format --check` OK · `prisma validate` OK · `pnpm build` OK em Windows nativo
-e Docker Linux com Node 20 + OpenSSL · seed idempotente (2×).
+contabilidade 108/108** (8b 32 + 8c.1 30 + 8c.2a 18 + 8c.2b 28; `pnpm test:integration:accounting`,
+sub: `…:c1`, `…:c2a`, `…:c2`) · `prisma format` OK · `prisma validate` OK · `pnpm build` OK
+em Windows nativo (28/28 páginas) e Docker Linux com Node 20 + OpenSSL · seed idempotente (2×).
+
+**Commit da 8c.2b:** este commit exclusivo, `feat(accounting): integrate invoices and customer receipts`.
 
 > ⚠️ **Lembrete:** após cada `db:seed` que adicione **novas permissões**, as sessões antigas (JWT)
 > não as têm — é preciso **terminar e reiniciar sessão** para o gate passar a reconhecê-las.
@@ -336,9 +339,14 @@ db:generate` e `pnpm build`.
     + `COMPANY_SCOPED`; módulo interno `operation-idempotency.ts` (`runIdempotentOperation` com advisory
     lock + replay/conflito por `requestFingerprint`; fingerprint canónico **`v1:`** sha256, arrays como
     multiset). 18 testes (`pnpm test:integration:accounting:c2a`). **Sem alterar createInvoice/createPayment.**
-  - **8c.2b — Integração factura/recibo** _(próximo)_: ligar `createInvoice` (`SALE_ISSUED`) e
-    `createPayment` (`RECEIPT_POSTED`, `accountId` obrigatório, diário por tipo de conta) + chave de
-    idempotência nos formulários/actions + 40 cenários.
+  - **8c.2b — Integração factura/recibo** _(✅ concluída)_: `createInvoice` exige `idempotencyKey`,
+    usa `OperationIdempotency` (`INVOICE_CREATE`) e publica `SALE_ISSUED` no diário `SALES` dentro da
+    mesma transacção da factura, linhas, stock, saldo do cliente e auditoria. `createPayment` exige
+    `idempotencyKey` + `accountId`, usa `CUSTOMER_PAYMENT_CREATE`, gera `TreasuryMovement` e publica
+    `RECEIPT_POSTED` no diário `CASH`/`BANK` por tipo de conta (`MOBILE` → `BANK`, `OTHER` rejeitado).
+    Formulário de nova factura e diálogo de recibo geram chaves UUID estáveis por tentativa; `accountId`
+    é obrigatório para novos recibos. Testes: 28 cenários (`pnpm test:integration:accounting:c2`).
+    Sem COGS, fornecedores, compras, cancelamentos ou transferências nesta fase.
   - **8c.3** fornecedores (recepção valorizada — requer entidade `PurchaseReceipt`). **8c.4** tesouraria
     manual (contrapartida) + transferências. **8c.5** backfill (dry-run) + validação.
     Diferidos: COGS, cancelamentos operacionais.

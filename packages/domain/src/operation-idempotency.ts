@@ -11,6 +11,7 @@ import type { Prisma } from '@ants/database';
 import type { RequestContext } from './context';
 import { requireCompany } from './context';
 import { ConflictError, ValidationError } from './errors';
+import { writeAudit } from './audit';
 
 export type OperationScope = 'INVOICE_CREATE' | 'CUSTOMER_PAYMENT_CREATE';
 const SCOPES: ReadonlySet<string> = new Set<OperationScope>(['INVOICE_CREATE', 'CUSTOMER_PAYMENT_CREATE']);
@@ -77,6 +78,8 @@ export interface IdempotentOperationOptions<T> {
   requestFingerprint: string;
   /** Relê o recurso (com scoping de empresa) para o replay; devolve null se não existir. */
   loadExisting: (resourceId: string) => Promise<T | null>;
+  /** Tipo de recurso esperado no replay. */
+  expectedResourceType?: string;
   /** Executa a operação real; devolve o tipo/id do recurso criado e o resultado. */
   run: () => Promise<{ resourceType: string; resourceId: string; result: T }>;
 }
@@ -114,10 +117,25 @@ export async function runIdempotentOperation<T>(
     if (!existing.resourceId) {
       throw new ConflictError('Registo de idempotência sem recurso associado (integridade).');
     }
+    if (opts.expectedResourceType && existing.resourceType !== opts.expectedResourceType) {
+      throw new ConflictError('Registo de idempotência aponta para um tipo de recurso inesperado (integridade).');
+    }
     const resource = await opts.loadExisting(existing.resourceId);
     if (resource == null) {
       throw new ConflictError('Registo de idempotência aponta para um recurso inexistente (integridade).');
     }
+    await writeAudit(tx, ctx, {
+      action: 'OPERATION_IDEMPOTENT_RETRY',
+      entity: existing.resourceType ?? opts.expectedResourceType ?? 'OperationIdempotency',
+      entityId: existing.resourceId,
+      newValues: {
+        scope: opts.scope,
+        idempotencyKey: key,
+        requestFingerprint: opts.requestFingerprint,
+        resourceType: existing.resourceType,
+        resourceId: existing.resourceId,
+      },
+    });
     return { result: resource, idempotent: true };
   }
 
