@@ -2,6 +2,7 @@
 
 import { useMemo, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
+import { canSubmitInvoiceForm, civilDateInTimeZone } from '@ants/shared';
 import { Icon } from '@/components/Icon';
 import { fmt } from '@/lib/format';
 import { ACCENT } from '@/lib/erp-nav';
@@ -53,10 +54,11 @@ function createIdempotencyKey(): string {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
-export function NovaFacturaClient({ customers, products, warehouses, canDiscount }: { customers: CustomerOpt[]; products: ProductOpt[]; warehouses: WarehouseOpt[]; canDiscount: boolean }) {
+export function NovaFacturaClient({ customers, products, warehouses, canDiscount, canEditIssueDate }: { customers: CustomerOpt[]; products: ProductOpt[]; warehouses: WarehouseOpt[]; canDiscount: boolean; canEditIssueDate: boolean }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [idempotencyKey] = useState(() => createIdempotencyKey());
+  const [issueDate, setIssueDate] = useState(() => civilDateInTimeZone());
   const [customerId, setCustomerId] = useState(customers[0]?.id ?? '');
   const [warehouseId, setWarehouseId] = useState(warehouses[0]?.id ?? '');
   const [pay, setPay] = useState<'CASH' | 'MPESA' | 'EMOLA' | 'CARD' | 'TRANSFER'>('TRANSFER');
@@ -91,15 +93,18 @@ export function NovaFacturaClient({ customers, products, warehouses, canDiscount
   }, [lines]);
 
   const overStock = lines.filter((l) => l.qty > l.stock);
+  const canSubmit = canSubmitInvoiceForm({ issueDate, customerId, lineCount: lines.length, overStockCount: overStock.length, pending });
 
   const emit = () => {
     setError(null);
+    if (!issueDate) return setError('Seleccione a data de emissão.');
     if (!customerId) return setError('Seleccione um cliente.');
     if (lines.length === 0) return setError('Adicione pelo menos uma linha.');
     if (overStock.length > 0) return setError(`Stock insuficiente: ${overStock.map((l) => l.name).join(', ')}.`);
     startTransition(async () => {
       const res = await createInvoiceAction({
         idempotencyKey,
+        issueDate,
         customerId,
         warehouseId: warehouseId || undefined,
         paymentMethod: pay,
@@ -128,6 +133,19 @@ export function NovaFacturaClient({ customers, products, warehouses, canDiscount
                   </option>
                 ))}
               </select>
+            </div>
+            <div>
+              <label style={label}>Data de emissão</label>
+              <input
+                type="date"
+                required
+                disabled={!canEditIssueDate}
+                value={issueDate}
+                onChange={(e) => {
+                  if (canEditIssueDate) setIssueDate(e.target.value);
+                }}
+                style={{ ...selectStyle, background: canEditIssueDate ? 'var(--card)' : 'var(--card2)', cursor: canEditIssueDate ? 'text' : 'default' }}
+              />
             </div>
             <div>
               <label style={label}>NUIT</label>
@@ -291,7 +309,7 @@ export function NovaFacturaClient({ customers, products, warehouses, canDiscount
             </div>
           )}
 
-          <button onClick={emit} disabled={pending} style={{ width: '100%', height: 46, marginTop: 14, borderRadius: 11, border: 'none', background: ACCENT, color: '#fff', fontSize: 14, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, opacity: pending ? 0.6 : 1, cursor: pending ? 'default' : 'pointer' }}>
+          <button onClick={emit} disabled={!canSubmit} style={{ width: '100%', height: 46, marginTop: 14, borderRadius: 11, border: 'none', background: ACCENT, color: '#fff', fontSize: 14, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, opacity: canSubmit ? 1 : 0.6, cursor: canSubmit ? 'pointer' : 'default' }}>
             <Icon name="file-check-2" size={17} />
             {pending ? 'A emitir…' : 'Emitir factura'}
           </button>

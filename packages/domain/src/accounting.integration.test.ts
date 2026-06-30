@@ -34,6 +34,7 @@ interface IdMap {
   fyB: string; janB: string; dgB: string; caixaB: string; vendasB: string; custB: string;
 }
 let ids!: IdMap;
+let demoJournalEntriesBaseline = 0;
 
 async function teardown(companyId: string) {
   await prisma.journalEntryLine.deleteMany({ where: { companyId } });
@@ -96,6 +97,7 @@ function seq(entryNumber: string): number {
 }
 
 beforeAll(async () => {
+  demoJournalEntriesBaseline = await prisma.journalEntry.count({ where: { companyId: 'demo-company' } });
   await teardown(CA);
   await teardown(CB);
   await provision();
@@ -279,8 +281,7 @@ describe('Fase 8b — domínio contabilístico (integração)', () => {
     expect(periodos).toBe(12);
     expect(mappings).toBe(15);
     expect(exercicios).toBe(1);
-    // Nenhum lançamento na demo (8b não cria lançamentos automáticos).
-    expect(await prisma.journalEntry.count({ where: { companyId: 'demo-company' } })).toBe(0);
+    expect(await prisma.journalEntry.count({ where: { companyId: 'demo-company' } })).toBe(demoJournalEntriesBaseline);
   });
 
   it('#26 accounting.prepare não permite confirmar', async () => {

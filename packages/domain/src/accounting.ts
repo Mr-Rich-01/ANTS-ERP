@@ -101,10 +101,19 @@ export function formatAccountingDate(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
 
+export function formatDisplayDate(d: Date): string {
+  const [year, month, day] = formatAccountingDate(d).split('-');
+  return `${day}/${month}/${year}`;
+}
+
+export function periodRangeLabel(start: Date, end: Date): string {
+  return `${formatDisplayDate(start)} a ${formatDisplayDate(end)}`;
+}
+
 /** Compara apenas a parte da data (UTC). value ∈ [start, end]. */
 export function dateWithin(value: Date, start: Date, end: Date): boolean {
-  const v = value.getTime();
-  return v >= start.getTime() && v <= end.getTime();
+  const v = formatAccountingDate(value);
+  return v >= formatAccountingDate(start) && v <= formatAccountingDate(end);
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -198,11 +207,14 @@ export async function resolvePeriodForDate(
   companyId: string,
   date: Date,
 ): Promise<{ fiscalYearId: string; accountingPeriodId: string }> {
+  const accountingDate = parseAccountingDate(formatAccountingDate(date));
   const period = await tx.accountingPeriod.findFirst({
-    where: { companyId, startDate: { lte: date }, endDate: { gte: date } },
+    where: { companyId, startDate: { lte: accountingDate }, endDate: { gte: accountingDate } },
     orderBy: { isAdjustment: 'asc' },
   });
-  if (!period) throw new ValidationError(`Não existe período contabilístico para a data ${formatAccountingDate(date)}.`);
+  if (!period) {
+    throw new ValidationError(`Não existe período contabilístico para a data ${formatDisplayDate(accountingDate)}.`);
+  }
   return { fiscalYearId: period.fiscalYearId, accountingPeriodId: period.id };
 }
 
@@ -812,9 +824,13 @@ export async function postJournalEntry(db: PrismaClient, ctx: RequestContext, id
     ]);
     if (!year || !period || !journal) throw new NotFoundError('Exercício, período ou diário em falta.');
     if (!journal.isActive) throw new ConflictError('O diário está inactivo.');
-    if (year.status !== 'OPEN') throw new ConflictError(`O exercício está ${year.status}.`);
-    if (period.status !== 'OPEN') throw new ConflictError(`O período está ${period.status}.`);
-    if (!dateWithin(entry.entryDate, period.startDate, period.endDate)) throw new ValidationError('A data do lançamento não pertence ao período.');
+    if (year.status !== 'OPEN') throw new ConflictError(`O exercício contabilístico está ${year.status}.`);
+    if (period.status !== 'OPEN') throw new ConflictError(`O período contabilístico ${periodRangeLabel(period.startDate, period.endDate)} está ${period.status}.`);
+    if (!dateWithin(entry.entryDate, period.startDate, period.endDate)) {
+      throw new ValidationError(
+        `A data do lançamento ${formatDisplayDate(entry.entryDate)} não pertence ao período contabilístico. Período disponível: ${periodRangeLabel(period.startDate, period.endDate)}.`,
+      );
+    }
 
     if (entry.lines.length < 2) throw new ValidationError('O lançamento precisa de pelo menos duas linhas.');
     const { totalDebit, totalCredit } = recalcTotals(entry.lines.map((l) => ({ debit: Number(l.debit), credit: Number(l.credit) })));

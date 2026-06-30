@@ -33,8 +33,8 @@ em [`CLAUDE.md`](CLAUDE.md).
 | 9 | RH & Salários | 🗺️ futuro |
 | X | RLS forçado em toda a BD (fase transversal, pré-produção) | 🗺️ futuro |
 
-**Validações actuais:** typecheck 6/6 · lint 6/6 · **testes unitários 45** · **integração de
-contabilidade 124/124** (8b 32 + 8c.1 30 + 8c.2a 18 + 8c.2b 28 + 8c.3 16; `pnpm test:integration:accounting`,
+**Validações actuais:** typecheck 6/6 · lint 6/6 · **testes unitários 58** · **integração de
+contabilidade 129/129** (8b 32 + 8c.1 30 + 8c.2a 18 + 8c.2b 33 + 8c.3 16; `pnpm test:integration:accounting`,
 sub: `…:c1`, `…:c2a`, `…:c2`, `…:c3`) · `prisma format` OK · `prisma validate` OK · `pnpm build` OK
 em Windows nativo (28/28 páginas) e Docker Linux com Node 20 + OpenSSL · seed idempotente (2×).
 
@@ -44,6 +44,23 @@ em Windows nativo (28/28 páginas) e Docker Linux com Node 20 + OpenSSL · seed 
 > não as têm — é preciso **terminar e reiniciar sessão** para o gate passar a reconhecê-las.
 
 ## Problemas conhecidos
+
+### Data de emissão e limite de período da factura
+
+Em 2026-06-30, foi adicionada a data de emissão visível em Nova factura e
+passada explicitamente ao domínio como data civil `YYYY-MM-DD`. Em 2026-07-01,
+a regra foi fechada: a data é preenchida automaticamente com o dia actual em
+`Africa/Maputo`, fica visível para confirmação e permanece bloqueada enquanto
+não existir permissão específica para edição retroactiva.
+
+Foi corrigida a validação de pertença ao período para comparar datas civis, de
+modo que o último dia do período continua aceite mesmo quando o valor contém hora
+posterior a 00:00. Foram adicionados testes unitários para parsing/comparação de
+datas e testes `8c.2b` para persistência, auditoria, idempotência, rejeição de
+datas diferentes da data actual e garantia de que `SALE_ISSUED.entryDate` usa
+exactamente `Invoice.issueDate`. A edição retroactiva da data de emissão fica
+registada como melhoria futura, dependente de uma permissão própria. A Fase 8c.3
+permanece concluída, sem avanço funcional.
 
 ### Runtime UI de estados vazios de compras
 

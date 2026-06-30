@@ -6,6 +6,7 @@
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { prisma } from '@ants/database';
+import { civilDateInTimeZone } from '@ants/shared';
 import type { RequestContext } from './context';
 import { createInvoice, createPayment, type InvoiceInput, type PaymentInput } from './invoices';
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from './errors';
@@ -13,6 +14,8 @@ import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from '.
 const CA = 'smoke-c2';
 const CB = 'smoke-c2-b';
 const D = (s: string) => new Date(`${s}T00:00:00.000Z`);
+const CURRENT_ISSUE_DATE = civilDateInTimeZone();
+const RETRO_ISSUE_DATE = CURRENT_ISSUE_DATE === '2026-06-30' ? '2026-06-29' : '2026-06-30';
 
 function ctx(companyId: string, permissions: string[]): RequestContext {
   return { companyId, userId: `${companyId}-user`, permissions: new Set(permissions), isPlatformAdmin: false };
@@ -51,6 +54,17 @@ interface Ids {
 }
 
 let ids!: Ids;
+let demoBaseline!: { invoices: number; payments: number; journalEntries: number; operations: number };
+
+async function demoFinancialCounts() {
+  const [invoices, payments, journalEntries, operations] = await Promise.all([
+    prisma.invoice.count({ where: { companyId: 'demo-company' } }),
+    prisma.payment.count({ where: { companyId: 'demo-company' } }),
+    prisma.journalEntry.count({ where: { companyId: 'demo-company' } }),
+    prisma.operationIdempotency.count({ where: { companyId: 'demo-company' } }),
+  ]);
+  return { invoices, payments, journalEntries, operations };
+}
 
 async function teardown(companyId: string) {
   await prisma.operationIdempotency.deleteMany({ where: { companyId } });
@@ -172,6 +186,7 @@ async function provision() {
 }
 
 beforeAll(async () => {
+  demoBaseline = await demoFinancialCounts();
   await teardown(CA);
   await teardown(CB);
   await provision();
@@ -186,6 +201,7 @@ afterAll(async () => {
 function invoiceInput(overrides: Partial<InvoiceInput> = {}): InvoiceInput {
   return {
     idempotencyKey: randomUUID(),
+    issueDate: CURRENT_ISSUE_DATE,
     customerId: ids.customer,
     warehouseId: ids.warehouse,
     paymentMethod: 'TRANSFER',
@@ -320,6 +336,45 @@ describe('Fase 8c.2b — facturas e recibos de clientes', () => {
     const key = randomUUID();
     await issue({ idempotencyKey: key });
     await expect(issue({ idempotencyKey: key, lines: [{ productId: ids.taxableProduct, quantity: 2, discountPercent: 0 }] })).rejects.toBeInstanceOf(ConflictError);
+  });
+
+  it('#8b data de emissão é persistida, auditada e usada no lançamento SALE_ISSUED', async () => {
+    const r = await issue();
+    const [invoice, entry, audit] = await Promise.all([
+      prisma.invoice.findUnique({ where: { id: r.id } }),
+      entryFor('INVOICE', r.id, 'SALE_ISSUED'),
+      prisma.auditLog.findFirst({ where: { companyId: CA, action: 'invoice.issue', entityId: r.id } }),
+    ]);
+    expect(invoice?.issueDate.toISOString()).toBe(`${CURRENT_ISSUE_DATE}T00:00:00.000Z`);
+    expect(entry?.entryDate.toISOString()).toBe(`${CURRENT_ISSUE_DATE}T00:00:00.000Z`);
+    expect((audit?.newValues as { issueDate?: string } | null)?.issueDate).toBe(CURRENT_ISSUE_DATE);
+  });
+
+  it('#8c mesma chave e mesma data actual faz replay', async () => {
+    const key = randomUUID();
+    const input = invoiceInput({ idempotencyKey: key });
+    const first = await createInvoice(prisma, salesCtx, input);
+    const replay = await createInvoice(prisma, salesCtx, input);
+    expect(replay.id).toBe(first.id);
+  });
+
+  it('#8d data diferente da data actual é rejeitada antes de criar factura', async () => {
+    const before = await prisma.invoice.count({ where: { companyId: CA } });
+    await expect(issue({ issueDate: RETRO_ISSUE_DATE })).rejects.toBeInstanceOf(ValidationError);
+    expect(await prisma.invoice.count({ where: { companyId: CA } })).toBe(before);
+  });
+
+  it('#8e data inválida é rejeitada antes de criar factura', async () => {
+    const before = await prisma.invoice.count({ where: { companyId: CA } });
+    await expect(issue({ issueDate: '2026-02-30' })).rejects.toBeInstanceOf(ValidationError);
+    expect(await prisma.invoice.count({ where: { companyId: CA } })).toBe(before);
+  });
+
+  it('#8f data actual gera SALE_ISSUED com postingDate igual à data da factura', async () => {
+    const r = await issue();
+    const entry = await entryFor('INVOICE', r.id, 'SALE_ISSUED');
+    expect(entry?.entryDate.toISOString().slice(0, 10)).toBe(CURRENT_ISSUE_DATE);
+    expect(entry?.postingDate?.toISOString().slice(0, 10)).toBe(CURRENT_ISSUE_DATE);
   });
 
   it('#9 stock, saldo e lançamento são atómicos; sem linhas zero nem COGS', async () => {
@@ -482,10 +537,7 @@ describe('Fase 8c.2b — facturas e recibos de clientes', () => {
     await expect(issue({ customerId: ids.bCustomer })).rejects.toBeInstanceOf(NotFoundError);
   });
 
-  it('#23 seed demo permanece sem documentos financeiros criados pelo teste', async () => {
-    expect(await prisma.invoice.count({ where: { companyId: 'demo-company' } })).toBe(0);
-    expect(await prisma.payment.count({ where: { companyId: 'demo-company' } })).toBe(0);
-    expect(await prisma.journalEntry.count({ where: { companyId: 'demo-company' } })).toBe(0);
-    expect(await prisma.operationIdempotency.count({ where: { companyId: 'demo-company' } })).toBe(0);
+  it('#23 suite não altera documentos financeiros da demo', async () => {
+    expect(await demoFinancialCounts()).toEqual(demoBaseline);
   });
 });

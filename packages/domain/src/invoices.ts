@@ -1,13 +1,13 @@
 import { z } from 'zod';
 import type { Prisma, PrismaClient } from '@ants/database';
-import { computeLine, computeDocumentTotals, round2 } from '@ants/shared';
+import { civilDateInTimeZone, computeLine, computeDocumentTotals, round2 } from '@ants/shared';
 import type { RequestContext } from './context';
 import { requireCompany } from './context';
 import { requirePermission, hasPermission } from './permissions';
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from './errors';
 import { writeAudit } from './audit';
 import { postTreasuryMovementTx } from './treasury';
-import { getMappedAccountTx, type AccountingJournalType } from './accounting';
+import { formatAccountingDate, getMappedAccountTx, parseAccountingDate, type AccountingJournalType } from './accounting';
 import { postAccountingEventTx, resolveTreasuryLedgerTx } from './accounting-events';
 import {
   FINGERPRINT_VERSION,
@@ -260,6 +260,7 @@ async function nextDocNumber(
 
 const invoiceInput = z.object({
   idempotencyKey: z.string().min(1, 'Chave de idempotência obrigatória.'),
+  issueDate: z.string().min(1, 'Seleccione a data de emissão.'),
   customerId: z.string().min(1, 'Seleccione um cliente.'),
   warehouseId: z.string().optional(),
   dueDate: z.coerce.date().optional(),
@@ -279,8 +280,9 @@ const invoiceInput = z.object({
 export type InvoiceInput = z.input<typeof invoiceInput>;
 type ParsedInvoiceInput = z.output<typeof invoiceInput>;
 
-function invoiceFingerprint(data: ParsedInvoiceInput): string {
+function invoiceFingerprint(data: ParsedInvoiceInput, issueDate: Date): string {
   return canonicalRequestFingerprint(FINGERPRINT_VERSION, {
+    issueDate: fpDate(issueDate),
     customerId: data.customerId,
     warehouseId: data.warehouseId ?? null,
     dueDate: fpDate(data.dueDate),
@@ -292,6 +294,15 @@ function invoiceFingerprint(data: ParsedInvoiceInput): string {
       discountPercent: fpAmount(l.discountPercent),
     })),
   });
+}
+
+function resolveAllowedIssueDate(value: string): Date {
+  const requestedDate = parseAccountingDate(value);
+  const currentDate = civilDateInTimeZone();
+  if (formatAccountingDate(requestedDate) !== currentDate) {
+    throw new ValidationError('A data de emissão deve ser a data actual em Africa/Maputo.');
+  }
+  return parseAccountingDate(currentDate);
 }
 
 function assertConsistentTotals(totals: { taxable: number; tax: number; total: number }): void {
@@ -310,7 +321,8 @@ export async function createInvoice(db: PrismaClient, ctx: RequestContext, input
   const parsed = invoiceInput.safeParse(input);
   if (!parsed.success) throw new ValidationError(parsed.error.issues[0]?.message ?? 'Dados inválidos.');
   const data = parsed.data;
-  const requestFingerprint = invoiceFingerprint(data);
+  const issueDate = resolveAllowedIssueDate(data.issueDate);
+  const requestFingerprint = invoiceFingerprint(data, issueDate);
 
   if (data.lines.some((l) => l.discountPercent > 0) && !hasPermission(ctx, 'sales.approve_discount')) {
     throw new ForbiddenError('Sem permissão para aplicar descontos.');
@@ -376,9 +388,8 @@ export async function createInvoice(db: PrismaClient, ctx: RequestContext, input
         );
         assertConsistentTotals(totals);
 
-        const issueDate = new Date();
         const dueDate = data.dueDate ?? new Date(issueDate.getTime() + customer.paymentTermDays * 86_400_000);
-        const number = await nextDocNumber(tx, companyId, 'FT', issueDate.getFullYear());
+        const number = await nextDocNumber(tx, companyId, 'FT', issueDate.getUTCFullYear());
 
         const invoice = await tx.invoice.create({
           data: {
@@ -455,6 +466,7 @@ export async function createInvoice(db: PrismaClient, ctx: RequestContext, input
         await postAccountingEventTx(tx, ctx, {
           journalType: 'SALES',
           entryDate: invoice.issueDate,
+          dateLabel: 'A data de emissão',
           description: `Factura emitida ${number}`,
           reference: number,
           origin: { sourceType: 'INVOICE', sourceId: invoice.id, accountingEvent: 'SALE_ISSUED' },
@@ -469,6 +481,7 @@ export async function createInvoice(db: PrismaClient, ctx: RequestContext, input
             number,
             customerId: customer.id,
             customer: customer.name,
+            issueDate: formatAccountingDate(invoice.issueDate),
             total: totals.total,
             taxableBase: totals.taxable,
             taxTotal: totals.tax,

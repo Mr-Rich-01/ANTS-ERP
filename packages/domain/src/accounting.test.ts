@@ -21,6 +21,7 @@ import {
   getTrialBalance,
   parseAccountingDate,
   formatAccountingDate,
+  dateWithin,
 } from './accounting';
 import { ForbiddenError, ValidationError } from './errors';
 
@@ -89,5 +90,16 @@ describe('Contabilidade — datas contabilísticas (sem fuso)', () => {
     expect(() => parseAccountingDate('10/03/2026')).toThrow(ValidationError);
     expect(() => parseAccountingDate('2026-02-30')).toThrow(ValidationError);
     expect(() => parseAccountingDate('2026-13-01')).toThrow(ValidationError);
+  });
+
+  it('compara datas civis incluindo o primeiro, meio e último dia do período', () => {
+    const start = parseAccountingDate('2026-06-01');
+    const end = parseAccountingDate('2026-06-30');
+
+    expect(dateWithin(new Date('2026-06-01T00:00:00.000Z'), start, end)).toBe(true);
+    expect(dateWithin(new Date('2026-06-15T10:00:00.000Z'), start, end)).toBe(true);
+    expect(dateWithin(new Date('2026-06-30T20:00:00.000Z'), start, end)).toBe(true);
+    expect(dateWithin(new Date('2026-05-31T23:59:59.999Z'), start, end)).toBe(false);
+    expect(dateWithin(new Date('2026-07-01T00:00:00.000Z'), start, end)).toBe(false);
   });
 });

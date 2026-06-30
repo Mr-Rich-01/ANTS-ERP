@@ -23,7 +23,9 @@ import {
   type NormalizedLine,
   dateWithin,
   formatAccountingDate,
+  formatDisplayDate,
   nextEntryNumber,
+  periodRangeLabel,
   recalcTotals,
   resolvePeriodForDate,
   validateLineRelations,
@@ -45,6 +47,7 @@ export interface AccountingEventInput {
   journalType?: AccountingJournalType;
   /** Data contabilística (UTC, parte da data). */
   entryDate: Date;
+  dateLabel?: string;
   description: string;
   reference?: string | null;
   origin: EntryOrigin;
@@ -204,9 +207,16 @@ export async function postAccountingEventTx(
     tx.accountingPeriod.findFirst({ where: { companyId, id: accountingPeriodId } }),
   ]);
   if (!year || !period) throw new NotFoundError('Exercício/período não encontrado.');
-  if (year.status !== 'OPEN') throw new ConflictError(`O exercício está ${year.status}.`);
-  if (period.status !== 'OPEN') throw new ConflictError(`O período está ${period.status}.`);
-  if (!dateWithin(input.entryDate, period.startDate, period.endDate)) throw new ValidationError('A data do lançamento não pertence ao período.');
+  const dateLabel = input.dateLabel ?? 'A data do lançamento';
+  if (year.status !== 'OPEN') throw new ConflictError(`O exercício contabilístico está ${year.status}.`);
+  if (period.status !== 'OPEN') {
+    throw new ConflictError(`${dateLabel} ${formatDisplayDate(input.entryDate)} não pertence a um período contabilístico aberto. Período disponível: ${periodRangeLabel(period.startDate, period.endDate)}.`);
+  }
+  if (!dateWithin(input.entryDate, period.startDate, period.endDate)) {
+    throw new ValidationError(
+      `${dateLabel} ${formatDisplayDate(input.entryDate)} não pertence ao período contabilístico. Período disponível: ${periodRangeLabel(period.startDate, period.endDate)}.`,
+    );
+  }
 
   const yearLabel = /^\d{4}$/.test(year.name) ? year.name : String(input.entryDate.getUTCFullYear());
   const entryNumber = await nextEntryNumber(tx, companyId, year.id, journalId, sequencePrefix ?? 'LG', yearLabel);

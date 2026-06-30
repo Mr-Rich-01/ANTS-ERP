@@ -19,5 +19,5 @@ export default async function NovaFacturaPage() {
   const productOpts: ProductOpt[] = products.map((p) => ({ id: p.id, sku: p.sku, name: p.name, price: p.salePrice, stock: p.stock }));
   const warehouseOpts: WarehouseOpt[] = warehouses.map((w) => ({ id: w.id, label: `${w.name} (${w.code})` }));
 
-  return <NovaFacturaClient customers={customerOpts} products={productOpts} warehouses={warehouseOpts} canDiscount={hasPermission(ctx, 'sales.approve_discount')} />;
+  return <NovaFacturaClient customers={customerOpts} products={productOpts} warehouses={warehouseOpts} canDiscount={hasPermission(ctx, 'sales.approve_discount')} canEditIssueDate={false} />;
 }

@@ -27,6 +27,7 @@ interface Ids {
   bFy: string; bJan: string; bLedger: string;
 }
 let ids!: Ids;
+let demoJournalEntriesBaseline = 0;
 
 async function teardown(companyId: string) {
   await prisma.journalEntryLine.deleteMany({ where: { companyId } });
@@ -85,7 +86,12 @@ function postEvent(origin: { sourceType: string; sourceId: string; accountingEve
   return prisma.$transaction((tx) => postAccountingEventTx(tx, op, { journalType: 'GENERAL', entryDate: D(date), description, origin, lines }));
 }
 
-beforeAll(async () => { await teardown(CA); await teardown(CB); await provision(); });
+beforeAll(async () => {
+  demoJournalEntriesBaseline = await prisma.journalEntry.count({ where: { companyId: 'demo-company' } });
+  await teardown(CA);
+  await teardown(CB);
+  await provision();
+});
 afterAll(async () => { await teardown(CA); await teardown(CB); await prisma.$disconnect(); });
 
 describe('Fase 8c.1 — fundação das integrações (integração)', () => {
@@ -192,7 +198,7 @@ describe('Fase 8c.1 — fundação das integrações (integração)', () => {
 
   it('#17 dados 8a/8b da demo continuam intactos', async () => {
     expect(await prisma.ledgerAccount.count({ where: { companyId: 'demo-company' } })).toBe(39); // 37 base + 114 + 115
-    expect(await prisma.journalEntry.count({ where: { companyId: 'demo-company' } })).toBe(0);
+    expect(await prisma.journalEntry.count({ where: { companyId: 'demo-company' } })).toBe(demoJournalEntriesBaseline);
   });
 
   it('#18 unicidade 1:1 na BD: segunda ligação à mesma razão é rejeitada', async () => {
