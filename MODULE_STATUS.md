@@ -33,7 +33,8 @@ em [`CLAUDE.md`](CLAUDE.md).
 
 **Validações actuais:** typecheck 6/6 · lint 6/6 · **testes unitários 45** · **integração de
 contabilidade 80/80** (8b 32 + 8c.1 30 + 8c.2a 18; `pnpm test:integration:accounting`, sub: `…:c1`,
-`…:c2a`) · `prisma validate` OK · seed idempotente (2×).
+`…:c2a`) · `prisma format --check` OK · `prisma validate` OK · `pnpm build` OK em Windows nativo
+e Docker Linux com Node 20 + OpenSSL · seed idempotente (2×).
 
 > ⚠️ **Lembrete:** após cada `db:seed` que adicione **novas permissões**, as sessões antigas (JWT)
 > não as têm — é preciso **terminar e reiniciar sessão** para o gate passar a reconhecê-las.
@@ -42,26 +43,17 @@ contabilidade 80/80** (8b 32 + 8c.1 30 + 8c.2a 18; `pnpm test:integration:accoun
 
 ### Build de produção do Next.js
 
-O comando `next build` falha durante o prerender com um erro
-`useContext null`.
+Em 2026-06-30, a investigação isolada do build não reproduziu o erro histórico
+`useContext null`. O build passou no Windows nativo após instalação limpa e
+também em Docker Linux com Node 20, pnpm 9.12.0 e OpenSSL instalado.
 
-A falha foi reproduzida desde o primeiro commit do repositório neste
-ambiente e não foi introduzida pelas fases recentes.
+Relatório: [`docs/BUILD_INVESTIGATION.md`](docs/BUILD_INVESTIGATION.md).
 
-A causa técnica definitiva ainda não foi identificada.
-
-As fases funcionais têm sido verificadas através de:
-
-- Prisma format, validate e generate;
-- typecheck;
-- lint;
-- testes unitários;
-- suites de integração;
-- validações directas na base de dados;
-- verificação funcional em modo de desenvolvimento quando aplicável.
-
-A investigação e correcção do build constituem uma tarefa técnica
-separada e não devem ser misturadas com as fases funcionais.
+A causa exacta da falha histórica permanece inconclusiva, porque o erro já não
+ocorre no estado actual do repositório. Se reaparecer, deve ser tratado como
+regressão nova, com log completo do primeiro erro real. O ambiente Linux/Docker
+suportado para build deve incluir OpenSSL antes de `pnpm install`, `pnpm
+db:generate` e `pnpm build`.
 
 ---
 

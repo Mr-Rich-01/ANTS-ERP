@@ -104,9 +104,9 @@ upgrade.
 - Não quebrar idempotência operacional nem contabilística.
 - Inspeccionar migrations antes de aplicar.
 - O seed deve ser idempotente e não destrutivo.
-- Validar `typecheck`, `lint`, testes relevantes e `build` antes de cada commit;
-  quando o build falhar pelo problema conhecido, registar o resultado e remeter
-  para `MODULE_STATUS.md`.
+- Validar `typecheck`, `lint`, testes relevantes e `build` antes de cada commit.
+  O build foi classificado em 2026-06-30; se voltar a falhar, tratar como
+  regressão nova e registar o primeiro erro real conforme `MODULE_STATUS.md`.
 - Executar testes de integração relevantes à fase tocada.
 - Cada fase deve ter commit isolado.
 - Não misturar alterações de Next/React com fases funcionais.

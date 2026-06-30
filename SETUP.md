@@ -161,9 +161,21 @@ Build:
 pnpm build
 ```
 
-## Problema Conhecido do Build
+## Build de Produção
 
-Executar `next build` através de `pnpm build` e registar o resultado. Actualmente
-existe uma falha pré-existente descrita em `MODULE_STATUS.md`: o prerender do
-Next.js falha com `useContext null`. A investigação e correcção do build são uma
-tarefa técnica separada e não devem ser misturadas com fases funcionais.
+O build foi classificado em 2026-06-30 e passou no Windows nativo após
+instalação limpa, e em Docker Linux com Node 20, pnpm 9.12.0 e OpenSSL
+instalado. Ver [`docs/BUILD_INVESTIGATION.md`](docs/BUILD_INVESTIGATION.md).
+
+Para um ambiente Linux/Docker reproduzível, garantir:
+
+- imagem oficial Node 20 baseada em Debian;
+- Corepack com `pnpm@9.12.0`;
+- OpenSSL/libssl instalado antes de instalar dependências e gerar Prisma;
+- `pnpm install --frozen-lockfile`;
+- `pnpm db:generate`;
+- `pnpm build`.
+
+`node:20-bookworm-slim` sem OpenSSL não deve ser usado como base final: o build
+pode terminar com exit code 0, mas o Prisma regista erros de engine/libssl
+durante a recolha de dados ou em runtime.
