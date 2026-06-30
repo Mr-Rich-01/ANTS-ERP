@@ -16,6 +16,7 @@ import {
 } from '@ants/ui';
 import { Icon } from '@/components/Icon';
 import { createSupplierPaymentAction } from '@/app/(erp)/compras/actions';
+import { canSubmitSupplierPayment, supplierPaymentInitialAccountId } from '@ants/shared';
 
 const selectStyle: React.CSSProperties = {
   height: 40,
@@ -51,17 +52,19 @@ export function SupplierPaymentDialog({ supplierId, purchaseOrderId, suggested, 
   const [idempotencyKey, setIdempotencyKey] = useState('');
   const [amount, setAmount] = useState(String(suggested));
   const [method, setMethod] = useState<'CASH' | 'MPESA' | 'EMOLA' | 'CARD' | 'TRANSFER'>('TRANSFER');
-  const [accountId, setAccountId] = useState(accounts[0]?.id ?? '');
+  const [accountId, setAccountId] = useState(() => supplierPaymentInitialAccountId());
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (open) {
       setIdempotencyKey(createIdempotencyKey());
       setAmount(String(suggested));
-      setAccountId(accounts[0]?.id ?? '');
+      setAccountId(supplierPaymentInitialAccountId());
       setError(null);
     }
-  }, [open, suggested, accounts]);
+  }, [open, suggested]);
+
+  const canSubmit = canSubmitSupplierPayment({ amount, accountId, idempotencyKey, pending });
 
   const submit = () => {
     setError(null);
@@ -126,7 +129,7 @@ export function SupplierPaymentDialog({ supplierId, purchaseOrderId, suggested, 
             <Button type="button" variant="secondary" onClick={() => setOpen(false)}>
               Cancelar
             </Button>
-            <Button type="button" onClick={submit} disabled={pending}>
+            <Button type="button" onClick={submit} disabled={!canSubmit}>
               {pending ? 'A registar…' : 'Registar pagamento'}
             </Button>
           </DialogFooter>

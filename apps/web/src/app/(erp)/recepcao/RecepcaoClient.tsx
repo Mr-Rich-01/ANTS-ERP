@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { Icon } from '@/components/Icon';
 import { ACCENT } from '@/lib/erp-nav';
 import { receivePurchaseOrderAction } from '@/app/(erp)/compras/actions';
+import { canSubmitReceipt } from '@ants/shared';
 
 export interface ReceiveLine {
   lineId: string;
@@ -57,6 +58,7 @@ export function RecepcaoClient({ orderId, orderNumber, supplierName, warehouseNa
     tax = Math.round(tax * 100) / 100;
     return { quantity, net, tax, total: Math.round((net + tax) * 100) / 100 };
   }, [recv, lines]);
+  const canSubmit = canSubmitReceipt(lines, recv, pending);
 
   const submit = () => {
     setMsg(null);
@@ -103,7 +105,7 @@ export function RecepcaoClient({ orderId, orderNumber, supplierName, warehouseNa
             </span>
           </div>
         </div>
-        <button onClick={submit} disabled={pending} style={{ display: 'flex', alignItems: 'center', gap: 7, height: 38, padding: '0 15px', borderRadius: 10, border: 'none', background: ACCENT, color: '#fff', fontSize: 12.5, fontWeight: 600, opacity: pending ? 0.6 : 1, cursor: pending ? 'default' : 'pointer', flex: 'none' }}>
+        <button onClick={submit} disabled={!canSubmit} style={{ display: 'flex', alignItems: 'center', gap: 7, height: 38, padding: '0 15px', borderRadius: 10, border: 'none', background: ACCENT, color: '#fff', fontSize: 12.5, fontWeight: 600, opacity: canSubmit ? 1 : 0.6, cursor: canSubmit ? 'pointer' : 'default', flex: 'none' }}>
           <Icon name="check-circle-2" size={15} />
           {pending ? 'A validar…' : 'Validar recepção'}
         </button>
@@ -135,47 +137,55 @@ export function RecepcaoClient({ orderId, orderNumber, supplierName, warehouseNa
               </tr>
             </thead>
             <tbody>
-              {lines.map((l) => {
-                const v = recv[l.lineId] ?? 0;
-                return (
-                  <tr key={l.lineId} className="ants-row" style={{ borderBottom: '1px solid var(--bd-soft2)' }}>
-                    <td style={{ padding: '11px 14px', fontSize: 13, fontWeight: 500, color: 'var(--text)', whiteSpace: 'nowrap' }}>
-                      {l.name}
-                      <div className="font-mono" style={{ fontSize: 11, color: 'var(--text3)' }}>
-                        {l.sku}
-                      </div>
-                    </td>
-                    <td className="tnum" style={{ padding: '11px 14px', textAlign: 'center', fontSize: 13, color: 'var(--text2)' }}>
-                      {l.ordered}
-                    </td>
-                    <td className="tnum" style={{ padding: '11px 14px', textAlign: 'center', fontSize: 13, color: 'var(--text2)' }}>
-                      {l.alreadyReceived}
-                    </td>
-                    <td className="tnum" style={{ padding: '11px 14px', textAlign: 'center', fontSize: 13, fontWeight: 600, color: 'var(--warn)' }}>
-                      {l.remaining}
-                    </td>
-                    <td style={{ padding: '11px 14px', textAlign: 'center' }}>
-                      <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, border: '1px solid var(--field-bd)', background: 'var(--field)', borderRadius: 9, padding: '4px 6px' }}>
-                        <button onClick={() => setQty(l.lineId, l.remaining, v - 1)} style={iconBtn} aria-label="menos">
-                          <Icon name="minus" size={13} color="var(--text3)" />
-                        </button>
-                        <input
-                          className="tnum"
-                          type="number"
-                          min={0}
-                          max={l.remaining}
-                          value={v}
-                          onChange={(e) => setQty(l.lineId, l.remaining, Number(e.target.value))}
-                          style={{ width: 54, textAlign: 'center', fontSize: 13, fontWeight: 700, color: 'var(--text)', border: 'none', background: 'none', outline: 'none' }}
-                        />
-                        <button onClick={() => setQty(l.lineId, l.remaining, v + 1)} style={iconBtn} aria-label="mais">
-                          <Icon name="plus" size={13} color="var(--text3)" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
+              {lines.length === 0 ? (
+                <tr>
+                  <td colSpan={5} style={{ padding: '30px 14px', textAlign: 'center', color: 'var(--text3)', fontSize: 13 }}>
+                    Esta ordem não tem linhas pendentes para recepção.
+                  </td>
+                </tr>
+              ) : (
+                lines.map((l) => {
+                  const v = recv[l.lineId] ?? 0;
+                  return (
+                    <tr key={l.lineId} className="ants-row" style={{ borderBottom: '1px solid var(--bd-soft2)' }}>
+                      <td style={{ padding: '11px 14px', fontSize: 13, fontWeight: 500, color: 'var(--text)', whiteSpace: 'nowrap' }}>
+                        {l.name}
+                        <div className="font-mono" style={{ fontSize: 11, color: 'var(--text3)' }}>
+                          {l.sku}
+                        </div>
+                      </td>
+                      <td className="tnum" style={{ padding: '11px 14px', textAlign: 'center', fontSize: 13, color: 'var(--text2)' }}>
+                        {l.ordered}
+                      </td>
+                      <td className="tnum" style={{ padding: '11px 14px', textAlign: 'center', fontSize: 13, color: 'var(--text2)' }}>
+                        {l.alreadyReceived}
+                      </td>
+                      <td className="tnum" style={{ padding: '11px 14px', textAlign: 'center', fontSize: 13, fontWeight: 600, color: 'var(--warn)' }}>
+                        {l.remaining}
+                      </td>
+                      <td style={{ padding: '11px 14px', textAlign: 'center' }}>
+                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, border: '1px solid var(--field-bd)', background: 'var(--field)', borderRadius: 9, padding: '4px 6px' }}>
+                          <button onClick={() => setQty(l.lineId, l.remaining, v - 1)} style={iconBtn} aria-label="menos">
+                            <Icon name="minus" size={13} color="var(--text3)" />
+                          </button>
+                          <input
+                            className="tnum"
+                            type="number"
+                            min={0}
+                            max={l.remaining}
+                            value={v}
+                            onChange={(e) => setQty(l.lineId, l.remaining, Number(e.target.value))}
+                            style={{ width: 54, textAlign: 'center', fontSize: 13, fontWeight: 700, color: 'var(--text)', border: 'none', background: 'none', outline: 'none' }}
+                          />
+                          <button onClick={() => setQty(l.lineId, l.remaining, v + 1)} style={iconBtn} aria-label="mais">
+                            <Icon name="plus" size={13} color="var(--text3)" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
             </tbody>
             <tfoot>
               <tr style={{ background: 'var(--card2)' }}>

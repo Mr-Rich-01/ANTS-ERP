@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { Icon } from '@/components/Icon';
 import { KpiCard, KpiGrid, type KpiCardData } from '@/components/ui/KpiCard';
 import { ACCENT } from '@/lib/erp-nav';
+import { purchaseOrdersEmptyMessage } from '@ants/shared';
 
 export type PoStatus = 'DRAFT' | 'SENT' | 'PARTIAL' | 'RECEIVED' | 'CANCELLED';
 
@@ -47,6 +48,7 @@ export function ComprasClient({ kpis, rows, totalStr, canCreate }: { kpis: KpiCa
     if (!term) return rows;
     return rows.filter((r) => r.number.toLowerCase().includes(term) || r.supplierName.toLowerCase().includes(term));
   }, [q, rows]);
+  const emptyMessage = purchaseOrdersEmptyMessage(rows.length, filtered.length);
 
   return (
     <div style={{ padding: '14px 26px 30px', display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -91,7 +93,7 @@ export function ComprasClient({ kpis, rows, totalStr, canCreate }: { kpis: KpiCa
               {filtered.length === 0 ? (
                 <tr>
                   <td colSpan={7} style={{ padding: '34px 14px', textAlign: 'center', color: 'var(--text3)', fontSize: 13 }}>
-                    {rows.length === 0 ? 'Ainda não há ordens de compra. Crie a primeira.' : 'Nenhuma ordem corresponde à pesquisa.'}
+                    {emptyMessage}
                   </td>
                 </tr>
               ) : (

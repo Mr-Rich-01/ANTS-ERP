@@ -45,6 +45,15 @@ em Windows nativo (28/28 páginas) e Docker Linux com Node 20 + OpenSSL · seed 
 
 ## Problemas conhecidos
 
+### Runtime UI de estados vazios de compras
+
+Em 2026-06-30, foi corrigido um bug isolado de UI nos estados vazios de
+compras/recepção/perfil de fornecedor: o pagamento a fornecedor já não deriva
+`accountId` da primeira conta disponível e a recepção sem linhas pendentes fica
+desactivada. Foram adicionados testes puros para compras sem ordens, recepção
+sem linhas e pagamento sem conta seleccionada. A Fase 8c.3 permanece concluída,
+sem avanço funcional.
+
 ### Build de produção do Next.js
 
 Em 2026-06-30, a investigação isolada do build não reproduziu o erro histórico
