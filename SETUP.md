@@ -209,6 +209,12 @@ Testes contabilísticos da 8c.3:
 pnpm test:integration:accounting:c3
 ```
 
+Testes da anulação ponta a ponta de recebimento de cliente (P0-03b):
+
+```bash
+pnpm test:integration:accounting:reversal:customer-payment
+```
+
 Build:
 
 ```bash

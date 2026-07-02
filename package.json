@@ -22,6 +22,7 @@
     "test:integration:accounting:c2": "pnpm --filter @ants/domain test:integration:c2",
     "test:integration:accounting:c2a": "pnpm --filter @ants/domain test:integration:c2a",
     "test:integration:accounting:c3": "pnpm --filter @ants/domain test:integration:c3",
+    "test:integration:accounting:reversal:customer-payment": "pnpm --filter @ants/domain test:integration:customer-payment-reversal",
     "docker:dev": "docker compose up -d postgres redis"
   },
   "devDependencies": {

@@ -5,9 +5,9 @@ _Última actualização: 2026-07-02_
 Estado vivo do projecto. O conhecimento permanente (arquitectura, regras, comandos) está
 em [`CLAUDE.md`](CLAUDE.md).
 
-**Último commit funcional:** este commit (`feat(accounting): add reversal foundation`)
-**Fase concluída:** `P0-03.0 — fundação técnica de cancelamentos, anulações e estornos`
-**Próximo passo:** `P0-03b — anulação de recebimento de cliente` _(não iniciado)_
+**Último commit funcional:** este commit (`feat(accounting): reverse customer payments end to end`)
+**Fase concluída:** `P0-03b — anulação ponta a ponta de recebimento de cliente`
+**Próximo passo:** `P0-03a — cancelamento de factura` _(não iniciado)_
 
 ---
 
@@ -30,13 +30,14 @@ em [`CLAUDE.md`](CLAUDE.md).
 | **8c.2b** | **Contabilidade — integração factura/recibo** (factura `SALE_ISSUED`, recibo `RECEIPT_POSTED`, idempotência operacional nos formulários/actions) | ✅ |
 | **8c.3** | **Contabilidade — fornecedores/compras** (`PurchaseReceipt`, `PurchaseReceiptItem`, recepção `PURCHASE_RECEIVED`, pagamento `SUPPLIER_PAYMENT_POSTED`) | ✅ |
 | **P0-03.0** | **Fundação técnica de cancelamentos/anulações/estornos** (estados/metadados, rastreabilidade `Invoice`→`StockMovement`, scopes de idempotência e helper contabilístico reforçado) | ✅ |
+| **P0-03b** | **Anulação de recebimento de cliente** (`Payment`→`Invoice`/`Customer`/Tesouraria/Contabilidade/Auditoria, recibo original `ANULADO`) | ✅ |
 | 8c.4–8e | Contabilidade — cancelamentos/estornos, tesouraria, ecrãs, testes finais | 🗺️ **a seguir** |
 | 9 | RH & Salários | 🗺️ futuro |
 | X | RLS forçado em toda a BD (fase transversal, pré-produção) | 🗺️ futuro |
 
 **Validações actuais:** typecheck 6/6 · lint 6/6 · **testes unitários 73** · **integração de
-contabilidade 145/145** (8b 32 + 8c.1 30 + 8c.2a 18 + 8c.2b 34 + 8c.3 17 + P0-02 5 + P0-03.0 9;
-`pnpm test:integration:accounting`, sub: `…:c1`, `…:c2a`, `…:c2`, `…:c3`) · `prisma format` OK · `prisma validate` OK · `pnpm build` OK
+contabilidade 155/155** (8b 32 + 8c.1 30 + 8c.2a 18 + 8c.2b 34 + 8c.3 17 + P0-02 5 + P0-03.0 9 + P0-03b 10;
+`pnpm test:integration:accounting`, sub: `…:c1`, `…:c2a`, `…:c2`, `…:c3`, `…:reversal:customer-payment`) · `prisma format` OK · `prisma validate` OK · `pnpm build` OK
 em Windows nativo (28/28 páginas) e Docker Linux com Node 20 + OpenSSL · seed idempotente (2×).
 
 **Hardening pré-produção P0-01 (2026-07-02):** seed demo bloqueado em `production`
@@ -61,7 +62,17 @@ movimentos compensatórios por `reversesId`; `TreasuryMovement` recebeu
 subfases P0-03; o helper `reverseAccountingEventTx` foi reforçado com motivo,
 data explícita validada em período/exercício aberto, actor/auditoria e protecção
 concorrente. Não há backfill heurístico nem documentos revertidos pela migration.
-Próxima subfase: `P0-03b — anulação de recebimento de cliente`.
+Subfase seguinte implementada: `P0-03b — anulação de recebimento de cliente`.
+
+**P0-03b (2026-07-02):** implementada a anulação ponta a ponta de recebimento de
+cliente a partir do `Payment`, com permissão `payments.cancel`, motivo/data
+validados, idempotência `CUSTOMER_PAYMENT_REVERSE`, recálculo de `Invoice.amountPaid`
+por pagamentos `ACTIVE`, restauração de `Customer.balance`, movimento compensatório
+de Tesouraria ligado por `reversesId`, estorno contabilístico por verdade histórica
+via `reverseAccountingEventTx` e auditoria `customer.payment.reverse` na mesma
+transacção. O recibo original permanece no histórico como `ANULADO` e continua
+visível/imprimível. Cancelamento de factura continua pendente. Próxima subfase:
+`P0-03a — cancelamento de factura`.
 
 **Commit da 8c.3:** este commit exclusivo, `feat(accounting): integrate purchase receipts and supplier payments`.
 
@@ -411,7 +422,11 @@ db:generate` e `pnpm build`.
     e reversão, rastreabilidade `Invoice`→`StockMovement`, self-reference `StockMovement.reversesId`,
     novos scopes de idempotência, permissões de reversão para pagamentos/recepções/transferências e
     reforço de `reverseAccountingEventTx`. Sem UI, sem cancelamento/anulação funcional e sem backfill.
-  - **P0-03b / 8c.4** anulação de recebimento de cliente ou subfase seguinte. **8c.5** backfill (dry-run) + validação.
+  - **P0-03b / 8c.4** _(✅ concluída)_: anulação integral de recebimento de cliente iniciada no
+    `Payment`, atómica sobre `Invoice`, `Customer`, `TreasuryMovement`, `TreasuryAccount`,
+    `JournalEntry`, `AuditLog` e `OperationIdempotency`; recibo original preservado como
+    `ANULADO`. Suite dedicada: `pnpm test:integration:accounting:reversal:customer-payment`.
+  - **P0-03a / 8c.4** cancelamento de factura ou subfase seguinte. **8c.5** backfill (dry-run) + validação.
     Diferidos: COGS e ecrãs contabilísticos finais.
 - **8d — Ecrãs**: plano de contas, diários, novo lançamento, detalhe, razão geral, balancete,
   extracto diário (linha a linha) + configuração contabilística (mapping de `systemKeys`).

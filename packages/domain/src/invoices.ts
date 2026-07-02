@@ -6,9 +6,9 @@ import { requireCompany } from './context';
 import { requirePermission, hasPermission } from './permissions';
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from './errors';
 import { writeAudit } from './audit';
-import { postTreasuryMovementTx } from './treasury';
+import { postTreasuryMovementTx, reverseOperationalTreasuryMovementTx } from './treasury';
 import { formatAccountingDate, getMappedAccountTx, parseAccountingDate, type AccountingJournalType } from './accounting';
-import { postAccountingEventTx, resolveTreasuryLedgerTx } from './accounting-events';
+import { postAccountingEventTx, resolveTreasuryLedgerTx, reverseAccountingEventTx } from './accounting-events';
 import {
   FINGERPRINT_VERSION,
   canonicalRequestFingerprint,
@@ -17,6 +17,7 @@ import {
   fpInt,
   runIdempotentOperation,
 } from './operation-idempotency';
+import { validateOpenReversalDateTx, validateReversalReason } from './reversals';
 
 export type InvoiceStatus = 'ISSUED' | 'PARTIAL' | 'PAID' | 'CANCELLED';
 /** Estado apresentado (inclui "vencido", derivado da data). */
@@ -53,6 +54,11 @@ export interface InvoicePaymentItem {
   amount: number;
   method: PaymentMethod;
   paidAt: Date;
+  status: 'ACTIVE' | 'REVERSED';
+  reversedAt: Date | null;
+  reversalReason: string | null;
+  treasuryAccountId: string | null;
+  treasuryAccountName: string | null;
 }
 
 export interface InvoiceDetail {
@@ -144,6 +150,14 @@ export async function getInvoice(db: PrismaClient, ctx: RequestContext, id: stri
   if (!i) throw new NotFoundError('Factura não encontrada.');
   const total = Number(i.total);
   const amountPaid = Number(i.amountPaid);
+  const paymentIds = i.payments.map((p) => p.id);
+  const paymentMovements = paymentIds.length
+    ? await db.treasuryMovement.findMany({
+        where: { sourceType: 'RECEIPT', sourceId: { in: paymentIds }, movementPurpose: 'RECEIPT_IN' },
+        include: { account: { select: { id: true, name: true } } },
+      })
+    : [];
+  const movementByPayment = new Map(paymentMovements.map((m) => [m.sourceId, m]));
   return {
     id: i.id,
     number: i.number,
@@ -180,6 +194,11 @@ export async function getInvoice(db: PrismaClient, ctx: RequestContext, id: stri
       amount: Number(p.amount),
       method: p.method as PaymentMethod,
       paidAt: p.paidAt,
+      status: p.status as 'ACTIVE' | 'REVERSED',
+      reversedAt: p.reversedAt,
+      reversalReason: p.reversalReason,
+      treasuryAccountId: movementByPayment.get(p.id)?.account.id ?? null,
+      treasuryAccountName: movementByPayment.get(p.id)?.account.name ?? null,
     })),
   };
 }
@@ -219,7 +238,7 @@ export async function getCustomerStatement(db: PrismaClient, ctx: RequestContext
 
   const [invoices, payments] = await Promise.all([
     db.invoice.findMany({ where: { customerId, status: { not: 'CANCELLED' } }, select: { number: true, issueDate: true, total: true } }),
-    db.payment.findMany({ where: { customerId }, select: { number: true, paidAt: true, amount: true } }),
+    db.payment.findMany({ where: { customerId, status: 'ACTIVE' }, select: { number: true, paidAt: true, amount: true } }),
   ]);
 
   type Ev = { date: Date; doc: string; description: string; debit: number; credit: number };
@@ -634,6 +653,198 @@ export async function createPayment(db: PrismaClient, ctx: RequestContext, input
         });
 
         return { resourceType: 'Payment', resourceId: payment.id, result: { id: payment.id, number } };
+      },
+    });
+    return op.result;
+  });
+}
+
+const reverseCustomerPaymentInput = z.object({
+  paymentId: z.string().min(1, 'Recebimento inválido.'),
+  idempotencyKey: z.string().min(1, 'Chave de idempotência obrigatória.'),
+  reversalReason: z.string(),
+  reversalDate: z.string().min(1, 'Data da anulação obrigatória.'),
+});
+
+export type ReverseCustomerPaymentInput = z.input<typeof reverseCustomerPaymentInput>;
+
+export interface ReverseCustomerPaymentResult {
+  id: string;
+  number: string;
+  reversalDate: string;
+  treasuryReversalId: string | null;
+  accountingReversalId: string | null;
+}
+
+function paymentReversalFingerprint(companyId: string, paymentId: string, reversalDate: Date, reversalReason: string): string {
+  return canonicalRequestFingerprint(FINGERPRINT_VERSION, {
+    companyId,
+    paymentId,
+    reversalDate: fpDate(reversalDate),
+    reversalReason,
+  });
+}
+
+function statusForPaidAmount(amountPaid: number, total: number): InvoiceStatus {
+  if (amountPaid <= 0) return 'ISSUED';
+  if (amountPaid >= total) return 'PAID';
+  return 'PARTIAL';
+}
+
+function resolveAllowedReversalDate(value: string): Date {
+  const requestedDate = parseAccountingDate(value);
+  const currentDate = civilDateInTimeZone();
+  if (formatAccountingDate(requestedDate) !== currentDate) {
+    throw new ValidationError('A data da anulação deve ser a data actual em Africa/Maputo.');
+  }
+  return parseAccountingDate(currentDate);
+}
+
+export async function reverseCustomerPayment(db: PrismaClient, ctx: RequestContext, input: ReverseCustomerPaymentInput): Promise<ReverseCustomerPaymentResult> {
+  requirePermission(ctx, 'payments.cancel');
+  const companyId = requireCompany(ctx);
+  const parsed = reverseCustomerPaymentInput.safeParse(input);
+  if (!parsed.success) throw new ValidationError(parsed.error.issues[0]?.message ?? 'Dados inválidos.');
+  const data = parsed.data;
+  const reversalReason = validateReversalReason(data.reversalReason);
+  const reversalDate = resolveAllowedReversalDate(data.reversalDate);
+  const requestFingerprint = paymentReversalFingerprint(companyId, data.paymentId, reversalDate, reversalReason);
+
+  return db.$transaction(async (tx) => {
+    const op = await runIdempotentOperation<ReverseCustomerPaymentResult>(tx, ctx, {
+      scope: 'CUSTOMER_PAYMENT_REVERSE',
+      idempotencyKey: data.idempotencyKey,
+      requestFingerprint,
+      expectedResourceType: 'Payment',
+      loadExisting: async (resourceId) => {
+        const payment = await tx.payment.findFirst({ where: { companyId, id: resourceId }, select: { id: true, number: true, status: true } });
+        if (!payment) return null;
+        if (payment.status !== 'REVERSED') throw new ConflictError('Registo de idempotência aponta para um recebimento ainda activo (integridade).');
+        const [originalMovement, originalEntry] = await Promise.all([
+          tx.treasuryMovement.findFirst({ where: { companyId, sourceType: 'RECEIPT', sourceId: payment.id, movementPurpose: 'RECEIPT_IN' }, select: { id: true } }),
+          tx.journalEntry.findFirst({ where: { companyId, sourceType: 'CUSTOMER_PAYMENT', sourceId: payment.id, accountingEvent: 'RECEIPT_POSTED' }, select: { id: true } }),
+        ]);
+        if (!originalMovement || !originalEntry) throw new ConflictError('Registo de idempotência aponta para uma anulação incompleta (integridade).');
+        const [treasuryReversal, accountingReversal] = await Promise.all([
+          tx.treasuryMovement.findFirst({ where: { companyId, reversesId: originalMovement.id }, select: { id: true } }),
+          tx.journalEntry.findFirst({ where: { companyId, reversalOfId: originalEntry.id }, select: { id: true } }),
+        ]);
+        if (!treasuryReversal || !accountingReversal) throw new ConflictError('Registo de idempotência aponta para uma anulação incompleta (integridade).');
+        return { id: payment.id, number: payment.number, reversalDate: formatAccountingDate(reversalDate), treasuryReversalId: treasuryReversal.id, accountingReversalId: accountingReversal.id };
+      },
+      run: async () => {
+        await validateOpenReversalDateTx(tx, companyId, reversalDate);
+        await tx.$queryRaw`SELECT id FROM payments WHERE id = ${data.paymentId} AND "companyId" = ${companyId} FOR UPDATE`;
+        const payment = await tx.payment.findFirst({ where: { companyId, id: data.paymentId } });
+        if (!payment) throw new NotFoundError('Recebimento não encontrado.');
+        if (payment.status === 'REVERSED') throw new ConflictError('Este recebimento já foi anulado.');
+        if (!payment.invoiceId) throw new ConflictError('Recebimento sem factura de origem (integridade).');
+
+        await tx.$queryRaw`SELECT id FROM invoices WHERE id = ${payment.invoiceId} AND "companyId" = ${companyId} FOR UPDATE`;
+        const invoice = await tx.invoice.findFirst({ where: { companyId, id: payment.invoiceId } });
+        if (!invoice) throw new NotFoundError('Factura do recebimento não encontrada.');
+        if (invoice.status === 'CANCELLED') throw new ConflictError('A factura do recebimento está cancelada.');
+        if (invoice.customerId !== payment.customerId) throw new ConflictError('Recebimento e factura apontam para clientes diferentes (integridade).');
+
+        await tx.$queryRaw`SELECT id FROM customers WHERE id = ${payment.customerId} AND "companyId" = ${companyId} FOR UPDATE`;
+        const customer = await tx.customer.findFirst({ where: { companyId, id: payment.customerId } });
+        if (!customer) throw new NotFoundError('Cliente do recebimento não encontrado.');
+
+        const movements = await tx.treasuryMovement.findMany({ where: { companyId, sourceType: 'RECEIPT', sourceId: payment.id, movementPurpose: 'RECEIPT_IN' } });
+        if (movements.length !== 1) throw new ConflictError('Integridade: recebimento sem movimento de tesouraria único.');
+        const originalMovement = movements[0]!;
+        if (originalMovement.flow !== 'IN' || round2(Number(originalMovement.amount)) !== round2(Number(payment.amount))) {
+          throw new ConflictError('Integridade: movimento de tesouraria não coincide com o recebimento.');
+        }
+
+        const entries = await tx.journalEntry.findMany({ where: { companyId, sourceType: 'CUSTOMER_PAYMENT', sourceId: payment.id, accountingEvent: 'RECEIPT_POSTED' } });
+        if (entries.length !== 1) throw new ConflictError('Integridade: recebimento sem lançamento contabilístico único.');
+        const originalEntry = entries[0]!;
+
+        const amount = round2(Number(payment.amount));
+        const customerBalanceBefore = round2(Number(customer.balance));
+        await tx.payment.update({
+          where: { id: payment.id },
+          data: { status: 'REVERSED', reversedAt: new Date(), reversedById: ctx.userId, reversalReason },
+        });
+
+        const activePaid = round2(
+          Number(
+            (
+              await tx.payment.aggregate({
+                where: { companyId, invoiceId: invoice.id, status: 'ACTIVE' },
+                _sum: { amount: true },
+              })
+            )._sum.amount ?? 0,
+          ),
+        );
+        const invoiceStatus = statusForPaidAmount(activePaid, round2(Number(invoice.total)));
+        await tx.invoice.update({ where: { id: invoice.id }, data: { amountPaid: activePaid, status: invoiceStatus } });
+        const updatedCustomer = await tx.customer.update({ where: { id: customer.id }, data: { balance: { increment: amount } } });
+        const customerBalanceAfter = round2(Number(updatedCustomer.balance));
+
+        const treasuryReversal = await reverseOperationalTreasuryMovementTx(tx, companyId, ctx.userId, {
+          movementId: originalMovement.id,
+          reason: reversalReason,
+          occurredAt: reversalDate,
+          expectedSourceType: 'RECEIPT',
+          expectedSourceId: payment.id,
+          expectedMovementPurpose: 'RECEIPT_IN',
+          reversalPurpose: 'RECEIPT_IN_REVERSAL',
+          description: `Anulação do recibo ${payment.number} - ${reversalReason}`,
+        });
+
+        const accountingReversal = await reverseAccountingEventTx(tx, ctx, {
+          origin: { sourceType: 'CUSTOMER_PAYMENT', sourceId: payment.id, accountingEvent: 'RECEIPT_POSTED' },
+          reversalDate,
+          reason: reversalReason,
+          operationalReference: payment.number,
+        });
+
+        await writeAudit(tx, ctx, {
+          action: 'customer.payment.reverse',
+          entity: 'Payment',
+          entityId: payment.id,
+          oldValues: {
+            status: payment.status,
+            invoiceAmountPaid: Number(invoice.amountPaid),
+            invoiceStatus: invoice.status,
+            customerBalance: customerBalanceBefore,
+          },
+          newValues: {
+            status: 'REVERSED',
+            paymentId: payment.id,
+            invoiceId: invoice.id,
+            customerId: customer.id,
+            receiptNumber: payment.number,
+            amount,
+            reversalReason,
+            reversalDate: formatAccountingDate(reversalDate),
+            idempotencyKey: data.idempotencyKey,
+            invoiceAmountPaid: activePaid,
+            invoiceStatus,
+            customerBalanceBefore,
+            customerBalanceAfter,
+            treasuryMovementOriginalId: originalMovement.id,
+            treasuryMovementReversalId: treasuryReversal.reversalId,
+            treasuryBalanceBefore: treasuryReversal.balanceBefore,
+            treasuryBalanceAfter: treasuryReversal.balanceAfter,
+            journalEntryOriginalId: originalEntry.id,
+            journalEntryReversalId: accountingReversal.reversalId,
+          },
+        });
+
+        return {
+          resourceType: 'Payment',
+          resourceId: payment.id,
+          result: {
+            id: payment.id,
+            number: payment.number,
+            reversalDate: formatAccountingDate(reversalDate),
+            treasuryReversalId: treasuryReversal.reversalId,
+            accountingReversalId: accountingReversal.reversalId,
+          },
+        };
       },
     });
     return op.result;

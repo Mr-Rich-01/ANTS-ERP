@@ -1,12 +1,14 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { forCompany } from '@ants/database';
+import { civilDateInTimeZone } from '@ants/shared';
 import { getCompanyIdentity, getInvoice, hasPermission, listAccounts, DomainError, type InvoiceDisplayStatus, type PaymentMethod } from '@ants/domain';
 import { getContext } from '@/lib/session';
 import { Icon } from '@/components/Icon';
 import { PrintButton } from '@/components/PrintButton';
 import { fmt } from '@/lib/format';
 import { PaymentDialog } from '@/components/facturas/PaymentDialog';
+import { PaymentReversalDialog } from '@/components/facturas/PaymentReversalDialog';
 
 export const dynamic = 'force-dynamic';
 
@@ -65,6 +67,8 @@ export default async function DocumentoPage({ searchParams }: { searchParams: { 
 
   const [statusLabel, statusColor, statusBg] = STATUS[inv.displayStatus];
   const canReceive = hasPermission(ctx, 'payments.receive') && inv.outstanding > 0 && inv.status !== 'CANCELLED';
+  const canCancelPayment = hasPermission(ctx, 'payments.cancel');
+  const reversalDate = civilDateInTimeZone();
   const docTh: React.CSSProperties = { padding: '10px 12px', fontSize: 10.5, fontWeight: 600, letterSpacing: '.5px', textTransform: 'uppercase' };
   const initial = (company?.tradeName ?? company?.legalName ?? 'A').charAt(0).toUpperCase();
 
@@ -195,13 +199,35 @@ export default async function DocumentoPage({ searchParams }: { searchParams: { 
                 <div style={{ fontSize: 11.5, color: '#9aa7a9' }}>Sem recibos registados.</div>
               ) : (
                 inv.payments.map((p) => (
-                  <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11.5, color: '#5f7378', padding: '3px 0' }}>
-                    <span className="font-mono">
+                  <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, fontSize: 11.5, color: '#5f7378', padding: '5px 0', alignItems: 'flex-start' }}>
+                    <div style={{ minWidth: 0 }}>
+                      <span className="font-mono">
                       {p.number} · {METHOD_LABEL[p.method]} · {fmtDate(p.paidAt)}
-                    </span>
-                    <span className="tnum" style={{ color: '#16282c', fontWeight: 600 }}>
+                      </span>
+                      {p.status === 'REVERSED' && (
+                        <div style={{ marginTop: 3, color: '#8b3a32', fontWeight: 700 }}>
+                          ANULADO{p.reversedAt ? ` · ${fmtDate(p.reversedAt)}` : ''}{p.reversalReason ? ` · ${p.reversalReason}` : ''}
+                        </div>
+                      )}
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 'none' }}>
+                    <span className="tnum" style={{ color: p.status === 'REVERSED' ? '#8b3a32' : '#16282c', fontWeight: 600, textDecoration: p.status === 'REVERSED' ? 'line-through' : undefined }}>
                       {fmt(p.amount)}
                     </span>
+                    {canCancelPayment && p.status === 'ACTIVE' && (
+                      <span className="ants-noprint">
+                        <PaymentReversalDialog
+                          reversalDate={reversalDate}
+                          payment={{ id: p.id, number: p.number, amount: p.amount, customerName: inv.customerName, invoiceNumber: inv.number, treasuryAccountName: p.treasuryAccountName }}
+                          trigger={
+                            <button title="Anular recibo" style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 28, height: 28, borderRadius: 8, border: '1px solid #f0d0cc', background: '#fff5f3', color: '#8b3a32', cursor: 'pointer' }}>
+                              <Icon name="undo-2" size={14} />
+                            </button>
+                          }
+                        />
+                      </span>
+                    )}
+                    </div>
                   </div>
                 ))
               )}

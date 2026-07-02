@@ -324,6 +324,72 @@ export async function postTreasuryMovementTx(
   return { balanceAfter, movementId: created.id, created: true };
 }
 
+export async function reverseOperationalTreasuryMovementTx(
+  tx: Prisma.TransactionClient,
+  companyId: string,
+  userId: string,
+  input: {
+    movementId: string;
+    reason: string;
+    occurredAt: Date;
+    expectedSourceType: string;
+    expectedSourceId: string;
+    expectedMovementPurpose: string;
+    reversalPurpose: string;
+    description: string;
+  },
+): Promise<{ reversalId: string; balanceBefore: number; balanceAfter: number }> {
+  await tx.$queryRaw`SELECT id FROM treasury_movements WHERE id = ${input.movementId} AND "companyId" = ${companyId} FOR UPDATE`;
+  const original = await tx.treasuryMovement.findFirst({ where: { id: input.movementId, companyId } });
+  if (!original) throw new NotFoundError('Movimento de tesouraria do recebimento não encontrado.');
+  if (original.sourceType !== input.expectedSourceType || original.sourceId !== input.expectedSourceId || original.movementPurpose !== input.expectedMovementPurpose) {
+    throw new ConflictError('Movimento de tesouraria não corresponde ao recebimento informado.');
+  }
+  if (original.status !== 'ACTIVE') throw new ConflictError('O movimento de tesouraria do recebimento já foi estornado.');
+  const already = await tx.treasuryMovement.findFirst({ where: { companyId, reversesId: original.id } });
+  if (already) throw new ConflictError('O movimento de tesouraria do recebimento já tem movimento compensatório.');
+
+  const account = await tx.treasuryAccount.findFirst({ where: { id: original.accountId, companyId } });
+  if (!account) throw new NotFoundError('Conta de tesouraria do recebimento não encontrada.');
+
+  const amount = round2(Number(original.amount));
+  const reverseFlow: TreasuryFlow = original.flow === 'IN' ? 'OUT' : 'IN';
+  const balanceBefore = round2(Number(account.balance));
+  const updated = await tx.treasuryAccount.update({
+    where: { id: account.id },
+    data: reverseFlow === 'IN' ? { balance: { increment: amount } } : { balance: { decrement: amount } },
+  });
+  const balanceAfter = round2(Number(updated.balance));
+  if (reverseFlow === 'OUT' && balanceAfter < 0 && !account.allowNegative) {
+    throw new ValidationError(`Saldo insuficiente na conta ${account.name}.`);
+  }
+
+  const reversal = await tx.treasuryMovement.create({
+    data: {
+      companyId,
+      accountId: account.id,
+      flow: reverseFlow,
+      amount,
+      balanceAfter,
+      category: original.category,
+      description: input.description,
+      document: original.document,
+      counterpartAccountId: original.counterpartAccountId,
+      transferId: original.transferId,
+      source: 'REVERSAL',
+      sourceType: original.sourceType,
+      sourceId: original.sourceId,
+      movementPurpose: input.reversalPurpose,
+      reversesId: original.id,
+      reversalReason: input.reason,
+      createdBy: userId,
+      occurredAt: input.occurredAt,
+    },
+  });
+  await tx.treasuryMovement.update({ where: { id: original.id }, data: { status: 'REVERSED', reversalReason: input.reason } });
+  return { reversalId: reversal.id, balanceBefore, balanceAfter };
+}
+
 // ─────────────────────────── Mutações ───────────────────────────
 
 const accountInput = z.object({
