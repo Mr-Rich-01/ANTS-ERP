@@ -7,8 +7,7 @@
  */
 import { hash } from '@node-rs/argon2';
 import { PrismaClient } from '@prisma/client';
-
-const prisma = new PrismaClient();
+import { assertDemoSeedAllowed, DEMO_SEED_PRODUCTION_ERROR } from '../src/demo-seed-guard';
 
 // Catálogo inicial de permissões (granulares, independentes do nome do perfil)
 const PERMISSIONS: Array<{ key: string; module: string; description: string }> = [
@@ -58,7 +57,7 @@ const PERMISSIONS: Array<{ key: string; module: string; description: string }> =
   { key: 'audit.view', module: 'audit', description: 'Ver auditoria' },
 ];
 
-async function main() {
+async function seedDemo(prisma: PrismaClient) {
   // 1) Permissões
   for (const p of PERMISSIONS) {
     await prisma.permission.upsert({
@@ -688,11 +687,22 @@ async function ensureSiblingLedgerAccount(db: PrismaClient, companyId: string, s
   });
 }
 
+async function main() {
+  assertDemoSeedAllowed();
+  const prisma = new PrismaClient();
+  try {
+    await seedDemo(prisma);
+  } finally {
+    await prisma.$disconnect();
+  }
+}
+
 main()
   .catch((e) => {
-    console.error(e);
+    if (e instanceof Error && e.message === DEMO_SEED_PRODUCTION_ERROR) {
+      console.error(e.message);
+    } else {
+      console.error(e);
+    }
     process.exit(1);
-  })
-  .finally(async () => {
-    await prisma.$disconnect();
   });

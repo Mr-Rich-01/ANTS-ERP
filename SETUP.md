@@ -86,11 +86,28 @@ Aplicar migrations em desenvolvimento:
 pnpm db:migrate
 ```
 
-Executar seed:
+### Desenvolvimento
+
+Executar o seed de demonstração apenas em ambiente local/de desenvolvimento:
 
 ```bash
 pnpm db:seed
 ```
+
+Este seed cria dados fictícios: `demo-company`, filiais Maputo/Matola,
+perfis, utilizadores demo, clientes, fornecedores, produtos, stock, tesouraria
+e base contabilística.
+
+Credenciais locais versionadas para desenvolvimento:
+
+| Utilizador | Password | Papel |
+|------------|----------|-------|
+| `admin@ants.co.mz` | `Admin@123` | Administrador da empresa demo |
+| `superadmin@ants.co.mz` | `Admin@123` | Super Admin da plataforma |
+| `maria@ants.co.mz`, `joao@ants.co.mz`, `ana@ants.co.mz`, `carlos@ants.co.mz`, `lucia@ants.co.mz` | `Demo@123` | Utilizadores demo |
+
+Estas credenciais são exclusivamente locais e nunca devem ser usadas com
+clientes reais.
 
 Confirmar estado das migrations:
 
@@ -100,6 +117,28 @@ pnpm --filter @ants/database exec prisma migrate status
 
 Depois de executar um seed que introduza novas permissões, terminar a sessão e
 voltar a entrar para que a sessão obtenha as permissões actualizadas.
+
+### Produção
+
+Em produção, o seed de demonstração é proibido:
+
+```bash
+pnpm db:seed
+```
+
+O comando aborta antes de criar o Prisma Client ou escrever dados. Não deve
+criar `demo-company`, utilizadores demo, produtos demo, fornecedores demo, stock
+demo ou dados financeiros demo.
+
+Para clientes reais, usar apenas um fluxo oficial de provisionamento separado,
+explícito e auditável, que receba a empresa real como entrada, respeite
+`companyId`, não use passwords fixas conhecidas e crie os catálogos/mappings
+obrigatórios de forma idempotente. No estado actual deste repositório, ainda não
+há um comando CLI completo de provisionamento de produção; essa lacuna deve ser
+fechada antes de onboarding real.
+
+Nunca copiar `.env` de desenvolvimento para produção e nunca usar utilizadores
+demo em produção.
 
 ## Arranque
 

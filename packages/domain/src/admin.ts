@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import type { PrismaClient } from '@ants/database';
 import type { RequestContext } from './context';
 import { requireCompany } from './context';
@@ -138,6 +139,16 @@ export async function listPermissions(db: PrismaClient): Promise<PermissionItem[
 // ─────────────────────────── Mutações ───────────────────────────
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const TEMP_PASSWORD_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
+
+export function generateTemporaryPassword(): string {
+  const bytes = randomBytes(18);
+  let password = '';
+  for (const byte of bytes) {
+    password += TEMP_PASSWORD_ALPHABET.charAt(byte % TEMP_PASSWORD_ALPHABET.length);
+  }
+  return `${password.slice(0, 6)}-${password.slice(6, 12)}-${password.slice(12, 18)}`;
+}
 
 /** Cria/convida um utilizador na empresa activa, com perfil e password temporária. */
 export async function createCompanyUser(
@@ -162,7 +173,7 @@ export async function createCompanyUser(
     if (!role) throw new ValidationError('Perfil inválido.');
   }
 
-  const tempPassword = 'Ants@123';
+  const tempPassword = generateTemporaryPassword();
   const user = await db.user.create({
     data: { name, email, passwordHash: await hashPassword(tempPassword), mustChangePassword: true, status: 'ACTIVE' },
   });

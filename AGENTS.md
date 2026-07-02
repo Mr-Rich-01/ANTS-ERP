@@ -105,6 +105,8 @@ upgrade.
 - Não quebrar idempotência operacional nem contabilística.
 - Inspeccionar migrations antes de aplicar.
 - O seed deve ser idempotente e não destrutivo.
+- Seeds de demonstração nunca podem executar em `production`; produção usa
+  provisionamento explícito.
 - Validar `typecheck`, `lint`, testes relevantes e `build` antes de cada commit.
   O build foi classificado em 2026-06-30; se voltar a falhar, tratar como
   regressão nova e registar o primeiro erro real conforme `MODULE_STATUS.md`.

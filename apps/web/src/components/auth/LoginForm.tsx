@@ -117,9 +117,6 @@ export function LoginForm({ notice }: { notice?: string }) {
         </div>
       </form>
 
-      <div style={{ marginTop: 18, fontSize: 11.5, color: 'var(--text4)', textAlign: 'center', lineHeight: 1.6 }}>
-        Demo: <strong style={{ color: 'var(--text3)' }}>admin@ants.co.mz</strong> · Admin@123
-      </div>
     </div>
   );
 }

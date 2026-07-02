@@ -1,6 +1,6 @@
 # MODULE_STATUS — ANTS ERP
 
-_Última actualização: 2026-06-30_
+_Última actualização: 2026-07-02_
 
 Estado vivo do projecto. O conhecimento permanente (arquitectura, regras, comandos) está
 em [`CLAUDE.md`](CLAUDE.md).
@@ -33,10 +33,16 @@ em [`CLAUDE.md`](CLAUDE.md).
 | 9 | RH & Salários | 🗺️ futuro |
 | X | RLS forçado em toda a BD (fase transversal, pré-produção) | 🗺️ futuro |
 
-**Validações actuais:** typecheck 6/6 · lint 6/6 · **testes unitários 58** · **integração de
+**Validações actuais:** typecheck 6/6 · lint 6/6 · **testes unitários 73** · **integração de
 contabilidade 129/129** (8b 32 + 8c.1 30 + 8c.2a 18 + 8c.2b 33 + 8c.3 16; `pnpm test:integration:accounting`,
 sub: `…:c1`, `…:c2a`, `…:c2`, `…:c3`) · `prisma format` OK · `prisma validate` OK · `pnpm build` OK
 em Windows nativo (28/28 páginas) e Docker Linux com Node 20 + OpenSSL · seed idempotente (2×).
+
+**Hardening pré-produção P0-01 (2026-07-02):** seed demo bloqueado em `production`
+antes de criar o Prisma Client; credenciais demo removidas da interface de
+produção/login; convites de utilizador deixam de usar password temporária fixa;
+`pnpm db:seed` permanece apenas para desenvolvimento/teste e produção deve usar
+provisionamento explícito.
 
 **Commit da 8c.3:** este commit exclusivo, `feat(accounting): integrate purchase receipts and supplier payments`.
 
