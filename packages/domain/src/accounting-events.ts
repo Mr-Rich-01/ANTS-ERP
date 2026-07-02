@@ -30,6 +30,7 @@ import {
   resolvePeriodForDate,
   validateLineRelations,
 } from './accounting';
+import { validateOpenReversalDateTx, validateReversalReason } from './reversals';
 
 export interface AccountingEventLine {
   ledgerAccountId: string;
@@ -56,9 +57,10 @@ export interface AccountingEventInput {
 
 export interface ReverseEventInput {
   origin: EntryOrigin;
-  reversalDate: Date;
+  reversalDate: Date | string;
   reversalJournalId?: string;
-  reason?: string;
+  reason: string;
+  operationalReference?: string | null;
 }
 
 // ─────────────────────────── Resolvers ───────────────────────────
@@ -280,9 +282,19 @@ export async function reverseAccountingEventTx(
 ): Promise<{ reversalId: string; reversalNumber: string; created: boolean }> {
   const companyId = requireCompany(ctx);
   assertOrigin(input.origin);
+  const reason = validateReversalReason(input.reason);
   const o = input.origin;
   await lockEventKey(tx, companyId, o, '|reverse');
 
+  await tx.$queryRaw`
+    SELECT id
+    FROM journal_entries
+    WHERE "companyId" = ${companyId}
+      AND "sourceType" = ${o.sourceType}
+      AND "sourceId" = ${o.sourceId}
+      AND "accountingEvent" = ${o.accountingEvent}
+    FOR UPDATE
+  `;
   const original = await tx.journalEntry.findFirst({
     where: { companyId, sourceType: o.sourceType, sourceId: o.sourceId, accountingEvent: o.accountingEvent },
     include: { lines: { orderBy: { lineNumber: 'asc' } } },
@@ -306,7 +318,7 @@ export async function reverseAccountingEventTx(
     journalId = adj.id;
   }
 
-  const { fiscalYearId, accountingPeriodId } = await resolvePeriodForDate(tx, companyId, input.reversalDate);
+  const { reversalDate, fiscalYearId, accountingPeriodId } = await validateOpenReversalDateTx(tx, companyId, input.reversalDate);
   const [year, period] = await Promise.all([
     tx.fiscalYear.findFirst({ where: { companyId, id: fiscalYearId } }),
     tx.accountingPeriod.findFirst({ where: { companyId, id: accountingPeriodId } }),
@@ -317,9 +329,10 @@ export async function reverseAccountingEventTx(
 
   const totalDebit = round2(Number(original.totalCredit));
   const totalCredit = round2(Number(original.totalDebit));
-  const yearLabel = /^\d{4}$/.test(year.name) ? year.name : String(input.reversalDate.getUTCFullYear());
+  const yearLabel = /^\d{4}$/.test(year.name) ? year.name : String(reversalDate.getUTCFullYear());
   const reversalNumber = await nextEntryNumber(tx, companyId, year.id, journalId, journal.sequencePrefix ?? 'AJ', yearLabel);
   const now = new Date();
+  const reference = input.operationalReference ?? original.reference ?? original.entryNumber;
   const reversal = await tx.journalEntry.create({
     data: {
       companyId,
@@ -327,11 +340,11 @@ export async function reverseAccountingEventTx(
       accountingPeriodId: period.id,
       journalId,
       entryNumber: reversalNumber,
-      entryDate: input.reversalDate,
-      postingDate: input.reversalDate,
+      entryDate: reversalDate,
+      postingDate: reversalDate,
       status: 'POSTED',
-      description: `Estorno de ${original.entryNumber}${input.reason ? ` — ${input.reason}` : ''}`,
-      reference: original.entryNumber,
+      description: `Estorno de ${original.entryNumber} - ${reason}`,
+      reference,
       totalDebit,
       totalCredit,
       postedAt: now,
@@ -360,7 +373,18 @@ export async function reverseAccountingEventTx(
     entity: 'JournalEntry',
     entityId: original.id,
     oldValues: { status: 'POSTED' },
-    newValues: { status: 'REVERSED', reversalId: reversal.id, reversalNumber, sourceType: o.sourceType, sourceId: o.sourceId, accountingEvent: o.accountingEvent },
+    newValues: {
+      status: 'REVERSED',
+      reversalId: reversal.id,
+      reversalNumber,
+      reversalDate: formatAccountingDate(reversalDate),
+      reason,
+      reversedById: ctx.userId,
+      sourceType: o.sourceType,
+      sourceId: o.sourceId,
+      accountingEvent: o.accountingEvent,
+      operationalReference: reference,
+    },
   });
   return { reversalId: reversal.id, reversalNumber, created: true };
 }

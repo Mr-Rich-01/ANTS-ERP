@@ -27,13 +27,15 @@ pnpm + Turborepo:
 
 Módulos já implementados: Auth/RBAC/Admin, Clientes, Fornecedores, Produtos &
 Stock, Vendas/Facturação, Compras, Tesouraria & Bancos, Hardening da
-Tesouraria, Contabilidade 8a, 8b, 8c.1, 8c.2a e 8c.2b.
+Tesouraria, Contabilidade 8a, 8b, 8c.1, 8c.2a, 8c.2b, 8c.3 e
+P0-03.0.
 
-Estado actual da Contabilidade: Fase 8c.3 concluída com integração
-contabilística de recepção de compra (`PURCHASE_RECEIVED`) e pagamento a
-fornecedor (`SUPPLIER_PAYMENT_POSTED`), usando idempotência operacional. A
-próxima fase é cancelamentos/estornos ou subfase seguinte, sujeita à definição
-exacta em `MODULE_STATUS.md`. Não iniciar a fase seguinte automaticamente.
+Estado actual da Contabilidade: P0-03.0 concluída com fundação técnica de
+cancelamentos, anulações e estornos, incluindo estados/metadados de reversão,
+rastreabilidade `Invoice`→`StockMovement`, novos scopes de idempotência e
+reforço de `reverseAccountingEventTx`. A próxima subfase é P0-03b (anulação de
+recebimento de cliente) ou a subfase exacta definida em `MODULE_STATUS.md`. Não
+iniciar a fase seguinte automaticamente.
 
 ## Arquitectura Obrigatória
 
@@ -100,6 +102,13 @@ upgrade.
 - Operações financeiras são transaccionais.
 - Auditoria participa na mesma transacção da mutação financeira.
 - Lançamentos `POSTED` são imutáveis; correcções acontecem por estorno.
+- Lançamentos `POSTED` nunca são apagados nem editados.
+- A reversão começa sempre no documento operacional de origem.
+- Linhas históricas são preservadas e invertidas; não recalcular mappings em
+  estornos.
+- Movimentos financeiros compensatórios mantêm relação explícita com o
+  movimento/documento original.
+- Motivo e data em período/exercício aberto são obrigatórios para reversões.
 - Movimentos de Tesouraria derivados de documentos operacionais não podem ser
   estornados directamente; a reversão começa no documento de origem.
 - Não aplicar fallbacks contabilísticos silenciosos.
@@ -192,9 +201,9 @@ passwords não demonstrativas.
 
 ## Estado Actual
 
-- Fase 8c.3 concluída.
-- Commit base funcional: `acef72b`.
-- Próxima fase: cancelamentos/estornos ou subfase seguinte, conforme detalhe em `MODULE_STATUS.md`.
+- P0-03.0 concluída.
+- Commit base funcional antes da P0-03.0: `a1d608b`.
+- Próxima fase: P0-03b ou subfase seguinte, conforme detalhe em `MODULE_STATUS.md`.
 - `MODULE_STATUS.md` é a fonte principal para progresso e próximos passos.
 - `CLAUDE.md` deve ser preservado.
 - Quando `AGENTS.md` e `CLAUDE.md` divergirem, apresentar a divergência antes

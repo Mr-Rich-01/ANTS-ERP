@@ -469,6 +469,7 @@ export async function reverseMovement(db: PrismaClient, ctx: RequestContext, mov
         document: original.document,
         source: 'REVERSAL',
         reversesId: original.id,
+        reversalReason: reason ?? null,
         createdBy: ctx.userId,
       },
     });

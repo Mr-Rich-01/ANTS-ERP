@@ -440,6 +440,7 @@ export async function createInvoice(db: PrismaClient, ctx: RequestContext, input
               companyId,
               productId: p.productId,
               warehouseId: warehouse.id,
+              invoiceId: invoice.id,
               type: 'OUT',
               quantity: -p.quantity,
               balanceAfter,

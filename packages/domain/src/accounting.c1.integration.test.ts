@@ -171,14 +171,14 @@ describe('Fase 8c.1 — fundação das integrações (integração)', () => {
   it('#14 estorno de evento: inverte e marca original; idempotente', async () => {
     const o = { sourceType: 'TEST', sourceId: 'e14', accountingEvent: 'POST' };
     const p = await postEvent(o, eventLines(120), '2026-01-17');
-    const rev = await prisma.$transaction((tx) => reverseAccountingEventTx(tx, op, { origin: o, reversalDate: D('2026-01-18') }));
+    const rev = await prisma.$transaction((tx) => reverseAccountingEventTx(tx, op, { origin: o, reversalDate: D('2026-01-18'), reason: 'Motivo valido de teste' }));
     expect(rev.created).toBe(true);
     const original = await prisma.journalEntry.findFirst({ where: { companyId: CA, id: p.id } });
     const reversal = await prisma.journalEntry.findFirst({ where: { companyId: CA, id: rev.reversalId } });
     expect(original?.status).toBe('REVERSED');
     expect(reversal?.status).toBe('POSTED');
     expect(Number(reversal?.totalDebit)).toBe(120);
-    const again = await prisma.$transaction((tx) => reverseAccountingEventTx(tx, op, { origin: o, reversalDate: D('2026-01-18') }));
+    const again = await prisma.$transaction((tx) => reverseAccountingEventTx(tx, op, { origin: o, reversalDate: D('2026-01-18'), reason: 'Motivo valido de teste' }));
     expect(again.created).toBe(false);
     expect(again.reversalId).toBe(rev.reversalId);
   });
@@ -246,7 +246,7 @@ describe('Fase 8c.1 — fundação das integrações (integração)', () => {
     // muda o mapping de t1 (de bancoL para outra coisa) — liberta e remapeia para caixaL
     await setTreasuryLedgerAccount(prisma, settings, ids.t1, null);
     await setTreasuryLedgerAccount(prisma, settings, ids.t1, ids.caixaL);
-    const rev = await prisma.$transaction((tx) => reverseAccountingEventTx(tx, op, { origin: o, reversalDate: D('2026-01-21') }));
+    const rev = await prisma.$transaction((tx) => reverseAccountingEventTx(tx, op, { origin: o, reversalDate: D('2026-01-21'), reason: 'Motivo valido de teste' }));
     const revLines = await prisma.journalEntryLine.findMany({ where: { companyId: CA, journalEntryId: rev.reversalId }, orderBy: { lineNumber: 'asc' } });
     // a linha de débito original era bancoL(60); no estorno passa a crédito em bancoL — conta histórica preservada
     expect(revLines.some((l) => l.ledgerAccountId === ids.bancoL && Number(l.credit) === 60)).toBe(true);

@@ -5,9 +5,9 @@ _Última actualização: 2026-07-02_
 Estado vivo do projecto. O conhecimento permanente (arquitectura, regras, comandos) está
 em [`CLAUDE.md`](CLAUDE.md).
 
-**Último commit funcional:** este commit (`feat(accounting): integrate purchase receipts and supplier payments`)
-**Fase concluída:** `8c.3 — Fornecedores, recepções e pagamentos`
-**Próximo passo:** `8c.4 — cancelamentos/estornos ou subfase seguinte` _(não iniciado)_
+**Último commit funcional:** este commit (`feat(accounting): add reversal foundation`)
+**Fase concluída:** `P0-03.0 — fundação técnica de cancelamentos, anulações e estornos`
+**Próximo passo:** `P0-03b — anulação de recebimento de cliente` _(não iniciado)_
 
 ---
 
@@ -29,13 +29,14 @@ em [`CLAUDE.md`](CLAUDE.md).
 | **8c.2a** | **Idempotência operacional** (modelo `OperationIdempotency`, fingerprint canónico `v1`, helper transaccional) | ✅ |
 | **8c.2b** | **Contabilidade — integração factura/recibo** (factura `SALE_ISSUED`, recibo `RECEIPT_POSTED`, idempotência operacional nos formulários/actions) | ✅ |
 | **8c.3** | **Contabilidade — fornecedores/compras** (`PurchaseReceipt`, `PurchaseReceiptItem`, recepção `PURCHASE_RECEIVED`, pagamento `SUPPLIER_PAYMENT_POSTED`) | ✅ |
+| **P0-03.0** | **Fundação técnica de cancelamentos/anulações/estornos** (estados/metadados, rastreabilidade `Invoice`→`StockMovement`, scopes de idempotência e helper contabilístico reforçado) | ✅ |
 | 8c.4–8e | Contabilidade — cancelamentos/estornos, tesouraria, ecrãs, testes finais | 🗺️ **a seguir** |
 | 9 | RH & Salários | 🗺️ futuro |
 | X | RLS forçado em toda a BD (fase transversal, pré-produção) | 🗺️ futuro |
 
 **Validações actuais:** typecheck 6/6 · lint 6/6 · **testes unitários 73** · **integração de
-contabilidade 129/129** (8b 32 + 8c.1 30 + 8c.2a 18 + 8c.2b 33 + 8c.3 16; `pnpm test:integration:accounting`,
-sub: `…:c1`, `…:c2a`, `…:c2`, `…:c3`) · `prisma format` OK · `prisma validate` OK · `pnpm build` OK
+contabilidade 145/145** (8b 32 + 8c.1 30 + 8c.2a 18 + 8c.2b 34 + 8c.3 17 + P0-02 5 + P0-03.0 9;
+`pnpm test:integration:accounting`, sub: `…:c1`, `…:c2a`, `…:c2`, `…:c3`) · `prisma format` OK · `prisma validate` OK · `pnpm build` OK
 em Windows nativo (28/28 páginas) e Docker Linux com Node 20 + OpenSSL · seed idempotente (2×).
 
 **Hardening pré-produção P0-01 (2026-07-02):** seed demo bloqueado em `production`
@@ -49,6 +50,18 @@ Tesouraria derivados de documentos operacionais bloqueado no domínio e reflecti
 na interface. Recebimentos de clientes (`RECEIPT_IN`) e pagamentos a fornecedores
 (`SUPPLIER_PAYMENT_OUT`) ficam protegidos; reversões ponta a ponta continuam
 pendentes para o P0-03.
+
+**Fundação pré-produção P0-03.0 (2026-07-02):** criada a base transversal para
+cancelamentos/anulações/estornos sem implementar nenhum fluxo funcional completo
+nem UI: `Invoice` mantém `CANCELLED` e recebeu metadados de cancelamento; `Payment`,
+`SupplierPayment` e `PurchaseReceipt` receberam `ACTIVE/REVERSED` e metadados de
+reversão; `StockMovement` passou a ligar novas vendas por `invoiceId` e a suportar
+movimentos compensatórios por `reversesId`; `TreasuryMovement` recebeu
+`reversalReason`; foram adicionados scopes operacionais de idempotência para as
+subfases P0-03; o helper `reverseAccountingEventTx` foi reforçado com motivo,
+data explícita validada em período/exercício aberto, actor/auditoria e protecção
+concorrente. Não há backfill heurístico nem documentos revertidos pela migration.
+Próxima subfase: `P0-03b — anulação de recebimento de cliente`.
 
 **Commit da 8c.3:** este commit exclusivo, `feat(accounting): integrate purchase receipts and supplier payments`.
 
@@ -394,7 +407,11 @@ db:generate` e `pnpm build`.
     `SUPPLIER_PAYMENT_POSTED` em `CASH`/`BANK` por tipo de conta (`MOBILE` → `BANK`, `OTHER` rejeitado).
     Sem novas permissões; a fase mantém `purchases.create`. Testes: 16 cenários
     (`pnpm test:integration:accounting:c3`).
-  - **8c.4** cancelamentos/estornos ou subfase seguinte. **8c.5** backfill (dry-run) + validação.
+  - **P0-03.0 — Fundação técnica de reversões** _(✅ concluída)_: estados/metadados de cancelamento
+    e reversão, rastreabilidade `Invoice`→`StockMovement`, self-reference `StockMovement.reversesId`,
+    novos scopes de idempotência, permissões de reversão para pagamentos/recepções/transferências e
+    reforço de `reverseAccountingEventTx`. Sem UI, sem cancelamento/anulação funcional e sem backfill.
+  - **P0-03b / 8c.4** anulação de recebimento de cliente ou subfase seguinte. **8c.5** backfill (dry-run) + validação.
     Diferidos: COGS e ecrãs contabilísticos finais.
 - **8d — Ecrãs**: plano de contas, diários, novo lançamento, detalhe, razão geral, balancete,
   extracto diário (linha a linha) + configuração contabilística (mapping de `systemKeys`).

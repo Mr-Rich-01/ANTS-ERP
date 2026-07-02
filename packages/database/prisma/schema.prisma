@@ -412,8 +412,13 @@ model StockMovement {
   product           Product           @relation(fields: [productId], references: [id], onDelete: Cascade)
   warehouseId       String
   warehouse         Warehouse         @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+  invoiceId         String?
+  invoice           Invoice?          @relation(fields: [companyId, invoiceId], references: [companyId, id], onDelete: Restrict)
   purchaseReceiptId String?
   purchaseReceipt   PurchaseReceipt?  @relation(fields: [companyId, purchaseReceiptId], references: [companyId, id], onDelete: Restrict)
+  reversesId        String?
+  reverses          StockMovement?    @relation("StockMovementReversal", fields: [companyId, reversesId], references: [companyId, id], onDelete: Restrict)
+  reversedBy        StockMovement?    @relation("StockMovementReversal")
   type              StockMovementType
   /// Delta com sinal: > 0 entrada · < 0 saída/ajuste negativo.
   quantity          Int
@@ -424,8 +429,11 @@ model StockMovement {
   createdBy         String?
   createdAt         DateTime          @default(now())
 
+  @@unique([companyId, id])
+  @@unique([companyId, reversesId])
   @@index([companyId, productId, createdAt])
   @@index([companyId, warehouseId])
+  @@index([companyId, invoiceId])
   @@index([companyId, purchaseReceiptId])
   @@map("stock_movements")
 }
@@ -435,38 +443,43 @@ model StockMovement {
 // ─────────────────────────────────────────────────────────────
 
 model Invoice {
-  id            String         @id @default(cuid())
-  companyId     String
-  company       Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  branchId      String?
+  id                 String         @id @default(cuid())
+  companyId          String
+  company            Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  branchId           String?
   /// Número do documento (ex.: "FT 2026/0001"), único por empresa.
-  number        String
-  customerId    String
-  customer      Customer       @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  number             String
+  customerId         String
+  customer           Customer       @relation(fields: [customerId], references: [id], onDelete: Restrict)
   /// Snapshot dos dados do cliente no momento da emissão.
-  customerName  String
-  customerNuit  String?
-  warehouseId   String
-  warehouse     Warehouse      @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
-  issueDate     DateTime       @default(now())
-  dueDate       DateTime
-  status        InvoiceStatus  @default(ISSUED)
-  subtotal      Decimal        @db.Decimal(14, 2)
-  discountTotal Decimal        @db.Decimal(14, 2)
-  taxableBase   Decimal        @db.Decimal(14, 2)
-  taxTotal      Decimal        @db.Decimal(14, 2)
-  total         Decimal        @db.Decimal(14, 2)
-  amountPaid    Decimal        @default(0) @db.Decimal(14, 2)
-  paymentMethod PaymentMethod?
-  notes         String?
-  createdBy     String?
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
+  customerName       String
+  customerNuit       String?
+  warehouseId        String
+  warehouse          Warehouse      @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
+  issueDate          DateTime       @default(now())
+  dueDate            DateTime
+  status             InvoiceStatus  @default(ISSUED)
+  cancelledAt        DateTime?
+  cancelledById      String?
+  cancellationReason String?
+  subtotal           Decimal        @db.Decimal(14, 2)
+  discountTotal      Decimal        @db.Decimal(14, 2)
+  taxableBase        Decimal        @db.Decimal(14, 2)
+  taxTotal           Decimal        @db.Decimal(14, 2)
+  total              Decimal        @db.Decimal(14, 2)
+  amountPaid         Decimal        @default(0) @db.Decimal(14, 2)
+  paymentMethod      PaymentMethod?
+  notes              String?
+  createdBy          String?
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
 
-  lines    InvoiceLine[]
-  payments Payment[]
+  lines          InvoiceLine[]
+  payments       Payment[]
+  stockMovements StockMovement[]
 
   @@unique([companyId, number])
+  @@unique([companyId, id])
   @@index([companyId, status])
   @@index([companyId, customerId])
   @@index([companyId, issueDate])
@@ -496,24 +509,29 @@ model InvoiceLine {
 }
 
 model Payment {
-  id         String        @id @default(cuid())
-  companyId  String
-  company    Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  id             String        @id @default(cuid())
+  companyId      String
+  company        Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
   /// Número do recibo (ex.: "REC 2026/0001"), único por empresa.
-  number     String
-  invoiceId  String?
-  invoice    Invoice?      @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
-  customerId String
-  customer   Customer      @relation(fields: [customerId], references: [id], onDelete: Restrict)
-  amount     Decimal       @db.Decimal(14, 2)
-  method     PaymentMethod @default(CASH)
-  paidAt     DateTime      @default(now())
-  notes      String?
-  createdBy  String?
-  createdAt  DateTime      @default(now())
+  number         String
+  invoiceId      String?
+  invoice        Invoice?      @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
+  customerId     String
+  customer       Customer      @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  amount         Decimal       @db.Decimal(14, 2)
+  method         PaymentMethod @default(CASH)
+  status         PaymentStatus @default(ACTIVE)
+  reversedAt     DateTime?
+  reversedById   String?
+  reversalReason String?
+  paidAt         DateTime      @default(now())
+  notes          String?
+  createdBy      String?
+  createdAt      DateTime      @default(now())
 
   @@unique([companyId, number])
   @@index([companyId, customerId])
+  @@index([companyId, status])
   @@index([companyId, paidAt])
   @@map("payments")
 }
@@ -599,23 +617,27 @@ model PurchaseOrderLine {
 }
 
 model PurchaseReceipt {
-  id              String        @id @default(cuid())
+  id              String                @id @default(cuid())
   companyId       String
-  company         Company       @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  company         Company               @relation(fields: [companyId], references: [id], onDelete: Restrict)
   purchaseOrderId String
-  purchaseOrder   PurchaseOrder @relation(fields: [companyId, purchaseOrderId], references: [companyId, id], onDelete: Restrict)
+  purchaseOrder   PurchaseOrder         @relation(fields: [companyId, purchaseOrderId], references: [companyId, id], onDelete: Restrict)
   supplierId      String
-  supplier        Supplier      @relation(fields: [companyId, supplierId], references: [companyId, id], onDelete: Restrict)
+  supplier        Supplier              @relation(fields: [companyId, supplierId], references: [companyId, id], onDelete: Restrict)
   warehouseId     String
-  warehouse       Warehouse     @relation(fields: [companyId, warehouseId], references: [companyId, id], onDelete: Restrict)
+  warehouse       Warehouse             @relation(fields: [companyId, warehouseId], references: [companyId, id], onDelete: Restrict)
   receiptNumber   String
-  receiptDate     DateTime      @db.Date
-  netAmount       Decimal       @db.Decimal(14, 2)
-  taxAmount       Decimal       @db.Decimal(14, 2)
-  totalAmount     Decimal       @db.Decimal(14, 2)
+  receiptDate     DateTime              @db.Date
+  status          PurchaseReceiptStatus @default(ACTIVE)
+  reversedAt      DateTime?
+  reversedById    String?
+  reversalReason  String?
+  netAmount       Decimal               @db.Decimal(14, 2)
+  taxAmount       Decimal               @db.Decimal(14, 2)
+  totalAmount     Decimal               @db.Decimal(14, 2)
   notes           String?
   createdById     String?
-  createdAt       DateTime      @default(now())
+  createdAt       DateTime              @default(now())
 
   items          PurchaseReceiptItem[]
   stockMovements StockMovement[]
@@ -624,6 +646,7 @@ model PurchaseReceipt {
   @@unique([companyId, id])
   @@index([companyId, purchaseOrderId])
   @@index([companyId, supplierId])
+  @@index([companyId, status])
   @@index([companyId, receiptDate])
   @@map("purchase_receipts")
 }
@@ -652,24 +675,29 @@ model PurchaseReceiptItem {
 }
 
 model SupplierPayment {
-  id              String         @id @default(cuid())
+  id              String                @id @default(cuid())
   companyId       String
-  company         Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  company         Company               @relation(fields: [companyId], references: [id], onDelete: Cascade)
   /// Número (ex.: "PG 2026/0001"), único por empresa.
   number          String
   purchaseOrderId String?
-  purchaseOrder   PurchaseOrder? @relation(fields: [purchaseOrderId], references: [id], onDelete: SetNull)
+  purchaseOrder   PurchaseOrder?        @relation(fields: [purchaseOrderId], references: [id], onDelete: SetNull)
   supplierId      String
-  supplier        Supplier       @relation(fields: [supplierId], references: [id], onDelete: Restrict)
-  amount          Decimal        @db.Decimal(14, 2)
-  method          PaymentMethod  @default(TRANSFER)
-  paidAt          DateTime       @default(now())
+  supplier        Supplier              @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  amount          Decimal               @db.Decimal(14, 2)
+  method          PaymentMethod         @default(TRANSFER)
+  status          SupplierPaymentStatus @default(ACTIVE)
+  reversedAt      DateTime?
+  reversedById    String?
+  reversalReason  String?
+  paidAt          DateTime              @default(now())
   notes           String?
   createdBy       String?
-  createdAt       DateTime       @default(now())
+  createdAt       DateTime              @default(now())
 
   @@unique([companyId, number])
   @@index([companyId, supplierId])
+  @@index([companyId, status])
   @@index([companyId, paidAt])
   @@map("supplier_payments")
 }
@@ -742,12 +770,14 @@ model TreasuryMovement {
   reversesId           String?                @unique
   reverses             TreasuryMovement?      @relation("TreasuryReversal", fields: [reversesId], references: [id])
   reversedBy           TreasuryMovement?      @relation("TreasuryReversal")
+  reversalReason       String?
   createdBy            String?
   occurredAt           DateTime               @default(now())
   createdAt            DateTime               @default(now())
 
   @@unique([companyId, sourceType, sourceId, movementPurpose])
   @@index([companyId, accountId, occurredAt])
+  @@index([companyId, status])
   @@index([companyId, occurredAt])
   @@index([transferId])
   @@map("treasury_movements")
@@ -795,6 +825,21 @@ enum InvoiceStatus {
   PARTIAL
   PAID
   CANCELLED
+}
+
+enum PaymentStatus {
+  ACTIVE
+  REVERSED
+}
+
+enum SupplierPaymentStatus {
+  ACTIVE
+  REVERSED
+}
+
+enum PurchaseReceiptStatus {
+  ACTIVE
+  REVERSED
 }
 
 enum PaymentMethod {
@@ -1096,6 +1141,12 @@ enum OperationIdempotencyScope {
   CUSTOMER_PAYMENT_CREATE
   PURCHASE_RECEIPT_CREATE
   SUPPLIER_PAYMENT_CREATE
+  INVOICE_CANCEL
+  CUSTOMER_PAYMENT_REVERSE
+  SUPPLIER_PAYMENT_REVERSE
+  PURCHASE_RECEIPT_REVERSE
+  TREASURY_TRANSFER_REVERSE
+  MANUAL_TREASURY_REVERSE
 }
 
 model OperationIdempotency {
