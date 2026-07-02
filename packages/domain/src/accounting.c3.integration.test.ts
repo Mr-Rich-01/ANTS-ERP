@@ -7,6 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { prisma } from '@ants/database';
 import type { RequestContext } from './context';
 import { createPurchaseOrder, createSupplierPayment, receivePurchaseOrder, type SupplierPaymentInput } from './purchases';
+import { reverseMovement } from './treasury';
 import { ConflictError, ForbiddenError, ValidationError } from './errors';
 
 const CA = 'smoke-c3';
@@ -18,6 +19,7 @@ function ctx(companyId: string, permissions: string[]): RequestContext {
 }
 
 const purchaseCtx = ctx(CA, ['purchases.create']);
+const treasuryReverseCtx = ctx(CA, ['treasury.reverseMovement']);
 
 interface Ids {
   fy: string;
@@ -329,6 +331,39 @@ describe('Fase 8c.3 — recepcoes de compras e pagamentos a fornecedor', () => {
     expect(entry?.journal.journalType).toBe('CASH');
     expect(entry?.lines.find((l) => l.ledgerAccountId === ids.payable && l.supplierId === ids.supplier && Number(l.debit) === 40)).toBeTruthy();
     expect(entry?.lines.find((l) => l.ledgerAccountId === ids.cashLedger && l.treasuryAccountId === ids.cashAccount && Number(l.credit) === 40)).toBeTruthy();
+  });
+
+  it('#10b movimento derivado de pagamento a fornecedor nao pode ser estornado directamente na Tesouraria', async () => {
+    const po = await order();
+    await receiptFor(po.lines[0]!.id, 1);
+    const p = await payment({ purchaseOrderId: po.id, amount: 40, accountId: ids.cashAccount });
+    const movement = await prisma.treasuryMovement.findFirstOrThrow({ where: { companyId: CA, sourceType: 'SUPPLIER_PAYMENT', sourceId: p.id, movementPurpose: 'SUPPLIER_PAYMENT_OUT' } });
+    const [accountBefore, supplierBefore, orderBefore, entriesBefore, auditBefore] = await Promise.all([
+      prisma.treasuryAccount.findUniqueOrThrow({ where: { id: ids.cashAccount } }),
+      prisma.supplier.findUniqueOrThrow({ where: { id: ids.supplier } }),
+      prisma.purchaseOrder.findUniqueOrThrow({ where: { id: po.id } }),
+      prisma.journalEntry.count({ where: { companyId: CA, sourceType: 'SUPPLIER_PAYMENT', sourceId: p.id } }),
+      prisma.auditLog.count({ where: { companyId: CA, action: 'treasury.reverse', entityId: movement.id } }),
+    ]);
+
+    await expect(reverseMovement(prisma, treasuryReverseCtx, movement.id)).rejects.toThrow('pagamento a fornecedor');
+    await expect(reverseMovement(prisma, { ...treasuryReverseCtx, isPlatformAdmin: true }, movement.id)).rejects.toThrow('pagamento a fornecedor');
+
+    const [accountAfter, supplierAfter, orderAfter, movementAfter, paymentAfter] = await Promise.all([
+      prisma.treasuryAccount.findUniqueOrThrow({ where: { id: ids.cashAccount } }),
+      prisma.supplier.findUniqueOrThrow({ where: { id: ids.supplier } }),
+      prisma.purchaseOrder.findUniqueOrThrow({ where: { id: po.id } }),
+      prisma.treasuryMovement.findUniqueOrThrow({ where: { id: movement.id } }),
+      prisma.supplierPayment.findUniqueOrThrow({ where: { id: p.id } }),
+    ]);
+    expect(Number(accountAfter.balance)).toBe(Number(accountBefore.balance));
+    expect(Number(supplierAfter.balance)).toBe(Number(supplierBefore.balance));
+    expect(Number(orderAfter.amountPaid)).toBe(Number(orderBefore.amountPaid));
+    expect(paymentAfter.id).toBe(p.id);
+    expect(movementAfter.status).toBe('ACTIVE');
+    expect(await prisma.treasuryMovement.count({ where: { companyId: CA, reversesId: movement.id } })).toBe(0);
+    expect(await prisma.journalEntry.count({ where: { companyId: CA, sourceType: 'SUPPLIER_PAYMENT', sourceId: p.id } })).toBe(entriesBefore);
+    expect(await prisma.auditLog.count({ where: { companyId: CA, action: 'treasury.reverse', entityId: movement.id } })).toBe(auditBefore);
   });
 
   it('#11 pagamento exige accountId e rejeita conta inactiva, sem mapping ou nao-ASSET', async () => {

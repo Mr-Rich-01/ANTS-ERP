@@ -44,6 +44,12 @@ produção/login; convites de utilizador deixam de usar password temporária fix
 `pnpm db:seed` permanece apenas para desenvolvimento/teste e produção deve usar
 provisionamento explícito.
 
+**Hardening pré-produção P0-02 (2026-07-02):** estorno directo de movimentos de
+Tesouraria derivados de documentos operacionais bloqueado no domínio e reflectido
+na interface. Recebimentos de clientes (`RECEIPT_IN`) e pagamentos a fornecedores
+(`SUPPLIER_PAYMENT_OUT`) ficam protegidos; reversões ponta a ponta continuam
+pendentes para o P0-03.
+
 **Commit da 8c.3:** este commit exclusivo, `feat(accounting): integrate purchase receipts and supplier payments`.
 
 > ⚠️ **Lembrete:** após cada `db:seed` que adicione **novas permissões**, as sessões antigas (JWT)

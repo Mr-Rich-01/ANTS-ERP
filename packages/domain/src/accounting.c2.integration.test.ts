@@ -9,6 +9,7 @@ import { prisma } from '@ants/database';
 import { civilDateInTimeZone } from '@ants/shared';
 import type { RequestContext } from './context';
 import { createInvoice, createPayment, type InvoiceInput, type PaymentInput } from './invoices';
+import { reverseMovement } from './treasury';
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from './errors';
 
 const CA = 'smoke-c2';
@@ -24,6 +25,7 @@ function ctx(companyId: string, permissions: string[]): RequestContext {
 const salesCtx = ctx(CA, ['sales.create']);
 const salesDiscountCtx = ctx(CA, ['sales.create', 'sales.approve_discount']);
 const paymentCtx = ctx(CA, ['payments.receive']);
+const treasuryReverseCtx = ctx(CA, ['treasury.reverseMovement']);
 
 interface Ids {
   fy: string;
@@ -414,6 +416,39 @@ describe('Fase 8c.2b — facturas e recibos de clientes', () => {
     expect(entry?.reference).toBe(p.number);
     expect(entry?.lines.find((l) => l.ledgerAccountId === ids.cashLedger && l.treasuryAccountId === ids.cashAccount && Number(l.debit) === 40)).toBeTruthy();
     expect(entry?.lines.find((l) => l.ledgerAccountId === ids.ar && l.customerId === ids.customer && Number(l.credit) === 40)).toBeTruthy();
+  });
+
+  it('#11b movimento derivado de recibo nao pode ser estornado directamente na Tesouraria', async () => {
+    const inv = await issue();
+    const p = await receipt(inv.id, { amount: 40, accountId: ids.cashAccount });
+    const movement = await prisma.treasuryMovement.findFirstOrThrow({ where: { companyId: CA, sourceType: 'RECEIPT', sourceId: p.id, movementPurpose: 'RECEIPT_IN' } });
+    const [accountBefore, invoiceBefore, customerBefore, entriesBefore, auditBefore] = await Promise.all([
+      prisma.treasuryAccount.findUniqueOrThrow({ where: { id: ids.cashAccount } }),
+      prisma.invoice.findUniqueOrThrow({ where: { id: inv.id } }),
+      prisma.customer.findUniqueOrThrow({ where: { id: ids.customer } }),
+      prisma.journalEntry.count({ where: { companyId: CA, sourceType: 'CUSTOMER_PAYMENT', sourceId: p.id } }),
+      prisma.auditLog.count({ where: { companyId: CA, action: 'treasury.reverse', entityId: movement.id } }),
+    ]);
+
+    await expect(reverseMovement(prisma, treasuryReverseCtx, movement.id)).rejects.toThrow('recebimento de cliente');
+    await expect(reverseMovement(prisma, { ...treasuryReverseCtx, isPlatformAdmin: true }, movement.id)).rejects.toThrow('recebimento de cliente');
+
+    const [accountAfter, invoiceAfter, customerAfter, movementAfter, paymentAfter] = await Promise.all([
+      prisma.treasuryAccount.findUniqueOrThrow({ where: { id: ids.cashAccount } }),
+      prisma.invoice.findUniqueOrThrow({ where: { id: inv.id } }),
+      prisma.customer.findUniqueOrThrow({ where: { id: ids.customer } }),
+      prisma.treasuryMovement.findUniqueOrThrow({ where: { id: movement.id } }),
+      prisma.payment.findUniqueOrThrow({ where: { id: p.id } }),
+    ]);
+    expect(Number(accountAfter.balance)).toBe(Number(accountBefore.balance));
+    expect(Number(invoiceAfter.amountPaid)).toBe(Number(invoiceBefore.amountPaid));
+    expect(invoiceAfter.status).toBe(invoiceBefore.status);
+    expect(Number(customerAfter.balance)).toBe(Number(customerBefore.balance));
+    expect(paymentAfter.id).toBe(p.id);
+    expect(movementAfter.status).toBe('ACTIVE');
+    expect(await prisma.treasuryMovement.count({ where: { companyId: CA, reversesId: movement.id } })).toBe(0);
+    expect(await prisma.journalEntry.count({ where: { companyId: CA, sourceType: 'CUSTOMER_PAYMENT', sourceId: p.id } })).toBe(entriesBefore);
+    expect(await prisma.auditLog.count({ where: { companyId: CA, action: 'treasury.reverse', entityId: movement.id } })).toBe(auditBefore);
   });
 
   it('#12 accountId ausente, conta sem mapping e conta inactiva são rejeitados', async () => {

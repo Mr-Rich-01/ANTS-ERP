@@ -30,6 +30,7 @@ export interface MovementView {
   status: 'ACTIVE' | 'REVERSED';
   reversal: boolean;
   reversible: boolean;
+  reversalBlockedReason: string | null;
 }
 export interface TreasuryPerms {
   createMovement: boolean;
@@ -257,16 +258,25 @@ function AccountToggle({ account }: { account: AccountView }) {
 function ReverseButton({ movementId }: { movementId: string }) {
   const router = useRouter();
   const [pending, start] = useTransition();
+  const [error, setError] = useState<string | null>(null);
   return (
-    <button
-      onClick={() => start(async () => { await reverseMovementAction(movementId); router.refresh(); })}
-      disabled={pending}
-      title="Estornar movimento"
-      style={{ border: '1px solid var(--border)', background: 'var(--card)', cursor: 'pointer', color: 'var(--bad)', fontSize: 11, fontWeight: 600, padding: '3px 8px', borderRadius: 7, display: 'inline-flex', alignItems: 'center', gap: 4 }}
-    >
-      <Icon name="undo-2" size={13} />
-      {pending ? '…' : 'Estornar'}
-    </button>
+    <div style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
+      <button
+        onClick={() => start(async () => {
+          setError(null);
+          const res = await reverseMovementAction(movementId);
+          if (res.error) setError(res.error);
+          else router.refresh();
+        })}
+        disabled={pending}
+        title="Estornar movimento"
+        style={{ border: '1px solid var(--border)', background: 'var(--card)', cursor: 'pointer', color: 'var(--bad)', fontSize: 11, fontWeight: 600, padding: '3px 8px', borderRadius: 7, display: 'inline-flex', alignItems: 'center', gap: 4 }}
+      >
+        <Icon name="undo-2" size={13} />
+        {pending ? '…' : 'Estornar'}
+      </button>
+      {error && <span style={{ maxWidth: 210, textAlign: 'right', fontSize: 11, color: 'var(--bad)' }}>{error}</span>}
+    </div>
   );
 }
 
@@ -354,10 +364,12 @@ export function TesourariaClient({ kpis, accounts, movements, perms }: { kpis: K
                         {m.category}
                         {reversed && <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--text2)', background: 'var(--bd-soft)', padding: '1px 6px', borderRadius: 20, marginLeft: 6 }}>Estornado</span>}
                         {m.reversal && <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--info)', background: 'var(--info-bg)', padding: '1px 6px', borderRadius: 20, marginLeft: 6 }}>Estorno</span>}
+                        {m.reversalBlockedReason && !reversed && !m.reversal && <span title={m.reversalBlockedReason} style={{ fontSize: 10, fontWeight: 600, color: 'var(--text2)', background: 'var(--bd-soft)', padding: '1px 6px', borderRadius: 20, marginLeft: 6 }}>Derivado</span>}
                       </td>
                       <td style={{ padding: '11px 14px', fontSize: 12.5, color: 'var(--text2)' }}>
                         {m.description}
                         {m.document ? <span className="font-mono" style={{ color: 'var(--text3)' }}> · {m.document}</span> : null}
+                        {m.reversalBlockedReason && !reversed && !m.reversal ? <div style={{ marginTop: 3, maxWidth: 380, fontSize: 11.5, color: 'var(--text3)' }}>{m.reversalBlockedReason}</div> : null}
                       </td>
                       <td className="tnum" style={{ padding: '11px 14px', textAlign: 'right', fontSize: 13, fontWeight: 700, color: m.amountColor, whiteSpace: 'nowrap', textDecoration: reversed ? 'line-through' : undefined }}>{m.amountStr}</td>
                       <td style={{ padding: '11px 10px', textAlign: 'right' }}>

@@ -11,6 +11,14 @@ export type TreasuryAccountType = 'CASH' | 'BANK' | 'MOBILE' | 'OTHER';
 export type TreasuryFlow = 'IN' | 'OUT';
 export type TreasuryMovementStatus = 'ACTIVE' | 'REVERSED';
 
+export interface TreasuryMovementOrigin {
+  source: string | null;
+  sourceType: string | null;
+  sourceId: string | null;
+  movementPurpose: string | null;
+  transferId: string | null;
+}
+
 export interface AccountItem {
   id: string;
   name: string;
@@ -34,8 +42,12 @@ export interface TreasuryMovementItem {
   document: string | null;
   transferId: string | null;
   source: string;
+  sourceType: string | null;
+  sourceId: string | null;
+  movementPurpose: string | null;
   status: TreasuryMovementStatus;
   reversesId: string | null;
+  reversalBlockedReason: string | null;
 }
 
 export interface TreasuryKpis {
@@ -74,9 +86,19 @@ function mapMovement(m: {
   document: string | null;
   transferId: string | null;
   source: string;
+  sourceType: string | null;
+  sourceId: string | null;
+  movementPurpose: string | null;
   status: string;
   reversesId: string | null;
 }): TreasuryMovementItem {
+  const origin = {
+    source: m.source,
+    sourceType: m.sourceType,
+    sourceId: m.sourceId,
+    movementPurpose: m.movementPurpose,
+    transferId: m.transferId,
+  };
   return {
     id: m.id,
     occurredAt: m.occurredAt,
@@ -90,9 +112,35 @@ function mapMovement(m: {
     document: m.document,
     transferId: m.transferId,
     source: m.source,
+    sourceType: m.sourceType,
+    sourceId: m.sourceId,
+    movementPurpose: m.movementPurpose,
     status: m.status as TreasuryMovementStatus,
     reversesId: m.reversesId,
+    reversalBlockedReason: getTreasuryMovementReversalBlockReason(origin),
   };
+}
+
+export function getTreasuryMovementReversalBlockReason(movement: TreasuryMovementOrigin): string | null {
+  if (movement.source === 'REVERSAL') return 'Este movimento já é um estorno.';
+  if (movement.sourceType === 'RECEIPT' || movement.source === 'RECEIPT' || movement.movementPurpose === 'RECEIPT_IN') {
+    return 'Este movimento foi gerado por um recebimento de cliente. Anule o recebimento no documento de origem.';
+  }
+  if (movement.sourceType === 'SUPPLIER_PAYMENT' || movement.source === 'SUPPLIER_PAYMENT' || movement.movementPurpose === 'SUPPLIER_PAYMENT_OUT') {
+    return 'Este movimento foi gerado por um pagamento a fornecedor. Estorne o pagamento no documento de origem.';
+  }
+  if (movement.source === 'TRANSFER' || movement.transferId) {
+    return 'Este movimento pertence a uma transferência entre contas e não pode ser estornado isoladamente.';
+  }
+  if (movement.sourceType || movement.sourceId || movement.movementPurpose) {
+    return 'Este movimento foi gerado por um documento operacional e não pode ser estornado directamente na Tesouraria. Utilize o fluxo de anulação do documento de origem.';
+  }
+  return null;
+}
+
+export function assertTreasuryMovementCanBeReversed(movement: TreasuryMovementOrigin): void {
+  const reason = getTreasuryMovementReversalBlockReason(movement);
+  if (reason) throw new ValidationError(reason);
 }
 
 // ─────────────────────────── Leituras ───────────────────────────
@@ -394,6 +442,7 @@ export async function reverseMovement(db: PrismaClient, ctx: RequestContext, mov
     if (original.status === 'REVERSED') throw new ConflictError('O movimento já foi estornado.');
     const already = await tx.treasuryMovement.findFirst({ where: { reversesId: original.id } });
     if (already) throw new ConflictError('O movimento já tem um estorno.');
+    assertTreasuryMovementCanBeReversed(original);
 
     const account = await tx.treasuryAccount.findFirst({ where: { id: original.accountId, companyId } });
     if (!account) throw new NotFoundError('Conta não encontrada.');

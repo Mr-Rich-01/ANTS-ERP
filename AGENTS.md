@@ -100,6 +100,8 @@ upgrade.
 - Operações financeiras são transaccionais.
 - Auditoria participa na mesma transacção da mutação financeira.
 - Lançamentos `POSTED` são imutáveis; correcções acontecem por estorno.
+- Movimentos de Tesouraria derivados de documentos operacionais não podem ser
+  estornados directamente; a reversão começa no documento de origem.
 - Não aplicar fallbacks contabilísticos silenciosos.
 - Usar mappings configurados para contas, diários e eventos contabilísticos.
 - Não quebrar idempotência operacional nem contabilística.
@@ -160,6 +162,7 @@ pnpm test:integration:accounting
 pnpm test:integration:accounting:c1
 pnpm test:integration:accounting:c2a
 pnpm test:integration:accounting:c2
+pnpm test:integration:accounting:c3
 pnpm build
 ```
 
@@ -169,6 +172,7 @@ Testes de integração contabilísticos:
 - 8c.1: `pnpm test:integration:accounting:c1`
 - 8c.2a: `pnpm test:integration:accounting:c2a`
 - 8c.2b: `pnpm test:integration:accounting:c2`
+- 8c.3: `pnpm test:integration:accounting:c3`
 
 ## Credenciais de Teste Versionadas
 

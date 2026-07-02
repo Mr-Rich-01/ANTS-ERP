@@ -41,7 +41,8 @@ export default async function TesourariaPage() {
     amountColor: m.flow === 'IN' ? 'var(--ok)' : 'var(--bad)',
     status: m.status,
     reversal: m.source === 'REVERSAL',
-    reversible: m.status === 'ACTIVE' && m.source !== 'REVERSAL',
+    reversalBlockedReason: m.reversalBlockedReason,
+    reversible: m.status === 'ACTIVE' && !m.reversalBlockedReason,
   }));
 
   const kpis: KpiCardData[] = [
