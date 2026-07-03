@@ -19,7 +19,8 @@
     "test:integration:customer-payment-reversal": "vitest run --config vitest.integration.config.ts accounting.customer-payment-reversal.integration",
     "test:integration:invoice-cancellation": "vitest run --config vitest.integration.config.ts accounting.invoice-cancellation.integration",
     "test:integration:supplier-payment-reversal": "vitest run --config vitest.integration.config.ts accounting.supplier-payment-reversal.integration",
-    "test:integration:purchase-receipt-reversal": "vitest run --config vitest.integration.config.ts accounting.purchase-receipt-reversal.integration"
+    "test:integration:purchase-receipt-reversal": "vitest run --config vitest.integration.config.ts accounting.purchase-receipt-reversal.integration",
+    "test:integration:treasury-transfer-reversal": "vitest run --config vitest.integration.config.ts accounting.treasury-transfer-reversal.integration"
   },
   "dependencies": {
     "@ants/database": "workspace:*",

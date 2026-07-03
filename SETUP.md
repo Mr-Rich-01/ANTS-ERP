@@ -233,6 +233,12 @@ Testes do estorno ponta a ponta de recepção de compra (P0-03d):
 pnpm test:integration:accounting:reversal:purchase-receipt
 ```
 
+Testes do estorno atómico de transferência entre contas (P0-03e):
+
+```bash
+pnpm test:integration:accounting:reversal:treasury-transfer
+```
+
 Build:
 
 ```bash

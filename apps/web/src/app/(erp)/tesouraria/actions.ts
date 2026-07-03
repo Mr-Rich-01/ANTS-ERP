@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 import { forContext } from '@ants/database';
-import { createAccount, recordMovement, transfer, reverseMovement, setAccountStatus, DomainError, type AccountInput, type MovementInput, type TransferInput } from '@ants/domain';
+import { createAccount, recordMovement, transfer, reverseMovement, reverseTreasuryTransfer, setAccountStatus, DomainError, type AccountInput, type MovementInput, type TransferInput, type ReverseTransferInput } from '@ants/domain';
 import { getContext } from '@/lib/session';
 
 export interface TreasuryResult {
@@ -55,6 +55,20 @@ export async function reverseMovementAction(movementId: string, reason?: string)
   try {
     await reverseMovement(forContext(ctx), ctx, movementId, reason);
     revalidatePath('/tesouraria');
+    return { ok: true };
+  } catch (e) {
+    if (e instanceof DomainError) return { error: e.message };
+    throw e;
+  }
+}
+
+export async function reverseTransferAction(input: ReverseTransferInput): Promise<TreasuryResult> {
+  const ctx = await getContext();
+  if (!ctx.companyId) return { error: 'Sem empresa activa.' };
+  try {
+    await reverseTreasuryTransfer(forContext(ctx), ctx, input);
+    revalidatePath('/tesouraria');
+    revalidatePath('/tesouraria/fecho');
     return { ok: true };
   } catch (e) {
     if (e instanceof DomainError) return { error: e.message };

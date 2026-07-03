@@ -7,7 +7,7 @@ import { Button, Dialog, DialogContent, DialogDescription, DialogFooter, DialogH
 import { Icon } from '@/components/Icon';
 import { KpiCard, KpiGrid, type KpiCardData } from '@/components/ui/KpiCard';
 import { ACCENT } from '@/lib/erp-nav';
-import { createAccountAction, recordMovementAction, transferAction, reverseMovementAction, setAccountStatusAction } from '@/app/(erp)/tesouraria/actions';
+import { createAccountAction, recordMovementAction, transferAction, reverseMovementAction, reverseTransferAction, setAccountStatusAction } from '@/app/(erp)/tesouraria/actions';
 
 export interface AccountView {
   id: string;
@@ -15,28 +15,47 @@ export interface AccountView {
   type: string;
   typeLabel: string;
   reference: string;
+  balance: number;
   balanceStr: string;
+  allowNegative: boolean;
   status: 'ACTIVE' | 'INACTIVE';
+}
+export interface TransferReversalView {
+  transferId: string;
+  sourceAccountName: string;
+  destinationAccountName: string;
+  amountStr: string;
+  originalDate: string;
+  reversalDate: string;
+  reversalDateLabel: string;
+  sourceImpact: string;
+  destinationImpact: string;
 }
 export interface MovementView {
   id: string;
   when: string;
+  accountId: string;
   accountName: string;
   category: string;
   description: string;
   document: string;
+  transferId: string | null;
+  source: string;
   amountStr: string;
   amountColor: string;
   status: 'ACTIVE' | 'REVERSED';
   reversal: boolean;
+  reversalReason: string | null;
   reversible: boolean;
   reversalBlockedReason: string | null;
+  transferReversal: TransferReversalView | null;
 }
 export interface TreasuryPerms {
   createMovement: boolean;
   transfer: boolean;
   manageAccounts: boolean;
   reverse: boolean;
+  reverseTransfer: boolean;
   viewReports: boolean;
 }
 
@@ -280,6 +299,106 @@ function ReverseButton({ movementId }: { movementId: string }) {
   );
 }
 
+function TransferReverseDialog({ details }: { details: TransferReversalView }) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [pending, start] = useTransition();
+  const [reason, setReason] = useState('');
+  const [confirmed, setConfirmed] = useState(false);
+  const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID());
+  const [error, setError] = useState<string | null>(null);
+  const canSubmit = reason.trim().length >= 10 && confirmed && !pending;
+
+  const submit = () => {
+    setError(null);
+    start(async () => {
+      const res = await reverseTransferAction({
+        transferId: details.transferId,
+        idempotencyKey,
+        reversalReason: reason,
+        reversalDate: details.reversalDate,
+      });
+      if (res.error) setError(res.error);
+      else {
+        setOpen(false);
+        setReason('');
+        setConfirmed(false);
+        setIdempotencyKey(crypto.randomUUID());
+        router.refresh();
+      }
+    });
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <button
+          title="Estornar transferência"
+          style={{ border: '1px solid var(--border)', background: 'var(--card)', cursor: 'pointer', color: 'var(--bad)', fontSize: 11, fontWeight: 600, padding: '3px 8px', borderRadius: 7, display: 'inline-flex', alignItems: 'center', gap: 4 }}
+        >
+          <Icon name="undo-2" size={13} />
+          Estornar transferência
+        </button>
+      </DialogTrigger>
+      <DialogContent style={{ maxWidth: 540 }}>
+        <DialogHeader>
+          <DialogTitle>Estornar transferência</DialogTitle>
+          <DialogDescription>Esta operação estornará integralmente a transferência, restaurará o saldo da conta de origem e retirará o mesmo valor da conta de destino. As duas pernas originais permanecerão no histórico.</DialogDescription>
+        </DialogHeader>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 13 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <div style={field}>
+              <Label>Origem</Label>
+              <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>{details.sourceAccountName}</div>
+            </div>
+            <div style={field}>
+              <Label>Destino</Label>
+              <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>{details.destinationAccountName}</div>
+            </div>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+            <div style={field}>
+              <Label>Valor</Label>
+              <div className="tnum" style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>{details.amountStr}</div>
+            </div>
+            <div style={field}>
+              <Label>Data original</Label>
+              <div className="tnum" style={{ fontSize: 13, color: 'var(--text2)' }}>{details.originalDate}</div>
+            </div>
+            <div style={field}>
+              <Label htmlFor="tr-rev-date">Data do estorno</Label>
+              <Input id="tr-rev-date" readOnly className="tnum" value={details.reversalDateLabel} />
+            </div>
+          </div>
+          <div style={{ border: '1px solid var(--bd-soft)', borderRadius: 8, padding: '10px 12px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, background: 'var(--card2)' }}>
+            <div style={{ fontSize: 12.5, color: 'var(--text2)' }}>
+              <span style={{ display: 'block', fontSize: 11, color: 'var(--text3)', marginBottom: 3 }}>Impacto na origem</span>
+              <span className="tnum" style={{ fontWeight: 700, color: 'var(--ok)' }}>{details.sourceImpact}</span>
+            </div>
+            <div style={{ fontSize: 12.5, color: 'var(--text2)' }}>
+              <span style={{ display: 'block', fontSize: 11, color: 'var(--text3)', marginBottom: 3 }}>Impacto no destino</span>
+              <span className="tnum" style={{ fontWeight: 700, color: 'var(--bad)' }}>{details.destinationImpact}</span>
+            </div>
+          </div>
+          <div style={field}>
+            <Label htmlFor="tr-reason">Motivo</Label>
+            <Input id="tr-reason" value={reason} maxLength={500} onChange={(e) => setReason(e.target.value)} placeholder="Obrigatório" />
+          </div>
+          <label style={{ display: 'flex', gap: 8, alignItems: 'flex-start', fontSize: 12.5, color: 'var(--text2)', lineHeight: 1.35 }}>
+            <input type="checkbox" checked={confirmed} onChange={(e) => setConfirmed(e.target.checked)} style={{ marginTop: 2 }} />
+            Confirmo o estorno integral desta transferência.
+          </label>
+          {error && <ErrorBox msg={error} />}
+          <DialogFooter>
+            <Button type="button" variant="secondary" onClick={() => setOpen(false)}>Cancelar</Button>
+            <Button type="button" onClick={submit} disabled={!canSubmit}>{pending ? 'A estornar…' : 'Estornar'}</Button>
+          </DialogFooter>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export function TesourariaClient({ kpis, accounts, movements, perms }: { kpis: KpiCardData[]; accounts: AccountView[]; movements: MovementView[]; perms: TreasuryPerms }) {
   const activeAccounts = accounts.filter((a) => a.status === 'ACTIVE');
   return (
@@ -370,10 +489,12 @@ export function TesourariaClient({ kpis, accounts, movements, perms }: { kpis: K
                         {m.description}
                         {m.document ? <span className="font-mono" style={{ color: 'var(--text3)' }}> · {m.document}</span> : null}
                         {m.reversalBlockedReason && !reversed && !m.reversal ? <div style={{ marginTop: 3, maxWidth: 380, fontSize: 11.5, color: 'var(--text3)' }}>{m.reversalBlockedReason}</div> : null}
+                        {reversed && m.reversalReason ? <div style={{ marginTop: 3, maxWidth: 380, fontSize: 11.5, color: '#8b3a32', fontWeight: 600 }}>{m.reversalReason}</div> : null}
                       </td>
                       <td className="tnum" style={{ padding: '11px 14px', textAlign: 'right', fontSize: 13, fontWeight: 700, color: m.amountColor, whiteSpace: 'nowrap', textDecoration: reversed ? 'line-through' : undefined }}>{m.amountStr}</td>
                       <td style={{ padding: '11px 10px', textAlign: 'right' }}>
                         {perms.reverse && m.reversible && <ReverseButton movementId={m.id} />}
+                        {perms.reverseTransfer && m.transferReversal && <TransferReverseDialog details={m.transferReversal} />}
                       </td>
                     </tr>
                   );

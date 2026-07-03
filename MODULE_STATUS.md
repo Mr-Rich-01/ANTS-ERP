@@ -5,9 +5,9 @@ _Última actualização: 2026-07-03_
 Estado vivo do projecto. O conhecimento permanente (arquitectura, regras, comandos) está
 em [`CLAUDE.md`](CLAUDE.md).
 
-**Último commit funcional:** este commit (`feat(accounting): reverse purchase receipts end to end`)
-**Fase concluída:** `P0-03d — estorno integral de recepção de compra`
-**Próximo passo:** `P0-03e — subfase seguinte de reversões/cancelamentos` _(não iniciado)_
+**Último commit funcional:** este commit (`feat(treasury): reverse transfers atomically`)
+**Fase concluída:** `P0-03e — estorno atómico de transferência entre contas`
+**Próximo passo:** `P0-03f — subfase seguinte de reversões/cancelamentos` _(não iniciado)_
 
 ---
 
@@ -34,13 +34,14 @@ em [`CLAUDE.md`](CLAUDE.md).
 | **P0-03a** | **Cancelamento integral de factura** (`Invoice`→`Customer`/Stock/Contabilidade/Auditoria, factura original `CANCELADA`) | ✅ |
 | **P0-03c** | **Estorno integral de pagamento a fornecedor** (`SupplierPayment`→`Supplier`/`PurchaseOrder`/Tesouraria/Contabilidade/Auditoria, pagamento original `ESTORNADO`) | ✅ |
 | **P0-03d** | **Estorno integral de recepção de compra** (`PurchaseReceipt`→`PurchaseOrder`/`Supplier`/Stock/Custo médio/Contabilidade/Auditoria, recepção original `ESTORNADA`) | ✅ |
+| **P0-03e** | **Estorno atómico de transferência entre contas** (`TreasuryMovement` OUT/IN→dois compensatórios, duas contas, idempotência e auditoria lógica única) | ✅ |
 | 8c.4–8e | Contabilidade — cancelamentos/estornos, tesouraria, ecrãs, testes finais | 🗺️ **a seguir** |
 | 9 | RH & Salários | 🗺️ futuro |
 | X | RLS forçado em toda a BD (fase transversal, pré-produção) | 🗺️ futuro |
 
 **Validações actuais:** typecheck 6/6 · lint 6/6 · **testes unitários 73** · **integração de
-contabilidade 179/179** (8b 32 + 8c.1 30 + 8c.2a 18 + 8c.2b 34 + 8c.3 17 + P0-02 5 + P0-03.0 9 + P0-03b 10 + P0-03a 9 + P0-03c 7 + P0-03d 8;
-`pnpm test:integration:accounting`, sub: `…:c1`, `…:c2a`, `…:c2`, `…:c3`, `…:reversal:customer-payment`, `…:reversal:invoice`, `…:reversal:supplier-payment`, `…:reversal:purchase-receipt`) · `prisma format` OK · `prisma validate` OK · `pnpm build` OK
+contabilidade 185/185** (8b 32 + 8c.1 30 + 8c.2a 18 + 8c.2b 34 + 8c.3 17 + P0-02 5 + P0-03.0 9 + P0-03b 10 + P0-03a 9 + P0-03c 7 + P0-03d 8 + P0-03e 6;
+`pnpm test:integration:accounting`, sub: `…:c1`, `…:c2a`, `…:c2`, `…:c3`, `…:reversal:customer-payment`, `…:reversal:invoice`, `…:reversal:supplier-payment`, `…:reversal:purchase-receipt`, `…:reversal:treasury-transfer`) · `prisma format` OK · `prisma validate` OK · `pnpm build` OK
 em Windows nativo (28/28 páginas) e Docker Linux com Node 20 + OpenSSL · seed idempotente (2×).
 
 **Hardening pré-produção P0-01 (2026-07-02):** seed demo bloqueado em `production`
@@ -110,6 +111,19 @@ quando não há uso posterior, estorno contabilístico histórico de `PURCHASE_R
 via `reverseAccountingEventTx` e auditoria `purchase.receipt.reverse` na mesma
 transacção. A recepção original permanece consultável como `ESTORNADA`. Próxima
 subfase: `P0-03e`.
+
+**P0-03e (2026-07-03):** implementado o estorno atómico de transferência entre
+contas de Tesouraria iniciado no `transferId`, com permissão
+`treasury.reverseTransfer`, motivo/data validados, idempotência
+`TREASURY_TRANSFER_REVERSE`, locks determinísticos das duas pernas e das duas
+contas, criação de dois movimentos compensatórios ligados por `reversesId`,
+restauração da conta de origem, redução da conta de destino, validação de saldo
+negativo conforme `allowNegative`, marcação das duas pernas originais como
+`REVERSED` e auditoria lógica única `treasury.transfer.reverse` na mesma
+transacção. Os movimentos originais permanecem no histórico como `ESTORNADA` e
+as pernas compensatórias preservam o `transferId`. Transferências internas ainda
+não geram `JournalEntry`, por isso a reversão permanece limitada à Tesouraria.
+Próxima subfase: `P0-03f`.
 
 **Commit da 8c.3:** este commit exclusivo, `feat(accounting): integrate purchase receipts and supplier payments`.
 
@@ -477,7 +491,12 @@ db:generate` e `pnpm build`.
     `StockLevel`/`StockMovement`, `Product.avgCost`, `JournalEntry`, `AuditLog` e
     `OperationIdempotency`; recepção original preservada como `ESTORNADA`. Suite dedicada:
     `pnpm test:integration:accounting:reversal:purchase-receipt`.
-  - **P0-03e / 8c.4** subfase seguinte de reversões/cancelamentos. **8c.5** backfill (dry-run) + validação.
+  - **P0-03e / 8c.4** _(✅ concluída)_: estorno atómico de transferência entre contas iniciado no
+    `transferId`, atómico sobre as duas pernas `TreasuryMovement`, duas `TreasuryAccount`,
+    dois compensatórios, `AuditLog` e `OperationIdempotency`; movimentos originais preservados
+    como `ESTORNADA`. Suite dedicada:
+    `pnpm test:integration:accounting:reversal:treasury-transfer`.
+  - **P0-03f / 8c.4** subfase seguinte de reversões/cancelamentos. **8c.5** backfill (dry-run) + validação.
     Diferidos: COGS e ecrãs contabilísticos finais.
 - **8d — Ecrãs**: plano de contas, diários, novo lançamento, detalhe, razão geral, balancete,
   extracto diário (linha a linha) + configuração contabilística (mapping de `systemKeys`).

@@ -1,11 +1,14 @@
 import { z } from 'zod';
-import type { Prisma, PrismaClient } from '@ants/database';
-import { round2 } from '@ants/shared';
+import { Prisma, type PrismaClient } from '@ants/database';
+import { civilDateInTimeZone, round2 } from '@ants/shared';
 import type { RequestContext } from './context';
 import { requireCompany } from './context';
 import { requirePermission } from './permissions';
 import { ConflictError, NotFoundError, ValidationError } from './errors';
 import { writeAudit } from './audit';
+import { FINGERPRINT_VERSION, canonicalRequestFingerprint, fpDate, runIdempotentOperation } from './operation-idempotency';
+import { formatAccountingDate } from './accounting';
+import { parseReversalDateInput, validateOpenReversalDateTx, validateReversalReason } from './reversals';
 
 export type TreasuryAccountType = 'CASH' | 'BANK' | 'MOBILE' | 'OTHER';
 export type TreasuryFlow = 'IN' | 'OUT';
@@ -47,7 +50,19 @@ export interface TreasuryMovementItem {
   movementPurpose: string | null;
   status: TreasuryMovementStatus;
   reversesId: string | null;
+  reversalReason: string | null;
   reversalBlockedReason: string | null;
+}
+
+export interface TreasuryTransferReversalResult {
+  transferId: string;
+  originalOutMovementId: string;
+  originalInMovementId: string;
+  reversalInMovementId: string;
+  reversalOutMovementId: string;
+  sourceAccountId: string;
+  destinationAccountId: string;
+  amount: number;
 }
 
 export interface TreasuryKpis {
@@ -91,6 +106,7 @@ function mapMovement(m: {
   movementPurpose: string | null;
   status: string;
   reversesId: string | null;
+  reversalReason: string | null;
 }): TreasuryMovementItem {
   const origin = {
     source: m.source,
@@ -117,6 +133,7 @@ function mapMovement(m: {
     movementPurpose: m.movementPurpose,
     status: m.status as TreasuryMovementStatus,
     reversesId: m.reversesId,
+    reversalReason: m.reversalReason,
     reversalBlockedReason: getTreasuryMovementReversalBlockReason(origin),
   };
 }
@@ -470,6 +487,49 @@ const transferInput = z.object({
 });
 export type TransferInput = z.input<typeof transferInput>;
 
+const reverseTransferInput = z.object({
+  transferId: z.string().trim().min(1, 'Transferência obrigatória.'),
+  idempotencyKey: z.string().trim().min(1, 'Chave de idempotência obrigatória.'),
+  reversalReason: z.string(),
+  reversalDate: z.string(),
+});
+export type ReverseTransferInput = z.input<typeof reverseTransferInput>;
+
+function treasuryTransferReversalFingerprint(companyId: string, transferId: string, reversalDate: Date, reversalReason: string): string {
+  return canonicalRequestFingerprint(FINGERPRINT_VERSION, {
+    companyId,
+    transferId,
+    reversalDate: fpDate(reversalDate),
+    reversalReason,
+  });
+}
+
+async function loadReversedTreasuryTransferResultTx(
+  tx: Prisma.TransactionClient,
+  companyId: string,
+  transferId: string,
+): Promise<TreasuryTransferReversalResult | null> {
+  const originals = await tx.treasuryMovement.findMany({ where: { companyId, transferId, source: 'TRANSFER' } });
+  if (originals.length !== 2) return null;
+  const out = originals.find((m) => m.flow === 'OUT');
+  const inn = originals.find((m) => m.flow === 'IN');
+  if (!out || !inn || out.status !== 'REVERSED' || inn.status !== 'REVERSED') return null;
+  const reversals = await tx.treasuryMovement.findMany({ where: { companyId, reversesId: { in: [out.id, inn.id] } } });
+  const reversalIn = reversals.find((m) => m.reversesId === out.id && m.flow === 'IN');
+  const reversalOut = reversals.find((m) => m.reversesId === inn.id && m.flow === 'OUT');
+  if (!reversalIn || !reversalOut) return null;
+  return {
+    transferId,
+    originalOutMovementId: out.id,
+    originalInMovementId: inn.id,
+    reversalInMovementId: reversalIn.id,
+    reversalOutMovementId: reversalOut.id,
+    sourceAccountId: out.accountId,
+    destinationAccountId: inn.accountId,
+    amount: round2(Number(out.amount)),
+  };
+}
+
 /** Transferência entre contas: dois movimentos ligados por transferId, atomicamente. */
 export async function transfer(db: PrismaClient, ctx: RequestContext, input: TransferInput): Promise<{ transferId: string }> {
   requirePermission(ctx, 'treasury.transfer');
@@ -491,6 +551,202 @@ export async function transfer(db: PrismaClient, ctx: RequestContext, input: Tra
     await writeAudit(tx, ctx, { action: 'treasury.transfer', entity: 'TreasuryMovement', entityId: transferId, newValues: { from: from.name, to: to.name, amount: round2(data.amount), transferId } });
   });
   return { transferId };
+}
+
+export async function reverseTreasuryTransfer(db: PrismaClient, ctx: RequestContext, input: ReverseTransferInput): Promise<TreasuryTransferReversalResult> {
+  requirePermission(ctx, 'treasury.reverseTransfer');
+  const companyId = requireCompany(ctx);
+  const parsed = reverseTransferInput.safeParse(input);
+  if (!parsed.success) throw new ValidationError(parsed.error.issues[0]?.message ?? 'Dados inválidos.');
+  const data = parsed.data;
+  const reversalReason = validateReversalReason(data.reversalReason);
+  const reversalDate = parseReversalDateInput(data.reversalDate);
+  const currentDate = civilDateInTimeZone();
+  if (formatAccountingDate(reversalDate) !== currentDate) {
+    throw new ValidationError('A data do estorno deve ser a data actual em Africa/Maputo.');
+  }
+  const requestFingerprint = treasuryTransferReversalFingerprint(companyId, data.transferId, reversalDate, reversalReason);
+
+  return db.$transaction(async (tx) => {
+    const op = await runIdempotentOperation<TreasuryTransferReversalResult>(tx, ctx, {
+      scope: 'TREASURY_TRANSFER_REVERSE',
+      idempotencyKey: data.idempotencyKey,
+      requestFingerprint,
+      expectedResourceType: 'TreasuryTransfer',
+      loadExisting: (transferId) => loadReversedTreasuryTransferResultTx(tx, companyId, transferId),
+      run: async () => {
+        await validateOpenReversalDateTx(tx, companyId, reversalDate);
+
+        const initialLegs = await tx.treasuryMovement.findMany({ where: { companyId, transferId: data.transferId, source: 'TRANSFER' } });
+        if (initialLegs.length === 0) throw new NotFoundError('Transferência não encontrada.');
+        if (initialLegs.length !== 2) {
+          throw new ConflictError('Não foi possível estornar a transferência porque as duas pernas originais não estão consistentes.');
+        }
+
+        await tx.$queryRaw`
+          SELECT id
+          FROM treasury_movements
+          WHERE "companyId" = ${companyId}
+            AND "transferId" = ${data.transferId}
+            AND source = 'TRANSFER'
+          ORDER BY id
+          FOR UPDATE
+        `;
+        const legs = await tx.treasuryMovement.findMany({ where: { companyId, transferId: data.transferId, source: 'TRANSFER' }, orderBy: { id: 'asc' } });
+        if (legs.length !== 2) {
+          throw new ConflictError('Não foi possível estornar a transferência porque as duas pernas originais não estão consistentes.');
+        }
+
+        const out = legs.find((m) => m.flow === 'OUT');
+        const inn = legs.find((m) => m.flow === 'IN');
+        if (!out || !inn) {
+          throw new ConflictError('Não foi possível estornar a transferência porque as duas pernas originais não estão consistentes.');
+        }
+        if (out.status === 'REVERSED' || inn.status === 'REVERSED') throw new ConflictError('Esta transferência já foi estornada.');
+        if (out.status !== 'ACTIVE' || inn.status !== 'ACTIVE') {
+          throw new ConflictError('Não foi possível estornar a transferência porque as duas pernas originais não estão consistentes.');
+        }
+        const amount = round2(Number(out.amount));
+        if (amount <= 0 || amount !== round2(Number(inn.amount))) {
+          throw new ConflictError('Não foi possível estornar a transferência porque as duas pernas originais não estão consistentes.');
+        }
+        if (out.accountId === inn.accountId || out.counterpartAccountId !== inn.accountId || inn.counterpartAccountId !== out.accountId) {
+          throw new ConflictError('Não foi possível estornar a transferência porque as duas pernas originais não estão consistentes.');
+        }
+        if (out.companyId !== companyId || inn.companyId !== companyId || out.transferId !== inn.transferId) {
+          throw new ConflictError('Não foi possível estornar a transferência porque as duas pernas originais não estão consistentes.');
+        }
+
+        const existingReversal = await tx.treasuryMovement.findFirst({ where: { companyId, reversesId: { in: [out.id, inn.id] } }, select: { id: true } });
+        if (existingReversal) throw new ConflictError('Esta transferência já foi estornada.');
+
+        const accountIds = [out.accountId, inn.accountId].sort();
+        await tx.$queryRaw`
+          SELECT id
+          FROM treasury_accounts
+          WHERE "companyId" = ${companyId}
+            AND id IN (${Prisma.join(accountIds)})
+          ORDER BY id
+          FOR UPDATE
+        `;
+        const accounts = await tx.treasuryAccount.findMany({ where: { companyId, id: { in: accountIds } } });
+        if (accounts.length !== 2) {
+          throw new ConflictError('Não foi possível estornar a transferência porque as contas originais não estão consistentes.');
+        }
+        const sourceAccount = accounts.find((a) => a.id === out.accountId);
+        const destinationAccount = accounts.find((a) => a.id === inn.accountId);
+        if (!sourceAccount || !destinationAccount) {
+          throw new ConflictError('Não foi possível estornar a transferência porque as contas originais não estão consistentes.');
+        }
+        if (sourceAccount.status !== 'ACTIVE' || destinationAccount.status !== 'ACTIVE') {
+          throw new ConflictError('As contas da transferência devem estar activas para permitir o estorno.');
+        }
+
+        const sourceBalanceBefore = round2(Number(sourceAccount.balance));
+        const destinationBalanceBefore = round2(Number(destinationAccount.balance));
+        const destinationBalanceAfter = round2(destinationBalanceBefore - amount);
+        if (destinationBalanceAfter < 0 && !destinationAccount.allowNegative) {
+          throw new ValidationError(`Saldo insuficiente na conta ${destinationAccount.name}.`);
+        }
+
+        const updatedSource = await tx.treasuryAccount.update({ where: { id: sourceAccount.id }, data: { balance: { increment: amount } } });
+        const updatedDestination = await tx.treasuryAccount.update({ where: { id: destinationAccount.id }, data: { balance: { decrement: amount } } });
+        const sourceBalanceAfter = round2(Number(updatedSource.balance));
+        const finalDestinationBalanceAfter = round2(Number(updatedDestination.balance));
+        if (finalDestinationBalanceAfter < 0 && !destinationAccount.allowNegative) {
+          throw new ValidationError(`Saldo insuficiente na conta ${destinationAccount.name}.`);
+        }
+
+        const description = `Estorno da transferência ${data.transferId} - ${reversalReason}`;
+        const reversalIn = await tx.treasuryMovement.create({
+          data: {
+            companyId,
+            accountId: sourceAccount.id,
+            flow: 'IN',
+            amount,
+            balanceAfter: sourceBalanceAfter,
+            category: out.category,
+            description,
+            document: out.document,
+            counterpartAccountId: destinationAccount.id,
+            transferId: data.transferId,
+            source: 'REVERSAL',
+            sourceType: 'TREASURY_TRANSFER',
+            sourceId: data.transferId,
+            movementPurpose: 'TREASURY_TRANSFER_IN_REVERSAL',
+            reversesId: out.id,
+            reversalReason,
+            createdBy: ctx.userId,
+            occurredAt: reversalDate,
+          },
+        });
+        const reversalOut = await tx.treasuryMovement.create({
+          data: {
+            companyId,
+            accountId: destinationAccount.id,
+            flow: 'OUT',
+            amount,
+            balanceAfter: finalDestinationBalanceAfter,
+            category: inn.category,
+            description,
+            document: inn.document,
+            counterpartAccountId: sourceAccount.id,
+            transferId: data.transferId,
+            source: 'REVERSAL',
+            sourceType: 'TREASURY_TRANSFER',
+            sourceId: data.transferId,
+            movementPurpose: 'TREASURY_TRANSFER_OUT_REVERSAL',
+            reversesId: inn.id,
+            reversalReason,
+            createdBy: ctx.userId,
+            occurredAt: reversalDate,
+          },
+        });
+
+        await tx.treasuryMovement.updateMany({
+          where: { companyId, id: { in: [out.id, inn.id] } },
+          data: { status: 'REVERSED', reversalReason },
+        });
+
+        const result: TreasuryTransferReversalResult = {
+          transferId: data.transferId,
+          originalOutMovementId: out.id,
+          originalInMovementId: inn.id,
+          reversalInMovementId: reversalIn.id,
+          reversalOutMovementId: reversalOut.id,
+          sourceAccountId: sourceAccount.id,
+          destinationAccountId: destinationAccount.id,
+          amount,
+        };
+        await writeAudit(tx, ctx, {
+          action: 'treasury.transfer.reverse',
+          entity: 'TreasuryTransfer',
+          entityId: data.transferId,
+          newValues: {
+            transferId: data.transferId,
+            reversalReason,
+            reversalDate: formatAccountingDate(reversalDate),
+            idempotencyKey: data.idempotencyKey,
+            sourceAccountId: sourceAccount.id,
+            sourceAccountName: sourceAccount.name,
+            destinationAccountId: destinationAccount.id,
+            destinationAccountName: destinationAccount.name,
+            amount,
+            originalOutMovementId: out.id,
+            originalInMovementId: inn.id,
+            reversalInMovementId: reversalIn.id,
+            reversalOutMovementId: reversalOut.id,
+            sourceBalanceBefore,
+            sourceBalanceAfter,
+            destinationBalanceBefore,
+            destinationBalanceAfter: finalDestinationBalanceAfter,
+          },
+        });
+        return { resourceType: 'TreasuryTransfer', resourceId: data.transferId, result };
+      },
+    });
+    return op.result;
+  });
 }
 
 /**
