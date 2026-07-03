@@ -28,14 +28,14 @@ pnpm + Turborepo:
 Módulos já implementados: Auth/RBAC/Admin, Clientes, Fornecedores, Produtos &
 Stock, Vendas/Facturação, Compras, Tesouraria & Bancos, Hardening da
 Tesouraria, Contabilidade 8a, 8b, 8c.1, 8c.2a, 8c.2b, 8c.3 e
-P0-03.0.
+P0-03.0, P0-03b e P0-03a.
 
-Estado actual da Contabilidade: P0-03.0 concluída com fundação técnica de
-cancelamentos, anulações e estornos, incluindo estados/metadados de reversão,
-rastreabilidade `Invoice`→`StockMovement`, novos scopes de idempotência e
-reforço de `reverseAccountingEventTx`. A próxima subfase é P0-03b (anulação de
-recebimento de cliente) ou a subfase exacta definida em `MODULE_STATUS.md`. Não
-iniciar a fase seguinte automaticamente.
+Estado actual da Contabilidade: P0-03.0, P0-03b e P0-03a concluídas. A base de
+reversões está activa; recebimentos de clientes podem ser anulados ponta a ponta
+e facturas sem recebimentos activos podem ser canceladas com reversão atómica de
+`Customer`, stock, contabilidade e auditoria. A próxima subfase é P0-03c ou a
+subfase exacta definida em `MODULE_STATUS.md`. Não iniciar a fase seguinte
+automaticamente.
 
 ## Arquitectura Obrigatória
 
@@ -172,6 +172,8 @@ pnpm test:integration:accounting:c1
 pnpm test:integration:accounting:c2a
 pnpm test:integration:accounting:c2
 pnpm test:integration:accounting:c3
+pnpm test:integration:accounting:reversal:customer-payment
+pnpm test:integration:accounting:reversal:invoice
 pnpm build
 ```
 
@@ -182,6 +184,8 @@ Testes de integração contabilísticos:
 - 8c.2a: `pnpm test:integration:accounting:c2a`
 - 8c.2b: `pnpm test:integration:accounting:c2`
 - 8c.3: `pnpm test:integration:accounting:c3`
+- P0-03b: `pnpm test:integration:accounting:reversal:customer-payment`
+- P0-03a: `pnpm test:integration:accounting:reversal:invoice`
 
 ## Credenciais de Teste Versionadas
 
@@ -202,8 +206,10 @@ passwords não demonstrativas.
 ## Estado Actual
 
 - P0-03.0 concluída.
+- P0-03b concluída.
+- P0-03a concluída.
 - Commit base funcional antes da P0-03.0: `a1d608b`.
-- Próxima fase: P0-03b ou subfase seguinte, conforme detalhe em `MODULE_STATUS.md`.
+- Próxima fase: P0-03c ou subfase seguinte, conforme detalhe em `MODULE_STATUS.md`.
 - `MODULE_STATUS.md` é a fonte principal para progresso e próximos passos.
 - `CLAUDE.md` deve ser preservado.
 - Quando `AGENTS.md` e `CLAUDE.md` divergirem, apresentar a divergência antes

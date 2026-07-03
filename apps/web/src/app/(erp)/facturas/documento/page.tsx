@@ -9,6 +9,7 @@ import { PrintButton } from '@/components/PrintButton';
 import { fmt } from '@/lib/format';
 import { PaymentDialog } from '@/components/facturas/PaymentDialog';
 import { PaymentReversalDialog } from '@/components/facturas/PaymentReversalDialog';
+import { InvoiceCancellationDialog } from '@/components/facturas/InvoiceCancellationDialog';
 
 export const dynamic = 'force-dynamic';
 
@@ -68,9 +69,20 @@ export default async function DocumentoPage({ searchParams }: { searchParams: { 
   const [statusLabel, statusColor, statusBg] = STATUS[inv.displayStatus];
   const canReceive = hasPermission(ctx, 'payments.receive') && inv.outstanding > 0 && inv.status !== 'CANCELLED';
   const canCancelPayment = hasPermission(ctx, 'payments.cancel');
+  const canCancelInvoicePermission = hasPermission(ctx, 'invoices.cancel');
+  const activePaymentCount = inv.payments.filter((p) => p.status === 'ACTIVE').length;
+  const canCancelInvoice = canCancelInvoicePermission && inv.status !== 'CANCELLED' && activePaymentCount === 0;
+  const disabledCancelMessage = activePaymentCount > 0 ? 'Anule primeiro os recibos activos desta factura.' : null;
   const reversalDate = civilDateInTimeZone();
+  const cancellationDate = reversalDate;
   const docTh: React.CSSProperties = { padding: '10px 12px', fontSize: 10.5, fontWeight: 600, letterSpacing: '.5px', textTransform: 'uppercase' };
   const initial = (company?.tradeName ?? company?.legalName ?? 'A').charAt(0).toUpperCase();
+  const documentMeta: Array<[string, string, boolean]> = [
+    ['Data de emissão', fmtDate(inv.issueDate), true],
+    ['Vencimento', fmtDate(inv.dueDate), true],
+    ...(inv.cancelledAt ? [['Cancelamento', fmtDate(inv.cancelledAt), true] as [string, string, boolean]] : []),
+    ['Pagamento', inv.paymentMethod ? METHOD_LABEL[inv.paymentMethod] : '—', false],
+  ];
 
   return (
     <div data-screen-label="Factura (documento)">
@@ -80,6 +92,24 @@ export default async function DocumentoPage({ searchParams }: { searchParams: { 
           Voltar às facturas
         </Link>
         <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+          {canCancelInvoice && (
+            <InvoiceCancellationDialog
+              cancellationDate={cancellationDate}
+              invoice={{ id: inv.id, number: inv.number, customerName: inv.customerName, total: inv.total, itemCount: inv.lines.length, activePaymentCount }}
+              trigger={
+                <button style={{ ...topBtn, borderColor: '#f0d0cc', background: '#fff5f3', color: '#8b3a32', cursor: 'pointer' }}>
+                  <Icon name="ban" size={16} />
+                  Cancelar factura
+                </button>
+              }
+            />
+          )}
+          {!canCancelInvoice && canCancelInvoicePermission && inv.status !== 'CANCELLED' && disabledCancelMessage && (
+            <button disabled title={disabledCancelMessage} style={{ ...topBtn, opacity: 0.72, cursor: 'not-allowed' }}>
+              <Icon name="ban" size={16} />
+              Cancelar factura
+            </button>
+          )}
           {canReceive && (
             <PaymentDialog
               invoiceId={inv.id}
@@ -126,6 +156,11 @@ export default async function DocumentoPage({ searchParams }: { searchParams: { 
                 <span style={{ width: 6, height: 6, borderRadius: '50%', background: statusColor }} />
                 {statusLabel}
               </div>
+              {inv.status === 'CANCELLED' && (
+                <div style={{ marginTop: 8, fontSize: 11, color: '#8b3a32', fontWeight: 700, letterSpacing: '.5px' }}>
+                  CANCELADA
+                </div>
+              )}
             </div>
           </div>
 
@@ -139,11 +174,7 @@ export default async function DocumentoPage({ searchParams }: { searchParams: { 
               </div>
             </div>
             <div style={{ width: 230, flex: 'none' }}>
-              {[
-                ['Data de emissão', fmtDate(inv.issueDate), true],
-                ['Vencimento', fmtDate(inv.dueDate), true],
-                ['Pagamento', inv.paymentMethod ? METHOD_LABEL[inv.paymentMethod] : '—', false],
-              ].map(([l, v, border]) => (
+              {documentMeta.map(([l, v, border]) => (
                 <div key={l as string} style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 0', borderBottom: border ? '1px solid #f0f3f3' : undefined }}>
                   <span style={{ fontSize: 11.5, color: '#5f7378' }}>{l}</span>
                   <span className="tnum" style={{ fontSize: 12, fontWeight: 600 }}>
@@ -151,6 +182,17 @@ export default async function DocumentoPage({ searchParams }: { searchParams: { 
                   </span>
                 </div>
               ))}
+              {inv.cancellationReason && (
+                <div style={{ marginTop: 8, padding: '8px 9px', borderRadius: 6, background: '#fff5f3', color: '#8b3a32', fontSize: 11.5, lineHeight: 1.45 }}>
+                  <strong>Motivo:</strong> {inv.cancellationReason}
+                  {inv.cancelledById ? (
+                    <>
+                      <br />
+                      <strong>Responsável:</strong> {inv.cancelledById}
+                    </>
+                  ) : null}
+                </div>
+              )}
             </div>
           </div>
 

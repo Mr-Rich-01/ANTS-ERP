@@ -81,6 +81,9 @@ export interface InvoiceDetail {
   outstanding: number;
   paymentMethod: PaymentMethod | null;
   notes: string | null;
+  cancelledAt: Date | null;
+  cancelledById: string | null;
+  cancellationReason: string | null;
   lines: InvoiceLineItem[];
   payments: InvoicePaymentItem[];
 }
@@ -178,6 +181,9 @@ export async function getInvoice(db: PrismaClient, ctx: RequestContext, id: stri
     outstanding: round2(total - amountPaid),
     paymentMethod: (i.paymentMethod as PaymentMethod | null) ?? null,
     notes: i.notes,
+    cancelledAt: i.cancelledAt,
+    cancelledById: i.cancelledById,
+    cancellationReason: i.cancellationReason,
     lines: i.lines.map((l) => ({
       id: l.id,
       sku: l.sku,
@@ -698,6 +704,256 @@ function resolveAllowedReversalDate(value: string): Date {
     throw new ValidationError('A data da anulação deve ser a data actual em Africa/Maputo.');
   }
   return parseAccountingDate(currentDate);
+}
+
+const cancelInvoiceInput = z.object({
+  invoiceId: z.string().min(1, 'Factura inválida.'),
+  idempotencyKey: z.string().min(1, 'Chave de idempotência obrigatória.'),
+  cancellationReason: z.string(),
+  cancellationDate: z.string().min(1, 'Data do cancelamento obrigatória.'),
+});
+
+export type CancelInvoiceInput = z.input<typeof cancelInvoiceInput>;
+
+export interface CancelInvoiceResult {
+  id: string;
+  number: string;
+  cancellationDate: string;
+  stockReversalIds: string[];
+  accountingReversalId: string | null;
+}
+
+function invoiceCancellationFingerprint(companyId: string, invoiceId: string, cancellationDate: Date, cancellationReason: string): string {
+  return canonicalRequestFingerprint(FINGERPRINT_VERSION, {
+    companyId,
+    invoiceId,
+    cancellationDate: fpDate(cancellationDate),
+    cancellationReason,
+  });
+}
+
+function resolveAllowedCancellationDate(value: string): Date {
+  const requestedDate = parseAccountingDate(value);
+  const currentDate = civilDateInTimeZone();
+  if (formatAccountingDate(requestedDate) !== currentDate) {
+    throw new ValidationError('A data do cancelamento deve ser a data actual em Africa/Maputo.');
+  }
+  return parseAccountingDate(currentDate);
+}
+
+function legacyStockTraceabilityError(): ConflictError {
+  return new ConflictError('Esta factura foi criada antes da rastreabilidade necessária para cancelamento automático. Requer revisão administrativa.');
+}
+
+function sumLineQuantitiesByProduct(lines: Array<{ productId: string | null; quantity: number }>): Map<string, number> {
+  const totals = new Map<string, number>();
+  for (const line of lines) {
+    if (!line.productId) continue;
+    totals.set(line.productId, (totals.get(line.productId) ?? 0) + line.quantity);
+  }
+  return totals;
+}
+
+function sumMovementQuantitiesByProduct(movements: Array<{ productId: string; quantity: number }>): Map<string, number> {
+  const totals = new Map<string, number>();
+  for (const movement of movements) {
+    totals.set(movement.productId, (totals.get(movement.productId) ?? 0) + Math.abs(movement.quantity));
+  }
+  return totals;
+}
+
+async function loadCompletedInvoiceCancellation(tx: Prisma.TransactionClient, companyId: string, invoiceId: string, cancellationDate: Date): Promise<CancelInvoiceResult | null> {
+  const invoice = await tx.invoice.findFirst({ where: { companyId, id: invoiceId }, select: { id: true, number: true, status: true } });
+  if (!invoice) return null;
+  if (invoice.status !== 'CANCELLED') throw new ConflictError('Registo de idempotência aponta para uma factura não cancelada (integridade).');
+
+  const [originalMovements, originalEntry] = await Promise.all([
+    tx.stockMovement.findMany({ where: { companyId, invoiceId: invoice.id, type: 'OUT' }, select: { id: true } }),
+    tx.journalEntry.findFirst({ where: { companyId, sourceType: 'INVOICE', sourceId: invoice.id, accountingEvent: 'SALE_ISSUED' }, select: { id: true } }),
+  ]);
+  if (!originalEntry) throw new ConflictError('Registo de idempotência aponta para um cancelamento sem lançamento contabilístico original (integridade).');
+
+  const [stockReversals, accountingReversal] = await Promise.all([
+    originalMovements.length
+      ? tx.stockMovement.findMany({ where: { companyId, reversesId: { in: originalMovements.map((m) => m.id) } }, select: { id: true, reversesId: true } })
+      : Promise.resolve([]),
+    tx.journalEntry.findFirst({ where: { companyId, reversalOfId: originalEntry.id }, select: { id: true } }),
+  ]);
+  if (stockReversals.length !== originalMovements.length || !accountingReversal) {
+    throw new ConflictError('Registo de idempotência aponta para um cancelamento incompleto (integridade).');
+  }
+  return {
+    id: invoice.id,
+    number: invoice.number,
+    cancellationDate: formatAccountingDate(cancellationDate),
+    stockReversalIds: stockReversals.map((m) => m.id),
+    accountingReversalId: accountingReversal.id,
+  };
+}
+
+export async function cancelInvoice(db: PrismaClient, ctx: RequestContext, input: CancelInvoiceInput): Promise<CancelInvoiceResult> {
+  requirePermission(ctx, 'invoices.cancel');
+  const companyId = requireCompany(ctx);
+  const parsed = cancelInvoiceInput.safeParse(input);
+  if (!parsed.success) throw new ValidationError(parsed.error.issues[0]?.message ?? 'Dados inválidos.');
+  const data = parsed.data;
+  const cancellationReason = validateReversalReason(data.cancellationReason);
+  const cancellationDate = resolveAllowedCancellationDate(data.cancellationDate);
+  const requestFingerprint = invoiceCancellationFingerprint(companyId, data.invoiceId, cancellationDate, cancellationReason);
+
+  return db.$transaction(async (tx) => {
+    const op = await runIdempotentOperation<CancelInvoiceResult>(tx, ctx, {
+      scope: 'INVOICE_CANCEL',
+      idempotencyKey: data.idempotencyKey,
+      requestFingerprint,
+      expectedResourceType: 'Invoice',
+      loadExisting: (resourceId) => loadCompletedInvoiceCancellation(tx, companyId, resourceId, cancellationDate),
+      run: async () => {
+        await validateOpenReversalDateTx(tx, companyId, cancellationDate);
+        await tx.$queryRaw`SELECT id FROM invoices WHERE id = ${data.invoiceId} AND "companyId" = ${companyId} FOR UPDATE`;
+        const invoice = await tx.invoice.findFirst({ where: { companyId, id: data.invoiceId } });
+        if (!invoice) throw new NotFoundError('Factura não encontrada.');
+        if (invoice.status === 'CANCELLED') throw new ConflictError('Esta factura já foi cancelada.');
+
+        const activePayments = await tx.payment.findMany({
+          where: { companyId, invoiceId: invoice.id, status: 'ACTIVE' },
+          select: { id: true },
+        });
+        if (activePayments.length > 0) {
+          throw new ConflictError('Esta factura possui recebimentos activos. Anule primeiro os respectivos recibos.');
+        }
+        if (round2(Number(invoice.amountPaid)) !== 0) {
+          throw new ConflictError('Integridade: factura sem recebimentos activos mas com valor pago diferente de zero.');
+        }
+
+        await tx.$queryRaw`SELECT id FROM customers WHERE id = ${invoice.customerId} AND "companyId" = ${companyId} FOR UPDATE`;
+        const customer = await tx.customer.findFirst({ where: { companyId, id: invoice.customerId } });
+        if (!customer) throw new NotFoundError('Cliente da factura não encontrado.');
+
+        const [lines, stockMovements, originalEntry] = await Promise.all([
+          tx.invoiceLine.findMany({ where: { companyId, invoiceId: invoice.id }, select: { id: true, productId: true, quantity: true } }),
+          tx.stockMovement.findMany({ where: { companyId, invoiceId: invoice.id, type: 'OUT' }, orderBy: { createdAt: 'asc' } }),
+          tx.journalEntry.findFirst({ where: { companyId, sourceType: 'INVOICE', sourceId: invoice.id, accountingEvent: 'SALE_ISSUED' }, select: { id: true } }),
+        ]);
+        if (!originalEntry) throw new NotFoundError('Lançamento contabilístico SALE_ISSUED da factura não encontrado.');
+
+        const lineQuantities = sumLineQuantitiesByProduct(lines);
+        const movementQuantities = sumMovementQuantitiesByProduct(stockMovements);
+        for (const [productId, quantity] of lineQuantities) {
+          if ((movementQuantities.get(productId) ?? 0) !== quantity) throw legacyStockTraceabilityError();
+        }
+        for (const movement of stockMovements) {
+          if (movement.quantity >= 0) throw new ConflictError('Integridade: movimento de stock da venda não é uma saída.');
+          if (!lineQuantities.has(movement.productId)) throw new ConflictError('Integridade: movimento de stock não corresponde às linhas da factura.');
+        }
+
+        const existingStockReversal = stockMovements.length
+          ? await tx.stockMovement.findFirst({ where: { companyId, reversesId: { in: stockMovements.map((m) => m.id) } }, select: { id: true } })
+          : null;
+        if (existingStockReversal) throw new ConflictError('Esta factura já possui movimentos de stock compensatórios.');
+
+        for (const movement of stockMovements) {
+          await tx.$queryRaw`
+            SELECT id
+            FROM stock_levels
+            WHERE "companyId" = ${companyId}
+              AND "productId" = ${movement.productId}
+              AND "warehouseId" = ${movement.warehouseId}
+            FOR UPDATE
+          `;
+        }
+        const stockReversalIds: string[] = [];
+        for (const movement of stockMovements) {
+          const level = await tx.stockLevel.findUnique({ where: { productId_warehouseId: { productId: movement.productId, warehouseId: movement.warehouseId } } });
+          if (!level || level.companyId !== companyId) throw new ConflictError('Integridade: nível de stock da factura não encontrado.');
+          const quantity = Math.abs(movement.quantity);
+          const balanceAfter = level.quantity + quantity;
+          await tx.stockLevel.update({
+            where: { productId_warehouseId: { productId: movement.productId, warehouseId: movement.warehouseId } },
+            data: { quantity: balanceAfter },
+          });
+          const reversal = await tx.stockMovement.create({
+            data: {
+              companyId,
+              productId: movement.productId,
+              warehouseId: movement.warehouseId,
+              invoiceId: invoice.id,
+              reversesId: movement.id,
+              type: 'IN',
+              quantity,
+              balanceAfter,
+              document: invoice.number,
+              reason: `Cancelamento da factura ${invoice.number}`,
+              createdBy: ctx.userId,
+            },
+          });
+          stockReversalIds.push(reversal.id);
+        }
+
+        const total = round2(Number(invoice.total));
+        const customerBalanceBefore = round2(Number(customer.balance));
+        const updatedCustomer = await tx.customer.update({ where: { id: customer.id }, data: { balance: { decrement: total } } });
+        const customerBalanceAfter = round2(Number(updatedCustomer.balance));
+
+        const accountingReversal = await reverseAccountingEventTx(tx, ctx, {
+          origin: { sourceType: 'INVOICE', sourceId: invoice.id, accountingEvent: 'SALE_ISSUED' },
+          reversalDate: cancellationDate,
+          reason: cancellationReason,
+          operationalReference: invoice.number,
+        });
+
+        await tx.invoice.update({
+          where: { id: invoice.id },
+          data: {
+            status: 'CANCELLED',
+            cancelledAt: new Date(),
+            cancelledById: ctx.userId,
+            cancellationReason,
+          },
+        });
+
+        await writeAudit(tx, ctx, {
+          action: 'invoice.cancel',
+          entity: 'Invoice',
+          entityId: invoice.id,
+          oldValues: {
+            status: invoice.status,
+            amountPaid: Number(invoice.amountPaid),
+            customerBalance: customerBalanceBefore,
+          },
+          newValues: {
+            status: 'CANCELLED',
+            invoiceId: invoice.id,
+            invoiceNumber: invoice.number,
+            customerId: invoice.customerId,
+            total,
+            cancellationReason,
+            cancellationDate: formatAccountingDate(cancellationDate),
+            idempotencyKey: data.idempotencyKey,
+            customerBalanceBefore,
+            customerBalanceAfter,
+            stockMovementOriginalIds: stockMovements.map((m) => m.id),
+            stockMovementReversalIds: stockReversalIds,
+            journalEntryOriginalId: originalEntry.id,
+            journalEntryReversalId: accountingReversal.reversalId,
+          },
+        });
+
+        return {
+          resourceType: 'Invoice',
+          resourceId: invoice.id,
+          result: {
+            id: invoice.id,
+            number: invoice.number,
+            cancellationDate: formatAccountingDate(cancellationDate),
+            stockReversalIds,
+            accountingReversalId: accountingReversal.reversalId,
+          },
+        };
+      },
+    });
+    return op.result;
+  });
 }
 
 export async function reverseCustomerPayment(db: PrismaClient, ctx: RequestContext, input: ReverseCustomerPaymentInput): Promise<ReverseCustomerPaymentResult> {

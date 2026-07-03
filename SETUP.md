@@ -215,6 +215,12 @@ Testes da anulação ponta a ponta de recebimento de cliente (P0-03b):
 pnpm test:integration:accounting:reversal:customer-payment
 ```
 
+Testes do cancelamento ponta a ponta de factura (P0-03a):
+
+```bash
+pnpm test:integration:accounting:reversal:invoice
+```
+
 Build:
 
 ```bash

@@ -16,7 +16,8 @@
     "test:integration:c2": "vitest run --config vitest.integration.config.ts accounting.c2.integration",
     "test:integration:c2a": "vitest run --config vitest.integration.config.ts accounting.c2a.integration",
     "test:integration:c3": "vitest run --config vitest.integration.config.ts accounting.c3.integration",
-    "test:integration:customer-payment-reversal": "vitest run --config vitest.integration.config.ts accounting.customer-payment-reversal.integration"
+    "test:integration:customer-payment-reversal": "vitest run --config vitest.integration.config.ts accounting.customer-payment-reversal.integration",
+    "test:integration:invoice-cancellation": "vitest run --config vitest.integration.config.ts accounting.invoice-cancellation.integration"
   },
   "dependencies": {
     "@ants/database": "workspace:*",
