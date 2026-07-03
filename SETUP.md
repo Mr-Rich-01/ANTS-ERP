@@ -55,6 +55,7 @@ DEFAULT_CURRENCY=MZN
 DEFAULT_TIMEZONE=Africa/Maputo
 DOMAIN=erp.example.test
 BUILD_STANDALONE=
+PORT=3000
 ```
 
 Há nomes reservados para fases futuras ou deploy (`STORAGE_*`, `SMTP_*`).
@@ -275,3 +276,21 @@ Para um ambiente Linux/Docker reproduzível, garantir:
 `node:20-bookworm-slim` sem OpenSSL não deve ser usado como base final: o build
 pode terminar com exit code 0, mas o Prisma regista erros de engine/libssl
 durante a recolha de dados ou em runtime.
+
+### Imagens Docker de produção
+
+A P0-04 fornece Dockerfiles multi-stage para web e worker:
+
+```bash
+pnpm docker:build:web
+pnpm docker:build:worker
+pnpm docker:build
+pnpm docker:production:build
+```
+
+As imagens não copiam `.env`, não executam seed e não aplicam migrations no arranque.
+Para produção, executar migrations explicitamente:
+
+```bash
+docker compose -f docker-compose.production.yml --profile migration run --rm migrate
+```

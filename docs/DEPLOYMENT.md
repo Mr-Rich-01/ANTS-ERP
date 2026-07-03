@@ -1,6 +1,6 @@
 # DEPLOYMENT — ANTS ERP
 
-_Última actualização: 2026-06-26_
+_Última actualização: 2026-07-04_
 
 Alvo: **VPS Hostinger · Ubuntu Server · Docker Compose · Cloudflare**.
 Arquitectura: **monólito Next.js** + worker. O deploy real é executado na Fase 12.
@@ -55,17 +55,86 @@ monólito), `worker`, `postgres`, `redis`.
 - Migrações: `prisma migrate deploy` executado antes de subir a nova versão da `web`.
 - Logs estruturados + rotação. Seed **nunca** em produção.
 
-## 7. Publicação (deploy)
+## 7. Imagens Docker de produção
+
+A P0-04 cria imagens multi-stage para os serviços executáveis reais:
+
+- `apps/web/Dockerfile`: Next.js 14 em `output: "standalone"`, activado no build por
+  `BUILD_STANDALONE=1`, runtime com `node apps/web/server.js`.
+- `apps/worker/Dockerfile`: worker BullMQ compilado por `tsc`, runtime com `node dist/main.js`.
+- `apps/web/Dockerfile` também expõe o target `migrator`, usado apenas para o comando explícito
+  `prisma migrate deploy`.
+
+Build local das imagens:
+
+```bash
+pnpm docker:build:web
+pnpm docker:build:worker
+pnpm docker:build
+```
+
+Build via Compose de produção:
+
+```bash
+pnpm docker:production:build
+```
+
+As imagens usam Node 20 Debian slim com OpenSSL instalado, pnpm 9.12.0 via Corepack,
+lockfile congelado, Prisma Client gerado no build e utilizador não-root no runtime.
+`.env`, `.env.*`, `.git`, `node_modules`, caches, testes, logs, uploads locais e backups são
+excluídos pelo `.dockerignore`.
+
+## 8. Variáveis de ambiente obrigatórias
+
+Para `web`:
+
+```env
+NODE_ENV=production
+APP_URL=https://erp.exemplo.co.mz
+AUTH_URL=https://erp.exemplo.co.mz
+AUTH_SECRET=<segredo forte>
+DATABASE_URL=postgresql://USER:PASSWORD@postgres:5432/DATABASE?schema=public
+REDIS_URL=redis://redis:6379
+PORT=3000
+```
+
+Para `worker`:
+
+```env
+NODE_ENV=production
+DATABASE_URL=postgresql://USER:PASSWORD@postgres:5432/DATABASE?schema=public
+REDIS_URL=redis://redis:6379
+```
+
+Para infraestrutura Compose:
+
+```env
+DOMAIN=erp.exemplo.co.mz
+POSTGRES_USER=<utilizador>
+POSTGRES_PASSWORD=<password forte>
+POSTGRES_DB=<base_de_dados>
+```
+
+Nunca usar credenciais demo, `.env` local, seed de demonstração ou connection strings privadas
+em documentação, commits ou imagem.
+
+## 9. Migrations e arranque
+
+As migrations não correm automaticamente no arranque de `web` ou `worker`. Executar de forma
+explícita antes de subir a nova versão:
+
+```bash
+docker compose -f docker-compose.production.yml --profile migration run --rm migrate
+```
+
+O seed de demonstração nunca deve ser executado em produção.
+
+## 10. Publicação (deploy)
 
 ```bash
 git pull
-docker compose -f docker-compose.production.yml build
-docker compose -f docker-compose.production.yml run --rm web pnpm db:migrate:deploy
+pnpm docker:production:build
+docker compose -f docker-compose.production.yml --profile migration run --rm migrate
 docker compose -f docker-compose.production.yml up -d
 docker compose -f docker-compose.production.yml ps
 ```
-
-## 8. Build de imagens (a criar na Fase 12)
-
-Dockerfiles multi-stage: `apps/web/Dockerfile` (Next.js standalone) e
-`apps/worker/Dockerfile` (Node slim).

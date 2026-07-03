@@ -16,6 +16,7 @@
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\"",
     "db:generate": "pnpm --filter @ants/database generate",
     "db:migrate": "pnpm --filter @ants/database migrate:dev",
+    "db:migrate:deploy": "pnpm --filter @ants/database migrate:deploy",
     "db:seed": "pnpm --filter @ants/database seed",
     "test:integration:accounting": "pnpm --filter @ants/domain test:integration",
     "test:integration:accounting:c1": "pnpm --filter @ants/domain test:integration:c1",
@@ -29,7 +30,11 @@
     "test:integration:accounting:reversal:treasury-transfer": "pnpm --filter @ants/domain test:integration:treasury-transfer-reversal",
     "test:integration:accounting:reversal:uat": "pnpm --filter @ants/domain test:integration:reversals-uat",
     "test:integration:accounting:reversal:all": "pnpm --filter @ants/domain test:integration:reversal-all",
-    "docker:dev": "docker compose up -d postgres redis"
+    "docker:dev": "docker compose up -d postgres redis",
+    "docker:build:web": "docker build -f apps/web/Dockerfile -t ants-erp-web:local .",
+    "docker:build:worker": "docker build -f apps/worker/Dockerfile -t ants-erp-worker:local .",
+    "docker:build": "pnpm docker:build:web && pnpm docker:build:worker",
+    "docker:production:build": "docker compose -f docker-compose.production.yml build"
   },
   "devDependencies": {
     "eslint": "^9.11.1",

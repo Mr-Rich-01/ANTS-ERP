@@ -1,13 +1,13 @@
 # MODULE_STATUS — ANTS ERP
 
-_Última actualização: 2026-07-03_
+_Última actualização: 2026-07-04_
 
 Estado vivo do projecto. O conhecimento permanente (arquitectura, regras, comandos) está
 em [`CLAUDE.md`](CLAUDE.md).
 
-**Último commit funcional:** este commit (`test(accounting): finalize reversal regression and UAT docs`)
-**Fase concluída:** `P0-03f — regressão integrada, UAT e documentação final dos estornos`
-**Próximo passo:** `P0-04 — Dockerfiles e preparação da imagem de produção` _(não iniciado)_
+**Último commit funcional:** este commit (`chore(infra): preparar imagens Docker de produção`)
+**Fase concluída:** `P0-04 — Dockerfiles e preparação da imagem de produção`
+**Próximo passo:** definir e autorizar a fase seguinte _(não iniciado)_
 
 ---
 
@@ -36,14 +36,25 @@ em [`CLAUDE.md`](CLAUDE.md).
 | **P0-03d** | **Estorno integral de recepção de compra** (`PurchaseReceipt`→`PurchaseOrder`/`Supplier`/Stock/Custo médio/Contabilidade/Auditoria, recepção original `ESTORNADA`) | ✅ |
 | **P0-03e** | **Estorno atómico de transferência entre contas** (`TreasuryMovement` OUT/IN→dois compensatórios, duas contas, idempotência e auditoria lógica única) | ✅ |
 | **P0-03f** | **Regressão integrada, UAT e documentação final dos estornos** (suite UAT, agregado de reversões, documentação operacional, limitações V1) | ✅ |
-| **P0-04** | **Dockerfiles e preparação da imagem de produção** | 🗺️ **a seguir** |
+| **P0-04** | **Dockerfiles e preparação da imagem de produção** | ✅ |
 | 9 | RH & Salários | 🗺️ futuro |
 | X | RLS forçado em toda a BD (fase transversal, pré-produção) | 🗺️ futuro |
 
 **Validações actuais:** typecheck 6/6 · lint 6/6 · **testes unitários 73** · **integração de
 contabilidade 189/189** (8b 32 + 8c.1 30 + 8c.2a 18 + 8c.2b 34 + 8c.3 17 + P0-02 5 + P0-03.0 9 + P0-03b 10 + P0-03a 9 + P0-03c 7 + P0-03d 8 + P0-03e 6 + P0-03f 4;
 `pnpm test:integration:accounting`, sub: `…:c1`, `…:c2a`, `…:c2`, `…:c3`, `…:reversal:customer-payment`, `…:reversal:invoice`, `…:reversal:supplier-payment`, `…:reversal:purchase-receipt`, `…:reversal:treasury-transfer`, `…:reversal:uat`, `…:reversal:all`) · `prisma validate` OK · `prisma migrate status` OK · `pnpm build` OK
-em Windows nativo (28/28 páginas) e Docker Linux com Node 20 + OpenSSL · seed idempotente (2×).
+em Windows nativo (28/28 páginas) e Docker Linux com Node 20 + OpenSSL · imagens Docker de produção
+`web`, `worker` e target `migrate` OK · seed idempotente (2×).
+
+**P0-04 (2026-07-04):** criada a preparação de imagem de produção sem alterações funcionais:
+Dockerfile multi-stage da web em `apps/web/Dockerfile` com Next standalone activado por
+`BUILD_STANDALONE=1`, OpenSSL, Prisma Client gerado no build, runtime `node apps/web/server.js` e
+utilizador não-root; Dockerfile do worker em `apps/worker/Dockerfile` com build `tsc`, `pnpm deploy
+--prod` e runtime `node dist/main.js`; `.dockerignore` bloqueia `.env`, `.env.*`, `.git`,
+`node_modules`, caches, builds, testes/artefactos, uploads e backups locais. `docker-compose.production.yml`
+ganhou o serviço explícito `migrate` em profile `migration`; migrations não correm automaticamente no
+arranque e o seed demo continua proibido em produção. Documentação e scripts de build Docker foram
+actualizados em `docs/DEPLOYMENT.md`, `SETUP.md`, `.env.example` e `package.json`.
 
 **Hardening pré-produção P0-01 (2026-07-02):** seed demo bloqueado em `production`
 antes de criar o Prisma Client; credenciais demo removidas da interface de
@@ -137,6 +148,13 @@ final em `docs/reversals-uat.md`, incluindo ordem recomendada, tabela de
 permissões, limitações V1, checklist UAT manual e suporte/rollback. P0-03 fica
 concluído. Próxima fase: `P0-04 — Dockerfiles e preparação da imagem de produção`
 (não iniciar sem validação limpa e autorização explícita).
+
+**P0-04 (2026-07-04):** concluída a preparação Docker de produção sem deploy: imagens web/worker
+multi-stage, target explícito de migrations, `.dockerignore`, scripts e documentação de variáveis,
+build e operação. Validações executadas: `pnpm typecheck`, `pnpm lint`, `pnpm test`, `pnpm build`,
+`pnpm docker:build:web`, `pnpm docker:build:worker`, `pnpm docker:production:build`, build do
+serviço `migrate` com profile `migration`, verificação de runtime não-root e ausência de `.env` nas
+imagens.
 
 **Commit da 8c.3:** este commit exclusivo, `feat(accounting): integrate purchase receipts and supplier payments`.
 
@@ -513,7 +531,7 @@ db:generate` e `pnpm build`.
     estornos, com suite `pnpm test:integration:accounting:reversal:uat`, agregado
     `pnpm test:integration:accounting:reversal:all` e documentação
     `docs/reversals-uat.md`.
-  - **P0-04** próximo passo: Dockerfiles e preparação da imagem de produção.
+  - **P0-04** _(✅ concluída)_: Dockerfiles e preparação da imagem de produção.
     Diferidos: COGS, backfill (dry-run) e ecrãs contabilísticos finais.
 - **8d — Ecrãs**: plano de contas, diários, novo lançamento, detalhe, razão geral, balancete,
   extracto diário (linha a linha) + configuração contabilística (mapping de `systemKeys`).
