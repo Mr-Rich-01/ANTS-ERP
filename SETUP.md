@@ -182,8 +182,8 @@ Testes contabilísticos agregados:
 pnpm test:integration:accounting
 ```
 
-Este comando executa as suites contabilísticas de integração existentes
-(8b, 8c.1, 8c.2a, 8c.2b e 8c.3).
+Este comando executa as suites contabilísticas de integração existentes,
+incluindo as suites 8b, 8c.1, 8c.2a, 8c.2b, 8c.3 e reversões P0-03.
 
 Testes contabilísticos da 8c.1:
 
@@ -237,6 +237,18 @@ Testes do estorno atómico de transferência entre contas (P0-03e):
 
 ```bash
 pnpm test:integration:accounting:reversal:treasury-transfer
+```
+
+Testes integrados UAT dos estornos (P0-03f):
+
+```bash
+pnpm test:integration:accounting:reversal:uat
+```
+
+Agregado de todas as suites de reversões:
+
+```bash
+pnpm test:integration:accounting:reversal:all
 ```
 
 Build:

@@ -28,9 +28,9 @@ pnpm + Turborepo:
 Módulos já implementados: Auth/RBAC/Admin, Clientes, Fornecedores, Produtos &
 Stock, Vendas/Facturação, Compras, Tesouraria & Bancos, Hardening da
 Tesouraria, Contabilidade 8a, 8b, 8c.1, 8c.2a, 8c.2b, 8c.3 e
-P0-03.0, P0-03b, P0-03a, P0-03c, P0-03d e P0-03e.
+P0-03 completo (P0-03.0, P0-03a, P0-03b, P0-03c, P0-03d, P0-03e e P0-03f).
 
-Estado actual da Contabilidade: P0-03.0, P0-03b, P0-03a, P0-03c, P0-03d e P0-03e concluídas. A base de
+Estado actual da Contabilidade: P0-03 completo. A base de
 reversões está activa; recebimentos de clientes podem ser anulados, facturas sem
 recebimentos activos podem ser canceladas e pagamentos a fornecedores podem ser
 estornados ponta a ponta com reversão atómica de `Supplier`, `PurchaseOrder`,
@@ -38,9 +38,9 @@ Tesouraria, contabilidade e auditoria. Recepções de compra podem ser estornada
 ponta a ponta com reversão atómica de `PurchaseOrder`, `Supplier`, Stock, custo
 médio, contabilidade e auditoria. Transferências entre contas de Tesouraria podem
 ser estornadas atomicamente, revertendo as duas pernas e as duas contas em
-conjunto. A próxima subfase é P0-03f ou a
-subfase exacta definida em `MODULE_STATUS.md`. Não iniciar a fase seguinte
-automaticamente.
+conjunto. A regressão integrada/UAT e a documentação final dos estornos foram
+criadas na P0-03f. A próxima fase é P0-04 — Dockerfiles e preparação de imagem
+de produção, mas não deve ser iniciada sem validação limpa e autorização explícita.
 
 ## Arquitectura Obrigatória
 
@@ -182,6 +182,8 @@ pnpm test:integration:accounting:reversal:invoice
 pnpm test:integration:accounting:reversal:supplier-payment
 pnpm test:integration:accounting:reversal:purchase-receipt
 pnpm test:integration:accounting:reversal:treasury-transfer
+pnpm test:integration:accounting:reversal:uat
+pnpm test:integration:accounting:reversal:all
 pnpm build
 ```
 
@@ -197,6 +199,8 @@ Testes de integração contabilísticos:
 - P0-03c: `pnpm test:integration:accounting:reversal:supplier-payment`
 - P0-03d: `pnpm test:integration:accounting:reversal:purchase-receipt`
 - P0-03e: `pnpm test:integration:accounting:reversal:treasury-transfer`
+- P0-03f: `pnpm test:integration:accounting:reversal:uat`
+- P0-03 agregado: `pnpm test:integration:accounting:reversal:all`
 
 ## Credenciais de Teste Versionadas
 
@@ -222,8 +226,11 @@ passwords não demonstrativas.
 - P0-03c concluída.
 - P0-03d concluída.
 - P0-03e concluída.
+- P0-03f concluída.
+- P0-03 completo.
 - Commit base funcional antes da P0-03.0: `a1d608b`.
-- Próxima fase: P0-03f ou subfase seguinte, conforme detalhe em `MODULE_STATUS.md`.
+- Próxima fase: P0-04 — Dockerfiles e preparação da imagem de produção.
+- Não iniciar P0-04 sem validação limpa e autorização explícita.
 - `MODULE_STATUS.md` é a fonte principal para progresso e próximos passos.
 - `CLAUDE.md` deve ser preservado.
 - Quando `AGENTS.md` e `CLAUDE.md` divergirem, apresentar a divergência antes
