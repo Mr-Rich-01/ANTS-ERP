@@ -1,14 +1,14 @@
 import { z } from 'zod';
 import type { Prisma, PrismaClient } from '@ants/database';
-import { computeDocumentTotals, round2 } from '@ants/shared';
+import { civilDateInTimeZone, computeDocumentTotals, round2 } from '@ants/shared';
 import type { RequestContext } from './context';
 import { requireCompany } from './context';
 import { requirePermission } from './permissions';
 import { ConflictError, NotFoundError, ValidationError } from './errors';
 import { writeAudit } from './audit';
-import { postTreasuryMovementTx } from './treasury';
-import { getMappedAccountTx, type AccountingJournalType } from './accounting';
-import { postAccountingEventTx, resolveTreasuryLedgerTx } from './accounting-events';
+import { postTreasuryMovementTx, reverseOperationalTreasuryMovementTx } from './treasury';
+import { formatAccountingDate, getMappedAccountTx, parseAccountingDate, type AccountingJournalType } from './accounting';
+import { postAccountingEventTx, resolveTreasuryLedgerTx, reverseAccountingEventTx } from './accounting-events';
 import {
   FINGERPRINT_VERSION,
   canonicalRequestFingerprint,
@@ -17,6 +17,7 @@ import {
   fpInt,
   runIdempotentOperation,
 } from './operation-idempotency';
+import { validateOpenReversalDateTx, validateReversalReason } from './reversals';
 
 export type PurchaseStatus = 'DRAFT' | 'SENT' | 'PARTIAL' | 'RECEIVED' | 'CANCELLED';
 
@@ -42,6 +43,22 @@ export interface PurchaseLineItem {
   total: number;
 }
 
+export interface SupplierPaymentItem {
+  id: string;
+  number: string;
+  purchaseOrderId: string | null;
+  purchaseOrderNumber: string | null;
+  amount: number;
+  method: 'CASH' | 'MPESA' | 'EMOLA' | 'CARD' | 'TRANSFER';
+  paidAt: Date;
+  status: 'ACTIVE' | 'REVERSED';
+  reversedAt: Date | null;
+  reversedById: string | null;
+  reversalReason: string | null;
+  treasuryAccountId: string | null;
+  treasuryAccountName: string | null;
+}
+
 export interface PurchaseDetail {
   id: string;
   number: string;
@@ -60,6 +77,7 @@ export interface PurchaseDetail {
   outstanding: number;
   notes: string | null;
   lines: PurchaseLineItem[];
+  payments: SupplierPaymentItem[];
 }
 
 export interface PurchaseKpis {
@@ -124,11 +142,23 @@ export async function getPurchaseOrder(db: PrismaClient, ctx: RequestContext, id
   requireCompany(ctx);
   const o = await db.purchaseOrder.findFirst({
     where: { id },
-    include: { lines: { orderBy: { id: 'asc' } }, warehouse: { select: { name: true } } },
+    include: {
+      lines: { orderBy: { id: 'asc' } },
+      payments: { orderBy: { paidAt: 'asc' } },
+      warehouse: { select: { name: true } },
+    },
   });
   if (!o) throw new NotFoundError('Ordem de compra não encontrada.');
   const total = Number(o.total);
   const amountPaid = Number(o.amountPaid);
+  const paymentIds = o.payments.map((p) => p.id);
+  const paymentMovements = paymentIds.length
+    ? await db.treasuryMovement.findMany({
+        where: { sourceType: 'SUPPLIER_PAYMENT', sourceId: { in: paymentIds }, movementPurpose: 'SUPPLIER_PAYMENT_OUT' },
+        include: { account: { select: { id: true, name: true } } },
+      })
+    : [];
+  const movementByPayment = new Map(paymentMovements.map((m) => [m.sourceId, m]));
   return {
     id: o.id,
     number: o.number,
@@ -156,7 +186,57 @@ export async function getPurchaseOrder(db: PrismaClient, ctx: RequestContext, id
       taxRate: Number(l.taxRate),
       total: Number(l.total),
     })),
+    payments: o.payments.map((p) => ({
+      id: p.id,
+      number: p.number,
+      purchaseOrderId: p.purchaseOrderId,
+      purchaseOrderNumber: o.number,
+      amount: Number(p.amount),
+      method: p.method as SupplierPaymentItem['method'],
+      paidAt: p.paidAt,
+      status: p.status as SupplierPaymentItem['status'],
+      reversedAt: p.reversedAt,
+      reversedById: p.reversedById,
+      reversalReason: p.reversalReason,
+      treasuryAccountId: movementByPayment.get(p.id)?.account.id ?? null,
+      treasuryAccountName: movementByPayment.get(p.id)?.account.name ?? null,
+    })),
   };
+}
+
+export async function listSupplierPayments(db: PrismaClient, ctx: RequestContext, supplierId: string): Promise<SupplierPaymentItem[]> {
+  requirePermission(ctx, 'suppliers.view');
+  const companyId = requireCompany(ctx);
+  const supplier = await db.supplier.findFirst({ where: { companyId, id: supplierId }, select: { id: true } });
+  if (!supplier) throw new NotFoundError('Fornecedor não encontrado.');
+  const payments = await db.supplierPayment.findMany({
+    where: { companyId, supplierId },
+    orderBy: [{ paidAt: 'desc' }, { createdAt: 'desc' }],
+    include: { purchaseOrder: { select: { id: true, number: true } } },
+  });
+  const paymentIds = payments.map((p) => p.id);
+  const paymentMovements = paymentIds.length
+    ? await db.treasuryMovement.findMany({
+        where: { companyId, sourceType: 'SUPPLIER_PAYMENT', sourceId: { in: paymentIds }, movementPurpose: 'SUPPLIER_PAYMENT_OUT' },
+        include: { account: { select: { id: true, name: true } } },
+      })
+    : [];
+  const movementByPayment = new Map(paymentMovements.map((m) => [m.sourceId, m]));
+  return payments.map((p) => ({
+    id: p.id,
+    number: p.number,
+    purchaseOrderId: p.purchaseOrderId,
+    purchaseOrderNumber: p.purchaseOrder?.number ?? null,
+    amount: Number(p.amount),
+    method: p.method as SupplierPaymentItem['method'],
+    paidAt: p.paidAt,
+    status: p.status as SupplierPaymentItem['status'],
+    reversedAt: p.reversedAt,
+    reversedById: p.reversedById,
+    reversalReason: p.reversalReason,
+    treasuryAccountId: movementByPayment.get(p.id)?.account.id ?? null,
+    treasuryAccountName: movementByPayment.get(p.id)?.account.name ?? null,
+  }));
 }
 
 export async function purchaseKpis(db: PrismaClient, ctx: RequestContext): Promise<PurchaseKpis> {
@@ -180,7 +260,7 @@ export async function getSupplierStatement(db: PrismaClient, ctx: RequestContext
 
   const [orders, payments] = await Promise.all([
     db.purchaseOrder.findMany({ where: { supplierId, status: { not: 'CANCELLED' }, receivedValue: { gt: 0 } }, select: { number: true, orderDate: true, receivedValue: true } }),
-    db.supplierPayment.findMany({ where: { supplierId }, select: { number: true, paidAt: true, amount: true } }),
+    db.supplierPayment.findMany({ where: { supplierId, status: 'ACTIVE' }, select: { number: true, paidAt: true, amount: true } }),
   ]);
 
   type Ev = { date: Date; doc: string; description: string; debit: number; credit: number };
@@ -338,6 +418,14 @@ function journalTypeForTreasury(type: 'CASH' | 'BANK' | 'MOBILE' | 'OTHER'): Acc
  * Recebe quantidades de uma OC: dá entrada de stock (IN), recalcula o custo médio
  * ponderado, incrementa a conta a pagar do fornecedor e actualiza o estado da OC.
  */
+function purchaseStatusFromLines(lines: Array<{ quantity: number; receivedQty: number }>, fallback: PurchaseStatus): PurchaseStatus {
+  if (fallback === 'CANCELLED') return 'CANCELLED';
+  if (lines.length === 0) return fallback;
+  if (lines.every(lineStatusFully)) return 'RECEIVED';
+  if (lines.some((l) => l.receivedQty > 0)) return 'PARTIAL';
+  return 'SENT';
+}
+
 export async function receivePurchaseOrder(
   db: PrismaClient,
   ctx: RequestContext,
@@ -676,6 +764,203 @@ export async function createSupplierPayment(db: PrismaClient, ctx: RequestContex
         });
 
         return { resourceType: 'SupplierPayment', resourceId: payment.id, result: { id: payment.id, number } };
+      },
+    });
+    return op.result;
+  });
+}
+
+const reverseSupplierPaymentInput = z.object({
+  supplierPaymentId: z.string().min(1, 'Pagamento a fornecedor invÃ¡lido.'),
+  idempotencyKey: z.string().min(1, 'Chave de idempotÃªncia obrigatÃ³ria.'),
+  reversalReason: z.string(),
+  reversalDate: z.string().min(1, 'Data do estorno obrigatÃ³ria.'),
+});
+
+export type ReverseSupplierPaymentInput = z.input<typeof reverseSupplierPaymentInput>;
+
+export interface ReverseSupplierPaymentResult {
+  id: string;
+  number: string;
+  reversalDate: string;
+  treasuryReversalId: string | null;
+  accountingReversalId: string | null;
+}
+
+function supplierPaymentReversalFingerprint(companyId: string, supplierPaymentId: string, reversalDate: Date, reversalReason: string): string {
+  return canonicalRequestFingerprint(FINGERPRINT_VERSION, {
+    companyId,
+    supplierPaymentId,
+    reversalDate: fpDate(reversalDate),
+    reversalReason,
+  });
+}
+
+function resolveAllowedSupplierPaymentReversalDate(value: string): Date {
+  const requestedDate = parseAccountingDate(value);
+  const currentDate = civilDateInTimeZone();
+  if (formatAccountingDate(requestedDate) !== currentDate) {
+    throw new ValidationError('A data do estorno deve ser a data actual em Africa/Maputo.');
+  }
+  return parseAccountingDate(currentDate);
+}
+
+export async function reverseSupplierPayment(db: PrismaClient, ctx: RequestContext, input: ReverseSupplierPaymentInput): Promise<ReverseSupplierPaymentResult> {
+  requirePermission(ctx, 'supplierPayments.reverse');
+  const companyId = requireCompany(ctx);
+  const parsed = reverseSupplierPaymentInput.safeParse(input);
+  if (!parsed.success) throw new ValidationError(parsed.error.issues[0]?.message ?? 'Dados invÃ¡lidos.');
+  const data = parsed.data;
+  const reversalReason = validateReversalReason(data.reversalReason);
+  const reversalDate = resolveAllowedSupplierPaymentReversalDate(data.reversalDate);
+  const requestFingerprint = supplierPaymentReversalFingerprint(companyId, data.supplierPaymentId, reversalDate, reversalReason);
+
+  return db.$transaction(async (tx) => {
+    const op = await runIdempotentOperation<ReverseSupplierPaymentResult>(tx, ctx, {
+      scope: 'SUPPLIER_PAYMENT_REVERSE',
+      idempotencyKey: data.idempotencyKey,
+      requestFingerprint,
+      expectedResourceType: 'SupplierPayment',
+      loadExisting: async (resourceId) => {
+        const payment = await tx.supplierPayment.findFirst({ where: { companyId, id: resourceId }, select: { id: true, number: true, status: true } });
+        if (!payment) return null;
+        if (payment.status !== 'REVERSED') throw new ConflictError('Registo de idempotÃªncia aponta para um pagamento a fornecedor ainda activo (integridade).');
+        const [originalMovement, originalEntry] = await Promise.all([
+          tx.treasuryMovement.findFirst({ where: { companyId, sourceType: 'SUPPLIER_PAYMENT', sourceId: payment.id, movementPurpose: 'SUPPLIER_PAYMENT_OUT' }, select: { id: true } }),
+          tx.journalEntry.findFirst({ where: { companyId, sourceType: 'SUPPLIER_PAYMENT', sourceId: payment.id, accountingEvent: 'SUPPLIER_PAYMENT_POSTED' }, select: { id: true } }),
+        ]);
+        if (!originalMovement || !originalEntry) throw new ConflictError('Registo de idempotÃªncia aponta para um estorno incompleto (integridade).');
+        const [treasuryReversal, accountingReversal] = await Promise.all([
+          tx.treasuryMovement.findFirst({ where: { companyId, reversesId: originalMovement.id }, select: { id: true } }),
+          tx.journalEntry.findFirst({ where: { companyId, reversalOfId: originalEntry.id }, select: { id: true } }),
+        ]);
+        if (!treasuryReversal || !accountingReversal) throw new ConflictError('Registo de idempotÃªncia aponta para um estorno incompleto (integridade).');
+        return { id: payment.id, number: payment.number, reversalDate: formatAccountingDate(reversalDate), treasuryReversalId: treasuryReversal.id, accountingReversalId: accountingReversal.id };
+      },
+      run: async () => {
+        await validateOpenReversalDateTx(tx, companyId, reversalDate);
+        await tx.$queryRaw`SELECT id FROM supplier_payments WHERE id = ${data.supplierPaymentId} AND "companyId" = ${companyId} FOR UPDATE`;
+        const payment = await tx.supplierPayment.findFirst({ where: { companyId, id: data.supplierPaymentId } });
+        if (!payment) throw new NotFoundError('Pagamento a fornecedor nÃ£o encontrado.');
+        if (payment.status === 'REVERSED') throw new ConflictError('Este pagamento a fornecedor já foi estornado.');
+
+        await tx.$queryRaw`SELECT id FROM suppliers WHERE id = ${payment.supplierId} AND "companyId" = ${companyId} FOR UPDATE`;
+        const supplier = await tx.supplier.findFirst({ where: { companyId, id: payment.supplierId } });
+        if (!supplier) throw new NotFoundError('Fornecedor do pagamento nÃ£o encontrado.');
+
+        let order: { id: string; number: string; supplierId: string; amountPaid: Prisma.Decimal; receivedValue: Prisma.Decimal; status: string } | null = null;
+        let orderAmountPaidBefore: number | null = null;
+        let orderAmountPaidAfter: number | null = null;
+        let orderStatusAfter: PurchaseStatus | null = null;
+        if (payment.purchaseOrderId) {
+          await tx.$queryRaw`SELECT id FROM purchase_orders WHERE id = ${payment.purchaseOrderId} AND "companyId" = ${companyId} FOR UPDATE`;
+          order = await tx.purchaseOrder.findFirst({ where: { companyId, id: payment.purchaseOrderId }, select: { id: true, number: true, supplierId: true, amountPaid: true, receivedValue: true, status: true } });
+          if (!order) throw new NotFoundError('Ordem de compra do pagamento nÃ£o encontrada.');
+          if (order.status === 'CANCELLED') throw new ConflictError('A ordem de compra do pagamento estÃ¡ cancelada.');
+          if (order.supplierId !== supplier.id) throw new ConflictError('Pagamento e ordem de compra apontam para fornecedores diferentes (integridade).');
+
+          const activePaidBefore = round2(Number((await tx.supplierPayment.aggregate({ where: { companyId, purchaseOrderId: order.id, status: 'ACTIVE' }, _sum: { amount: true } }))._sum.amount ?? 0));
+          orderAmountPaidBefore = round2(Number(order.amountPaid));
+          if (activePaidBefore !== orderAmountPaidBefore) {
+            throw new ConflictError('Integridade: valor pago da ordem nÃ£o coincide com os pagamentos activos.');
+          }
+        }
+
+        const movements = await tx.treasuryMovement.findMany({ where: { companyId, sourceType: 'SUPPLIER_PAYMENT', sourceId: payment.id, movementPurpose: 'SUPPLIER_PAYMENT_OUT' } });
+        if (movements.length !== 1) throw new ConflictError('Integridade: pagamento a fornecedor sem movimento de tesouraria Ãºnico.');
+        const originalMovement = movements[0]!;
+        if (originalMovement.flow !== 'OUT' || round2(Number(originalMovement.amount)) !== round2(Number(payment.amount))) {
+          throw new ConflictError('Integridade: movimento de tesouraria nÃ£o coincide com o pagamento a fornecedor.');
+        }
+
+        const entries = await tx.journalEntry.findMany({ where: { companyId, sourceType: 'SUPPLIER_PAYMENT', sourceId: payment.id, accountingEvent: 'SUPPLIER_PAYMENT_POSTED' } });
+        if (entries.length !== 1) throw new ConflictError('Integridade: pagamento a fornecedor sem lanÃ§amento contabilÃ­stico Ãºnico.');
+        const originalEntry = entries[0]!;
+
+        const amount = round2(Number(payment.amount));
+        const supplierBalanceBefore = round2(Number(supplier.balance));
+        await tx.supplierPayment.update({
+          where: { id: payment.id },
+          data: { status: 'REVERSED', reversedAt: new Date(), reversedById: ctx.userId, reversalReason },
+        });
+
+        const updatedSupplier = await tx.supplier.update({ where: { id: supplier.id }, data: { balance: { increment: amount } } });
+        const supplierBalanceAfter = round2(Number(updatedSupplier.balance));
+
+        if (order) {
+          const activePaidAfter = round2(Number((await tx.supplierPayment.aggregate({ where: { companyId, purchaseOrderId: order.id, status: 'ACTIVE' }, _sum: { amount: true } }))._sum.amount ?? 0));
+          if (activePaidAfter > round2(Number(order.receivedValue))) {
+            throw new ConflictError('Integridade: pagamentos activos excedem o valor recebido da ordem.');
+          }
+          const lines = await tx.purchaseOrderLine.findMany({ where: { companyId, orderId: order.id }, select: { quantity: true, receivedQty: true } });
+          orderStatusAfter = purchaseStatusFromLines(lines, order.status as PurchaseStatus);
+          await tx.purchaseOrder.update({ where: { id: order.id }, data: { amountPaid: activePaidAfter, status: orderStatusAfter } });
+          orderAmountPaidAfter = activePaidAfter;
+        }
+
+        const treasuryReversal = await reverseOperationalTreasuryMovementTx(tx, companyId, ctx.userId, {
+          movementId: originalMovement.id,
+          reason: reversalReason,
+          occurredAt: reversalDate,
+          expectedSourceType: 'SUPPLIER_PAYMENT',
+          expectedSourceId: payment.id,
+          expectedMovementPurpose: 'SUPPLIER_PAYMENT_OUT',
+          reversalPurpose: 'SUPPLIER_PAYMENT_OUT_REVERSAL',
+          description: `Estorno do pagamento ${payment.number} - ${reversalReason}`,
+        });
+
+        const accountingReversal = await reverseAccountingEventTx(tx, ctx, {
+          origin: { sourceType: 'SUPPLIER_PAYMENT', sourceId: payment.id, accountingEvent: 'SUPPLIER_PAYMENT_POSTED' },
+          reversalDate,
+          reason: reversalReason,
+          operationalReference: payment.number,
+        });
+
+        await writeAudit(tx, ctx, {
+          action: 'supplier.payment.reverse',
+          entity: 'SupplierPayment',
+          entityId: payment.id,
+          oldValues: {
+            status: payment.status,
+            supplierBalance: supplierBalanceBefore,
+            purchaseOrderAmountPaid: orderAmountPaidBefore,
+            purchaseOrderStatus: order?.status ?? null,
+          },
+          newValues: {
+            status: 'REVERSED',
+            supplierPaymentId: payment.id,
+            paymentNumber: payment.number,
+            supplierId: supplier.id,
+            purchaseOrderId: order?.id ?? null,
+            amount,
+            reversalReason,
+            reversalDate: formatAccountingDate(reversalDate),
+            idempotencyKey: data.idempotencyKey,
+            supplierBalanceBefore,
+            supplierBalanceAfter,
+            purchaseOrderAmountPaidBefore: orderAmountPaidBefore,
+            purchaseOrderAmountPaidAfter: orderAmountPaidAfter,
+            purchaseOrderStatusAfter: orderStatusAfter,
+            treasuryMovementOriginalId: originalMovement.id,
+            treasuryMovementReversalId: treasuryReversal.reversalId,
+            treasuryBalanceBefore: treasuryReversal.balanceBefore,
+            treasuryBalanceAfter: treasuryReversal.balanceAfter,
+            journalEntryOriginalId: originalEntry.id,
+            journalEntryReversalId: accountingReversal.reversalId,
+          },
+        });
+
+        return {
+          resourceType: 'SupplierPayment',
+          resourceId: payment.id,
+          result: {
+            id: payment.id,
+            number: payment.number,
+            reversalDate: formatAccountingDate(reversalDate),
+            treasuryReversalId: treasuryReversal.reversalId,
+            accountingReversalId: accountingReversal.reversalId,
+          },
+        };
       },
     });
     return op.result;

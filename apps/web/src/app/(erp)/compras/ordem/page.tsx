@@ -1,12 +1,14 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { forCompany } from '@ants/database';
+import { civilDateInTimeZone } from '@ants/shared';
 import { getPurchaseOrder, hasPermission, listAccounts, DomainError, type PurchaseStatus } from '@ants/domain';
 import { getContext } from '@/lib/session';
 import { Icon } from '@/components/Icon';
 import { ACCENT } from '@/lib/erp-nav';
 import { fmt } from '@/lib/format';
 import { SupplierPaymentDialog } from '@/components/compras/SupplierPaymentDialog';
+import { SupplierPaymentReversalDialog } from '@/components/compras/SupplierPaymentReversalDialog';
 
 export const dynamic = 'force-dynamic';
 
@@ -53,6 +55,8 @@ export default async function OcDetalhePage({ searchParams }: { searchParams: { 
   const [statusLabel, statusColor, statusBg] = STATUS[oc.status];
   const canReceive = (oc.status === 'SENT' || oc.status === 'PARTIAL') && hasPermission(ctx, 'purchases.create');
   const canPay = oc.outstanding > 0 && hasPermission(ctx, 'purchases.create');
+  const canReverseSupplierPayment = hasPermission(ctx, 'supplierPayments.reverse');
+  const reversalDate = civilDateInTimeZone();
   const accounts = hasPermission(ctx, 'treasury.view') ? (await listAccounts(db, ctx)).filter((a) => a.status === 'ACTIVE').map((a) => ({ id: a.id, label: a.name })) : [];
 
   return (
@@ -176,6 +180,65 @@ export default async function OcDetalhePage({ searchParams }: { searchParams: { 
             </tfoot>
           </table>
         </div>
+      </div>
+
+      <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 16, overflow: 'hidden' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '15px 18px', borderBottom: '1px solid var(--bd-soft)' }}>
+          <span style={{ color: 'var(--accent-fg)', display: 'inline-flex' }}>
+            <Icon name="banknote" size={17} />
+          </span>
+          <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)' }}>Pagamentos</div>
+        </div>
+        {oc.payments.length === 0 ? (
+          <div style={{ padding: '18px', fontSize: 12.5, color: 'var(--text3)' }}>Sem pagamentos registados.</div>
+        ) : (
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
+              <thead>
+                <tr style={{ background: 'var(--card2)' }}>
+                  <th style={th}>Documento</th>
+                  <th style={th}>Data</th>
+                  <th style={th}>Conta</th>
+                  <th style={th}>Estado</th>
+                  <th style={{ ...th, textAlign: 'right' }}>Valor</th>
+                  <th style={{ ...th, textAlign: 'right' }}>Acções</th>
+                </tr>
+              </thead>
+              <tbody>
+                {oc.payments.map((p) => {
+                  const reversed = p.status === 'REVERSED';
+                  return (
+                    <tr key={p.id} className="ants-row" style={{ borderBottom: '1px solid var(--bd-soft2)', opacity: reversed ? 0.64 : 1 }}>
+                      <td style={{ padding: '11px 14px', fontSize: 13, fontWeight: 600, color: 'var(--text)', whiteSpace: 'nowrap' }}>
+                        <span className="font-mono">{p.number}</span>
+                        {reversed && p.reversalReason ? <div style={{ marginTop: 3, fontSize: 11.5, color: '#8b3a32', fontWeight: 600 }}>{p.reversalReason}</div> : null}
+                      </td>
+                      <td className="tnum" style={{ padding: '11px 14px', fontSize: 13, color: 'var(--text2)', whiteSpace: 'nowrap' }}>{fmtDate(p.paidAt)}</td>
+                      <td style={{ padding: '11px 14px', fontSize: 13, color: 'var(--text2)' }}>{p.treasuryAccountName ?? 'Conta não encontrada'}</td>
+                      <td style={{ padding: '11px 14px', fontSize: 12.5, fontWeight: 700, color: reversed ? '#8b3a32' : 'var(--ok)', whiteSpace: 'nowrap' }}>
+                        {reversed ? `ESTORNADO${p.reversedAt ? ` · ${fmtDate(p.reversedAt)}` : ''}` : 'ACTIVO'}
+                      </td>
+                      <td className="tnum" style={{ padding: '11px 14px', textAlign: 'right', fontSize: 13, fontWeight: 700, color: 'var(--text)', whiteSpace: 'nowrap', textDecoration: reversed ? 'line-through' : undefined }}>{fmt(p.amount)}</td>
+                      <td style={{ padding: '11px 14px', textAlign: 'right' }}>
+                        {canReverseSupplierPayment && !reversed ? (
+                          <SupplierPaymentReversalDialog
+                            reversalDate={reversalDate}
+                            payment={{ id: p.id, number: p.number, amount: p.amount, supplierName: oc.supplierName, purchaseOrderNumber: oc.number, treasuryAccountName: p.treasuryAccountName, method: p.method }}
+                            trigger={
+                              <button title="Estornar pagamento" style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 30, height: 30, borderRadius: 8, border: '1px solid #f0d0cc', background: '#fff5f3', color: '#8b3a32', cursor: 'pointer' }}>
+                                <Icon name="undo-2" size={14} />
+                              </button>
+                            }
+                          />
+                        ) : null}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   );

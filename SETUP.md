@@ -221,6 +221,12 @@ Testes do cancelamento ponta a ponta de factura (P0-03a):
 pnpm test:integration:accounting:reversal:invoice
 ```
 
+Testes do estorno ponta a ponta de pagamento a fornecedor (P0-03c):
+
+```bash
+pnpm test:integration:accounting:reversal:supplier-payment
+```
+
 Build:
 
 ```bash

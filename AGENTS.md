@@ -28,12 +28,13 @@ pnpm + Turborepo:
 Módulos já implementados: Auth/RBAC/Admin, Clientes, Fornecedores, Produtos &
 Stock, Vendas/Facturação, Compras, Tesouraria & Bancos, Hardening da
 Tesouraria, Contabilidade 8a, 8b, 8c.1, 8c.2a, 8c.2b, 8c.3 e
-P0-03.0, P0-03b e P0-03a.
+P0-03.0, P0-03b, P0-03a e P0-03c.
 
-Estado actual da Contabilidade: P0-03.0, P0-03b e P0-03a concluídas. A base de
-reversões está activa; recebimentos de clientes podem ser anulados ponta a ponta
-e facturas sem recebimentos activos podem ser canceladas com reversão atómica de
-`Customer`, stock, contabilidade e auditoria. A próxima subfase é P0-03c ou a
+Estado actual da Contabilidade: P0-03.0, P0-03b, P0-03a e P0-03c concluídas. A base de
+reversões está activa; recebimentos de clientes podem ser anulados, facturas sem
+recebimentos activos podem ser canceladas e pagamentos a fornecedores podem ser
+estornados ponta a ponta com reversão atómica de `Supplier`, `PurchaseOrder`,
+Tesouraria, contabilidade e auditoria. A próxima subfase é P0-03d ou a
 subfase exacta definida em `MODULE_STATUS.md`. Não iniciar a fase seguinte
 automaticamente.
 
@@ -174,6 +175,7 @@ pnpm test:integration:accounting:c2
 pnpm test:integration:accounting:c3
 pnpm test:integration:accounting:reversal:customer-payment
 pnpm test:integration:accounting:reversal:invoice
+pnpm test:integration:accounting:reversal:supplier-payment
 pnpm build
 ```
 
@@ -186,6 +188,7 @@ Testes de integração contabilísticos:
 - 8c.3: `pnpm test:integration:accounting:c3`
 - P0-03b: `pnpm test:integration:accounting:reversal:customer-payment`
 - P0-03a: `pnpm test:integration:accounting:reversal:invoice`
+- P0-03c: `pnpm test:integration:accounting:reversal:supplier-payment`
 
 ## Credenciais de Teste Versionadas
 
@@ -208,8 +211,9 @@ passwords não demonstrativas.
 - P0-03.0 concluída.
 - P0-03b concluída.
 - P0-03a concluída.
+- P0-03c concluída.
 - Commit base funcional antes da P0-03.0: `a1d608b`.
-- Próxima fase: P0-03c ou subfase seguinte, conforme detalhe em `MODULE_STATUS.md`.
+- Próxima fase: P0-03d ou subfase seguinte, conforme detalhe em `MODULE_STATUS.md`.
 - `MODULE_STATUS.md` é a fonte principal para progresso e próximos passos.
 - `CLAUDE.md` deve ser preservado.
 - Quando `AGENTS.md` e `CLAUDE.md` divergirem, apresentar a divergência antes

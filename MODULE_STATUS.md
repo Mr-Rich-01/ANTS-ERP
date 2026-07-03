@@ -5,9 +5,9 @@ _Última actualização: 2026-07-03_
 Estado vivo do projecto. O conhecimento permanente (arquitectura, regras, comandos) está
 em [`CLAUDE.md`](CLAUDE.md).
 
-**Último commit funcional:** este commit (`feat(accounting): cancel invoices end to end`)
-**Fase concluída:** `P0-03a — cancelamento integral de factura`
-**Próximo passo:** `P0-03c — subfase seguinte de reversões/cancelamentos` _(não iniciado)_
+**Último commit funcional:** este commit (`feat(accounting): reverse supplier payments end to end`)
+**Fase concluída:** `P0-03c — estorno integral de pagamento a fornecedor`
+**Próximo passo:** `P0-03d — subfase seguinte de reversões/cancelamentos` _(não iniciado)_
 
 ---
 
@@ -32,13 +32,14 @@ em [`CLAUDE.md`](CLAUDE.md).
 | **P0-03.0** | **Fundação técnica de cancelamentos/anulações/estornos** (estados/metadados, rastreabilidade `Invoice`→`StockMovement`, scopes de idempotência e helper contabilístico reforçado) | ✅ |
 | **P0-03b** | **Anulação de recebimento de cliente** (`Payment`→`Invoice`/`Customer`/Tesouraria/Contabilidade/Auditoria, recibo original `ANULADO`) | ✅ |
 | **P0-03a** | **Cancelamento integral de factura** (`Invoice`→`Customer`/Stock/Contabilidade/Auditoria, factura original `CANCELADA`) | ✅ |
+| **P0-03c** | **Estorno integral de pagamento a fornecedor** (`SupplierPayment`→`Supplier`/`PurchaseOrder`/Tesouraria/Contabilidade/Auditoria, pagamento original `ESTORNADO`) | ✅ |
 | 8c.4–8e | Contabilidade — cancelamentos/estornos, tesouraria, ecrãs, testes finais | 🗺️ **a seguir** |
 | 9 | RH & Salários | 🗺️ futuro |
 | X | RLS forçado em toda a BD (fase transversal, pré-produção) | 🗺️ futuro |
 
 **Validações actuais:** typecheck 6/6 · lint 6/6 · **testes unitários 73** · **integração de
-contabilidade 164/164** (8b 32 + 8c.1 30 + 8c.2a 18 + 8c.2b 34 + 8c.3 17 + P0-02 5 + P0-03.0 9 + P0-03b 10 + P0-03a 9;
-`pnpm test:integration:accounting`, sub: `…:c1`, `…:c2a`, `…:c2`, `…:c3`, `…:reversal:customer-payment`, `…:reversal:invoice`) · `prisma format` OK · `prisma validate` OK · `pnpm build` OK
+contabilidade 171/171** (8b 32 + 8c.1 30 + 8c.2a 18 + 8c.2b 34 + 8c.3 17 + P0-02 5 + P0-03.0 9 + P0-03b 10 + P0-03a 9 + P0-03c 7;
+`pnpm test:integration:accounting`, sub: `…:c1`, `…:c2a`, `…:c2`, `…:c3`, `…:reversal:customer-payment`, `…:reversal:invoice`, `…:reversal:supplier-payment`) · `prisma format` OK · `prisma validate` OK · `pnpm build` OK
 em Windows nativo (28/28 páginas) e Docker Linux com Node 20 + OpenSSL · seed idempotente (2×).
 
 **Hardening pré-produção P0-01 (2026-07-02):** seed demo bloqueado em `production`
@@ -83,7 +84,18 @@ motivo/data validados, idempotência `INVOICE_CANCEL`, decremento atómico de
 factura original permanece consultável/imprimível como `CANCELADA`, com número,
 linhas, datas e valores preservados. `Payment ACTIVE` bloqueia; `Payment REVERSED`
 permanece histórico e não bloqueia. Facturas legadas sem rastreabilidade de stock
-necessária são rejeitadas para revisão administrativa. Próxima subfase: `P0-03c`.
+necessária são rejeitadas para revisão administrativa. Esta subfase antecedeu `P0-03c — estorno de pagamento a fornecedor`.
+
+**P0-03c (2026-07-03):** implementado o estorno ponta a ponta de pagamento a
+fornecedor iniciado no `SupplierPayment`, com permissão `supplierPayments.reverse`,
+motivo/data validados, idempotência `SUPPLIER_PAYMENT_REVERSE`, restauração de
+`Supplier.balance`, recálculo de `PurchaseOrder.amountPaid` por pagamentos `ACTIVE`
+quando existe ordem associada, movimento compensatório de Tesouraria ligado por
+`reversesId`, estorno contabilístico histórico de `SUPPLIER_PAYMENT_POSTED` via
+`reverseAccountingEventTx` e auditoria `supplier.payment.reverse` na mesma
+transacção. O pagamento original permanece histórico como `ESTORNADO`; pagamentos
+directos sem `PurchaseOrder` também são suportados sem criar ligações artificiais.
+Próxima subfase: `P0-03d`.
 
 **Commit da 8c.3:** este commit exclusivo, `feat(accounting): integrate purchase receipts and supplier payments`.
 
@@ -441,7 +453,12 @@ db:generate` e `pnpm build`.
     atómica sobre `Customer`, `StockMovement`/`StockLevel`, `JournalEntry`, `AuditLog` e
     `OperationIdempotency`; factura original preservada como `CANCELADA`. Suite dedicada:
     `pnpm test:integration:accounting:reversal:invoice`.
-  - **P0-03c / 8c.4** subfase seguinte de reversões/cancelamentos. **8c.5** backfill (dry-run) + validação.
+  - **P0-03c / 8c.4** _(✅ concluída)_: estorno integral de pagamento a fornecedor iniciado no
+    `SupplierPayment`, atómico sobre `Supplier`, `PurchaseOrder` quando aplicável,
+    `TreasuryMovement`/`TreasuryAccount`, `JournalEntry`, `AuditLog` e `OperationIdempotency`;
+    pagamento original preservado como `ESTORNADO`. Suite dedicada:
+    `pnpm test:integration:accounting:reversal:supplier-payment`.
+  - **P0-03d / 8c.4** subfase seguinte de reversões/cancelamentos. **8c.5** backfill (dry-run) + validação.
     Diferidos: COGS e ecrãs contabilísticos finais.
 - **8d — Ecrãs**: plano de contas, diários, novo lançamento, detalhe, razão geral, balancete,
   extracto diário (linha a linha) + configuração contabilística (mapping de `systemKeys`).
