@@ -227,6 +227,12 @@ Testes do estorno ponta a ponta de pagamento a fornecedor (P0-03c):
 pnpm test:integration:accounting:reversal:supplier-payment
 ```
 
+Testes do estorno ponta a ponta de recepção de compra (P0-03d):
+
+```bash
+pnpm test:integration:accounting:reversal:purchase-receipt
+```
+
 Build:
 
 ```bash

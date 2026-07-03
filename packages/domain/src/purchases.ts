@@ -59,6 +59,36 @@ export interface SupplierPaymentItem {
   treasuryAccountName: string | null;
 }
 
+export interface PurchaseReceiptHistoryLine {
+  id: string;
+  purchaseOrderLineId: string;
+  productId: string;
+  sku: string | null;
+  description: string;
+  quantity: number;
+  unitCost: number;
+  taxRate: number;
+  netAmount: number;
+  taxAmount: number;
+  totalAmount: number;
+}
+
+export interface PurchaseReceiptHistoryItem {
+  id: string;
+  receiptNumber: string;
+  receiptDate: Date;
+  warehouseId: string;
+  warehouseName: string;
+  status: 'ACTIVE' | 'REVERSED';
+  reversedAt: Date | null;
+  reversedById: string | null;
+  reversalReason: string | null;
+  netAmount: number;
+  taxAmount: number;
+  totalAmount: number;
+  items: PurchaseReceiptHistoryLine[];
+}
+
 export interface PurchaseDetail {
   id: string;
   number: string;
@@ -78,6 +108,7 @@ export interface PurchaseDetail {
   notes: string | null;
   lines: PurchaseLineItem[];
   payments: SupplierPaymentItem[];
+  receipts: PurchaseReceiptHistoryItem[];
 }
 
 export interface PurchaseKpis {
@@ -145,6 +176,19 @@ export async function getPurchaseOrder(db: PrismaClient, ctx: RequestContext, id
     include: {
       lines: { orderBy: { id: 'asc' } },
       payments: { orderBy: { paidAt: 'asc' } },
+      receipts: {
+        orderBy: [{ receiptDate: 'desc' }, { createdAt: 'desc' }],
+        include: {
+          warehouse: { select: { id: true, name: true } },
+          items: {
+            orderBy: { id: 'asc' },
+            include: {
+              product: { select: { sku: true, name: true } },
+              purchaseOrderLine: { select: { description: true } },
+            },
+          },
+        },
+      },
       warehouse: { select: { name: true } },
     },
   });
@@ -200,6 +244,33 @@ export async function getPurchaseOrder(db: PrismaClient, ctx: RequestContext, id
       reversalReason: p.reversalReason,
       treasuryAccountId: movementByPayment.get(p.id)?.account.id ?? null,
       treasuryAccountName: movementByPayment.get(p.id)?.account.name ?? null,
+    })),
+    receipts: o.receipts.map((r) => ({
+      id: r.id,
+      receiptNumber: r.receiptNumber,
+      receiptDate: r.receiptDate,
+      warehouseId: r.warehouse.id,
+      warehouseName: r.warehouse.name,
+      status: r.status as PurchaseReceiptHistoryItem['status'],
+      reversedAt: r.reversedAt,
+      reversedById: r.reversedById,
+      reversalReason: r.reversalReason,
+      netAmount: Number(r.netAmount),
+      taxAmount: Number(r.taxAmount),
+      totalAmount: Number(r.totalAmount),
+      items: r.items.map((item) => ({
+        id: item.id,
+        purchaseOrderLineId: item.purchaseOrderLineId,
+        productId: item.productId,
+        sku: item.product.sku,
+        description: item.purchaseOrderLine.description || item.product.name,
+        quantity: item.quantity,
+        unitCost: Number(item.unitCost),
+        taxRate: Number(item.taxRate),
+        netAmount: Number(item.netAmount),
+        taxAmount: Number(item.taxAmount),
+        totalAmount: Number(item.totalAmount),
+      })),
     })),
   };
 }
@@ -633,6 +704,328 @@ export async function receivePurchaseOrder(
         return { id: receipt.id, number: receipt.receiptNumber, received: receipt.items.length };
       },
       run: runReceipt,
+    });
+    return op.result;
+  });
+}
+
+const reversePurchaseReceiptInput = z.object({
+  purchaseReceiptId: z.string().min(1, 'Recepção de compra inválida.'),
+  idempotencyKey: z.string().min(1, 'Chave de idempotência obrigatória.'),
+  reversalReason: z.string(),
+  reversalDate: z.string().min(1, 'Data do estorno obrigatória.'),
+});
+
+export type ReversePurchaseReceiptInput = z.input<typeof reversePurchaseReceiptInput>;
+
+export interface ReversePurchaseReceiptResult {
+  id: string;
+  number: string;
+  reversalDate: string;
+  stockReversalIds: string[];
+  accountingReversalId: string | null;
+}
+
+const PURCHASE_RECEIPT_ACTIVE_PAYMENTS_MESSAGE = 'Esta recepção possui pagamentos activos relacionados. Estorne primeiro os respectivos pagamentos ao fornecedor.';
+const PURCHASE_RECEIPT_STOCK_INSUFFICIENT_MESSAGE = 'Não existe stock suficiente para estornar esta recepção. Parte da mercadoria já foi utilizada, transferida ou vendida.';
+const PURCHASE_RECEIPT_STOCK_USAGE_MESSAGE = 'Esta recepção já possui utilização posterior de stock e não pode ser estornada automaticamente. Utilize futuramente o fluxo de devolução ao fornecedor.';
+
+function purchaseReceiptReversalFingerprint(companyId: string, purchaseReceiptId: string, reversalDate: Date, reversalReason: string): string {
+  return canonicalRequestFingerprint(FINGERPRINT_VERSION, {
+    companyId,
+    purchaseReceiptId,
+    reversalDate: fpDate(reversalDate),
+    reversalReason,
+  });
+}
+
+function resolveAllowedPurchaseReceiptReversalDate(value: string): Date {
+  const requestedDate = parseAccountingDate(value);
+  const currentDate = civilDateInTimeZone();
+  if (formatAccountingDate(requestedDate) !== currentDate) {
+    throw new ValidationError('A data do estorno deve ser a data actual em Africa/Maputo.');
+  }
+  return parseAccountingDate(currentDate);
+}
+
+function stockKey(productId: string, warehouseId: string): string {
+  return `${productId}|${warehouseId}`;
+}
+
+function addQuantity(map: Map<string, number>, key: string, quantity: number): void {
+  map.set(key, (map.get(key) ?? 0) + quantity);
+}
+
+async function loadCompletedPurchaseReceiptReversal(tx: Prisma.TransactionClient, companyId: string, purchaseReceiptId: string, reversalDate: Date): Promise<ReversePurchaseReceiptResult | null> {
+  const receipt = await tx.purchaseReceipt.findFirst({ where: { companyId, id: purchaseReceiptId }, select: { id: true, receiptNumber: true, status: true } });
+  if (!receipt) return null;
+  if (receipt.status !== 'REVERSED') throw new ConflictError('Registo de idempotência aponta para uma recepção ainda activa (integridade).');
+
+  const [originalMovements, originalEntry] = await Promise.all([
+    tx.stockMovement.findMany({ where: { companyId, purchaseReceiptId: receipt.id, type: 'IN' }, select: { id: true } }),
+    tx.journalEntry.findFirst({ where: { companyId, sourceType: 'PURCHASE_RECEIPT', sourceId: receipt.id, accountingEvent: 'PURCHASE_RECEIVED' }, select: { id: true } }),
+  ]);
+  if (!originalEntry) throw new ConflictError('Registo de idempotência aponta para um estorno sem lançamento contabilístico original (integridade).');
+
+  const [stockReversals, accountingReversal] = await Promise.all([
+    originalMovements.length
+      ? tx.stockMovement.findMany({ where: { companyId, reversesId: { in: originalMovements.map((m) => m.id) } }, select: { id: true, reversesId: true } })
+      : Promise.resolve([]),
+    tx.journalEntry.findFirst({ where: { companyId, reversalOfId: originalEntry.id }, select: { id: true } }),
+  ]);
+  if (stockReversals.length !== originalMovements.length || !accountingReversal) {
+    throw new ConflictError('Registo de idempotência aponta para um estorno incompleto (integridade).');
+  }
+
+  return {
+    id: receipt.id,
+    number: receipt.receiptNumber,
+    reversalDate: formatAccountingDate(reversalDate),
+    stockReversalIds: stockReversals.map((m) => m.id),
+    accountingReversalId: accountingReversal.id,
+  };
+}
+
+export async function reversePurchaseReceipt(db: PrismaClient, ctx: RequestContext, input: ReversePurchaseReceiptInput): Promise<ReversePurchaseReceiptResult> {
+  requirePermission(ctx, 'purchaseReceipts.reverse');
+  const companyId = requireCompany(ctx);
+  const parsed = reversePurchaseReceiptInput.safeParse(input);
+  if (!parsed.success) throw new ValidationError(parsed.error.issues[0]?.message ?? 'Dados inválidos.');
+  const data = parsed.data;
+  const reversalReason = validateReversalReason(data.reversalReason);
+  const reversalDate = resolveAllowedPurchaseReceiptReversalDate(data.reversalDate);
+  const requestFingerprint = purchaseReceiptReversalFingerprint(companyId, data.purchaseReceiptId, reversalDate, reversalReason);
+
+  return db.$transaction(async (tx) => {
+    const op = await runIdempotentOperation<ReversePurchaseReceiptResult>(tx, ctx, {
+      scope: 'PURCHASE_RECEIPT_REVERSE',
+      idempotencyKey: data.idempotencyKey,
+      requestFingerprint,
+      expectedResourceType: 'PurchaseReceipt',
+      loadExisting: (resourceId) => loadCompletedPurchaseReceiptReversal(tx, companyId, resourceId, reversalDate),
+      run: async () => {
+        await validateOpenReversalDateTx(tx, companyId, reversalDate);
+        await tx.$queryRaw`SELECT id FROM purchase_receipts WHERE id = ${data.purchaseReceiptId} AND "companyId" = ${companyId} FOR UPDATE`;
+        const receipt = await tx.purchaseReceipt.findFirst({ where: { companyId, id: data.purchaseReceiptId } });
+        if (!receipt) throw new NotFoundError('Recepção de compra não encontrada.');
+        if (receipt.status === 'REVERSED') throw new ConflictError('Esta recepção já foi estornada.');
+
+        await tx.$queryRaw`SELECT id FROM purchase_orders WHERE id = ${receipt.purchaseOrderId} AND "companyId" = ${companyId} FOR UPDATE`;
+        const order = await tx.purchaseOrder.findFirst({ where: { companyId, id: receipt.purchaseOrderId }, select: { id: true, number: true, supplierId: true, warehouseId: true, receivedValue: true, amountPaid: true, status: true } });
+        if (!order) throw new NotFoundError('Ordem de compra da recepção não encontrada.');
+        if (order.status === 'CANCELLED') throw new ConflictError('A ordem de compra da recepção está cancelada.');
+        if (order.supplierId !== receipt.supplierId) throw new ConflictError('Recepção e ordem de compra apontam para fornecedores diferentes (integridade).');
+        if (order.warehouseId !== receipt.warehouseId) throw new ConflictError('Recepção e ordem de compra apontam para armazéns diferentes (integridade).');
+
+        await tx.$queryRaw`SELECT id FROM suppliers WHERE id = ${receipt.supplierId} AND "companyId" = ${companyId} FOR UPDATE`;
+        const supplier = await tx.supplier.findFirst({ where: { companyId, id: receipt.supplierId } });
+        if (!supplier) throw new NotFoundError('Fornecedor da recepção não encontrado.');
+
+        const activePayments = await tx.supplierPayment.findMany({ where: { companyId, purchaseOrderId: order.id, status: 'ACTIVE' }, select: { id: true, amount: true } });
+        if (activePayments.length > 0) throw new ConflictError(PURCHASE_RECEIPT_ACTIVE_PAYMENTS_MESSAGE);
+        const activePaid = round2(Number((await tx.supplierPayment.aggregate({ where: { companyId, purchaseOrderId: order.id, status: 'ACTIVE' }, _sum: { amount: true } }))._sum.amount ?? 0));
+        if (round2(Number(order.amountPaid)) !== activePaid) {
+          throw new ConflictError('Integridade: valor pago da ordem não coincide com os pagamentos activos.');
+        }
+
+        const [items, orderLines, stockMovements, entries] = await Promise.all([
+          tx.purchaseReceiptItem.findMany({ where: { companyId, purchaseReceiptId: receipt.id }, orderBy: { id: 'asc' } }),
+          tx.purchaseOrderLine.findMany({ where: { companyId, orderId: order.id }, select: { id: true, quantity: true, receivedQty: true } }),
+          tx.stockMovement.findMany({ where: { companyId, purchaseReceiptId: receipt.id, type: 'IN' }, orderBy: [{ createdAt: 'asc' }, { id: 'asc' }] }),
+          tx.journalEntry.findMany({ where: { companyId, sourceType: 'PURCHASE_RECEIPT', sourceId: receipt.id, accountingEvent: 'PURCHASE_RECEIVED' }, select: { id: true } }),
+        ]);
+        if (items.length === 0) throw new ConflictError('Integridade: recepção sem itens.');
+        if (stockMovements.length !== items.length) throw new ConflictError('Integridade: recepção sem movimentos de stock originais rastreáveis.');
+        if (entries.length !== 1) throw new ConflictError('Integridade: recepção sem lançamento contabilístico PURCHASE_RECEIVED único.');
+        const originalEntry = entries[0]!;
+
+        const orderLineById = new Map(orderLines.map((line) => [line.id, line]));
+        const itemQtyByStockKey = new Map<string, number>();
+        const movementQtyByStockKey = new Map<string, number>();
+        const receiptCostByProduct = new Map<string, { quantity: number; cost: number }>();
+        for (const item of items) {
+          if (!orderLineById.has(item.purchaseOrderLineId)) throw new ConflictError('Integridade: item da recepção não pertence à ordem de compra.');
+          if (item.quantity <= 0) throw new ConflictError('Integridade: item da recepção possui quantidade inválida.');
+          addQuantity(itemQtyByStockKey, stockKey(item.productId, receipt.warehouseId), item.quantity);
+          const cost = receiptCostByProduct.get(item.productId) ?? { quantity: 0, cost: 0 };
+          cost.quantity += item.quantity;
+          cost.cost = round2(cost.cost + round2(item.quantity * Number(item.unitCost)));
+          receiptCostByProduct.set(item.productId, cost);
+        }
+        for (const movement of stockMovements) {
+          if (movement.reversesId) throw new ConflictError('Integridade: movimento original da recepção já referencia outro movimento.');
+          if (movement.quantity <= 0 || movement.type !== 'IN') throw new ConflictError('Integridade: movimento de stock da recepção não é uma entrada.');
+          if (movement.warehouseId !== receipt.warehouseId) throw new ConflictError('Integridade: movimento de stock não corresponde ao armazém da recepção.');
+          addQuantity(movementQtyByStockKey, stockKey(movement.productId, movement.warehouseId), movement.quantity);
+        }
+        for (const [key, quantity] of itemQtyByStockKey) {
+          if ((movementQtyByStockKey.get(key) ?? 0) !== quantity) throw new ConflictError('Integridade: movimentos de stock não correspondem aos itens da recepção.');
+        }
+
+        const originalMovementIds = stockMovements.map((m) => m.id);
+        const existingStockReversal = await tx.stockMovement.findFirst({ where: { companyId, reversesId: { in: originalMovementIds } }, select: { id: true } });
+        if (existingStockReversal) throw new ConflictError('Esta recepção já possui movimentos de stock compensatórios.');
+
+        const uniqueProductIds = Array.from(receiptCostByProduct.keys());
+        for (const productId of uniqueProductIds) {
+          await tx.$queryRaw`SELECT id FROM products WHERE id = ${productId} AND "companyId" = ${companyId} FOR UPDATE`;
+          await tx.$queryRaw`SELECT id FROM stock_levels WHERE "companyId" = ${companyId} AND "productId" = ${productId} FOR UPDATE`;
+        }
+        for (const [key, quantity] of itemQtyByStockKey) {
+          const [productId, warehouseId] = key.split('|') as [string, string];
+          await tx.$queryRaw`SELECT id FROM stock_levels WHERE "companyId" = ${companyId} AND "productId" = ${productId} AND "warehouseId" = ${warehouseId} FOR UPDATE`;
+          const level = await tx.stockLevel.findUnique({ where: { productId_warehouseId: { productId, warehouseId } } });
+          if (!level || level.companyId !== companyId) throw new ConflictError('Integridade: nível de stock da recepção não encontrado.');
+          if (level.quantity < quantity) throw new ConflictError(PURCHASE_RECEIPT_STOCK_INSUFFICIENT_MESSAGE);
+        }
+
+        const maxOriginalCreatedAtByProduct = new Map<string, Date>();
+        for (const movement of stockMovements) {
+          const current = maxOriginalCreatedAtByProduct.get(movement.productId);
+          if (!current || movement.createdAt > current) maxOriginalCreatedAtByProduct.set(movement.productId, movement.createdAt);
+        }
+        for (const [productId, maxOriginalCreatedAt] of maxOriginalCreatedAtByProduct) {
+          const later = await tx.stockMovement.findFirst({
+            where: { companyId, productId, id: { notIn: originalMovementIds }, createdAt: { gt: maxOriginalCreatedAt } },
+            select: { id: true },
+          });
+          if (later) throw new ConflictError(PURCHASE_RECEIPT_STOCK_USAGE_MESSAGE);
+        }
+
+        const avgCostChanges: Array<{ productId: string; before: number; after: number; totalQtyBefore: number; totalQtyAfter: number; reversedQty: number }> = [];
+        for (const [productId, received] of receiptCostByProduct) {
+          const product = await tx.product.findFirst({ where: { companyId, id: productId }, select: { id: true, avgCost: true } });
+          if (!product) throw new NotFoundError('Produto da recepção não encontrado.');
+          const productStockLevels = await tx.stockLevel.findMany({ where: { companyId, productId }, select: { quantity: true } });
+          const totalQtyBefore = productStockLevels.reduce((sum, level) => sum + level.quantity, 0);
+          const totalQtyAfter = totalQtyBefore - received.quantity;
+          if (totalQtyAfter <= 0) throw new ConflictError(PURCHASE_RECEIPT_STOCK_USAGE_MESSAGE);
+          const avgCostBefore = round2(Number(product.avgCost));
+          const avgCostAfter = round2((totalQtyBefore * avgCostBefore - received.cost) / totalQtyAfter);
+          if (!Number.isFinite(avgCostAfter) || avgCostAfter < 0) throw new ConflictError(PURCHASE_RECEIPT_STOCK_USAGE_MESSAGE);
+          avgCostChanges.push({ productId, before: avgCostBefore, after: avgCostAfter, totalQtyBefore, totalQtyAfter, reversedQty: received.quantity });
+        }
+
+        const stockLevelChanges: Array<{ productId: string; warehouseId: string; before: number; after: number; movementId: string; reversalId: string }> = [];
+        const stockReversalIds: string[] = [];
+        for (const movement of stockMovements) {
+          const level = await tx.stockLevel.findUnique({ where: { productId_warehouseId: { productId: movement.productId, warehouseId: movement.warehouseId } } });
+          if (!level || level.companyId !== companyId) throw new ConflictError('Integridade: nível de stock da recepção não encontrado.');
+          const quantity = movement.quantity;
+          const before = level.quantity;
+          const balanceAfter = before - quantity;
+          if (balanceAfter < 0) throw new ConflictError(PURCHASE_RECEIPT_STOCK_INSUFFICIENT_MESSAGE);
+          await tx.stockLevel.update({
+            where: { productId_warehouseId: { productId: movement.productId, warehouseId: movement.warehouseId } },
+            data: { quantity: balanceAfter },
+          });
+          const reversal = await tx.stockMovement.create({
+            data: {
+              companyId,
+              productId: movement.productId,
+              warehouseId: movement.warehouseId,
+              purchaseReceiptId: receipt.id,
+              reversesId: movement.id,
+              type: 'OUT',
+              quantity: -quantity,
+              balanceAfter,
+              document: receipt.receiptNumber,
+              reason: `Estorno da recepção ${receipt.receiptNumber}`,
+              createdBy: ctx.userId,
+            },
+          });
+          stockReversalIds.push(reversal.id);
+          stockLevelChanges.push({ productId: movement.productId, warehouseId: movement.warehouseId, before, after: balanceAfter, movementId: movement.id, reversalId: reversal.id });
+        }
+
+        for (const change of avgCostChanges) {
+          await tx.product.update({ where: { id: change.productId }, data: { avgCost: change.after } });
+        }
+
+        const lineQuantityChanges: Array<{ lineId: string; before: number; after: number }> = [];
+        const refreshedLines: Array<{ quantity: number; receivedQty: number }> = [];
+        for (const line of orderLines) {
+          const activeQty = Number(
+            (
+              await tx.purchaseReceiptItem.aggregate({
+                where: { companyId, purchaseOrderLineId: line.id, purchaseReceipt: { status: 'ACTIVE', id: { not: receipt.id } } },
+                _sum: { quantity: true },
+              })
+            )._sum.quantity ?? 0,
+          );
+          await tx.purchaseOrderLine.update({ where: { id: line.id }, data: { receivedQty: activeQty } });
+          lineQuantityChanges.push({ lineId: line.id, before: line.receivedQty, after: activeQty });
+          refreshedLines.push({ quantity: line.quantity, receivedQty: activeQty });
+        }
+
+        const receivedValueAfter = round2(Number((await tx.purchaseReceipt.aggregate({ where: { companyId, purchaseOrderId: order.id, status: 'ACTIVE', id: { not: receipt.id } }, _sum: { totalAmount: true } }))._sum.totalAmount ?? 0));
+        const orderStatusAfter = purchaseStatusFromLines(refreshedLines, order.status as PurchaseStatus);
+        await tx.purchaseOrder.update({ where: { id: order.id }, data: { receivedValue: receivedValueAfter, status: orderStatusAfter } });
+
+        const totalAmount = round2(Number(receipt.totalAmount));
+        const supplierBalanceBefore = round2(Number(supplier.balance));
+        const updatedSupplier = await tx.supplier.update({ where: { id: supplier.id }, data: { balance: { decrement: totalAmount } } });
+        const supplierBalanceAfter = round2(Number(updatedSupplier.balance));
+
+        const accountingReversal = await reverseAccountingEventTx(tx, ctx, {
+          origin: { sourceType: 'PURCHASE_RECEIPT', sourceId: receipt.id, accountingEvent: 'PURCHASE_RECEIVED' },
+          reversalDate,
+          reason: reversalReason,
+          operationalReference: receipt.receiptNumber,
+        });
+
+        await tx.purchaseReceipt.update({
+          where: { id: receipt.id },
+          data: { status: 'REVERSED', reversedAt: new Date(), reversedById: ctx.userId, reversalReason },
+        });
+
+        await writeAudit(tx, ctx, {
+          action: 'purchase.receipt.reverse',
+          entity: 'PurchaseReceipt',
+          entityId: receipt.id,
+          oldValues: {
+            status: receipt.status,
+            supplierBalance: supplierBalanceBefore,
+            purchaseOrderReceivedValue: Number(order.receivedValue),
+            purchaseOrderStatus: order.status,
+          },
+          newValues: {
+            status: 'REVERSED',
+            purchaseReceiptId: receipt.id,
+            receiptNumber: receipt.receiptNumber,
+            purchaseOrderId: order.id,
+            supplierId: supplier.id,
+            total: totalAmount,
+            reversalReason,
+            reversalDate: formatAccountingDate(reversalDate),
+            idempotencyKey: data.idempotencyKey,
+            supplierBalanceBefore,
+            supplierBalanceAfter,
+            purchaseOrderReceivedValueBefore: round2(Number(order.receivedValue)),
+            purchaseOrderReceivedValueAfter: receivedValueAfter,
+            purchaseOrderStatusAfter: orderStatusAfter,
+            receivedQtyByLine: lineQuantityChanges,
+            stockLevels: stockLevelChanges,
+            avgCost: avgCostChanges,
+            stockMovementOriginalIds: originalMovementIds,
+            stockMovementReversalIds: stockReversalIds,
+            journalEntryOriginalId: originalEntry.id,
+            journalEntryReversalId: accountingReversal.reversalId,
+          },
+        });
+
+        return {
+          resourceType: 'PurchaseReceipt',
+          resourceId: receipt.id,
+          result: {
+            id: receipt.id,
+            number: receipt.receiptNumber,
+            reversalDate: formatAccountingDate(reversalDate),
+            stockReversalIds,
+            accountingReversalId: accountingReversal.reversalId,
+          },
+        };
+      },
     });
     return op.result;
   });

@@ -25,6 +25,7 @@
     "test:integration:accounting:reversal:customer-payment": "pnpm --filter @ants/domain test:integration:customer-payment-reversal",
     "test:integration:accounting:reversal:invoice": "pnpm --filter @ants/domain test:integration:invoice-cancellation",
     "test:integration:accounting:reversal:supplier-payment": "pnpm --filter @ants/domain test:integration:supplier-payment-reversal",
+    "test:integration:accounting:reversal:purchase-receipt": "pnpm --filter @ants/domain test:integration:purchase-receipt-reversal",
     "docker:dev": "docker compose up -d postgres redis"
   },
   "devDependencies": {

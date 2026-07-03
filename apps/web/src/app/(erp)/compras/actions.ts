@@ -6,10 +6,12 @@ import {
   createPurchaseOrder,
   receivePurchaseOrder,
   createSupplierPayment,
+  reversePurchaseReceipt,
   reverseSupplierPayment,
   DomainError,
   type PurchaseInput,
   type ReceivePurchaseOptions,
+  type ReversePurchaseReceiptInput,
   type ReverseSupplierPaymentInput,
   type SupplierPaymentInput,
 } from '@ants/domain';
@@ -59,6 +61,24 @@ export async function createSupplierPaymentAction(input: SupplierPaymentInput): 
     revalidatePath('/compras');
     revalidatePath('/compras/ordem');
     revalidatePath('/contas/perfil');
+    return { ok: true, id, number };
+  } catch (e) {
+    if (e instanceof DomainError) return { error: e.message };
+    throw e;
+  }
+}
+
+export async function reversePurchaseReceiptAction(input: ReversePurchaseReceiptInput): Promise<PurchaseActionResult> {
+  const ctx = await getContext();
+  if (!ctx.companyId) return { error: 'Sem empresa activa.' };
+  try {
+    const { id, number } = await reversePurchaseReceipt(forContext(ctx), ctx, input);
+    revalidatePath('/compras');
+    revalidatePath('/compras/ordem');
+    revalidatePath('/contas/perfil');
+    revalidatePath('/produtos');
+    revalidatePath('/inventario');
+    revalidatePath('/contabilidade');
     return { ok: true, id, number };
   } catch (e) {
     if (e instanceof DomainError) return { error: e.message };
