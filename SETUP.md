@@ -285,6 +285,32 @@ Build:
 pnpm build
 ```
 
+### Validacao antes da UAT comercial
+
+Antes de uma sessao UAT comercial ou decisao de piloto, executar pelo menos:
+
+```bash
+pnpm --filter @ants/database exec prisma validate --schema prisma/schema.prisma
+pnpm --filter @ants/database exec prisma migrate status --schema prisma/schema.prisma
+pnpm db:generate
+pnpm typecheck
+pnpm lint
+pnpm test
+pnpm test:integration:security:production-hardening
+pnpm test:integration:auth:company-selection
+pnpm test:integration:accounting:reversal:all
+pnpm test:integration:accounting
+pnpm build
+```
+
+Documentos da UAT:
+
+- [`docs/UAT_PILOT.md`](docs/UAT_PILOT.md)
+- [`docs/UAT_TEST_SCRIPT.md`](docs/UAT_TEST_SCRIPT.md)
+- [`docs/PILOT_READINESS_CHECKLIST.md`](docs/PILOT_READINESS_CHECKLIST.md)
+- [`docs/UAT_SIGNOFF_TEMPLATE.md`](docs/UAT_SIGNOFF_TEMPLATE.md)
+- [`docs/V1_SCOPE_MATRIX.md`](docs/V1_SCOPE_MATRIX.md)
+
 ## Build de Produção
 
 O build foi classificado em 2026-06-30 e passou no Windows nativo após
@@ -339,6 +365,8 @@ Health/smoke basico:
 
 ```bash
 curl http://localhost:3001/api/health
+curl -i http://localhost:3001/login
+curl -i http://localhost:3001/seleccionar-empresa
 ```
 
 `/api/health` e liveness da web. Para readiness, confirmar tambem `pnpm docker:staging:ps`,
@@ -369,3 +397,6 @@ Remove-Item Env:\CONFIRM_RESTORE
 ```
 
 Runbook completo: [`docs/BACKUP_RESTORE.md`](docs/BACKUP_RESTORE.md).
+
+Antes da UAT comercial, criar backup pre-UAT, registar o ficheiro na acta e nao
+executar restore durante a sessao sem autorizacao explicita.

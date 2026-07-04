@@ -120,8 +120,22 @@ logs sem erros.
 - Sem CORS wildcard em endpoints autenticados.
 - Logs de web/worker sem secrets.
 - Backup criado antes de migrations em ambiente real.
+- Checklist UAT/piloto assinada antes de qualquer uso operacional.
 
-## 10. Pendentes aceites apos P0-08
+## 10. UAT comercial e evidencias
+
+- UAT comercial nao deve usar dados reais sem aprovacao explicita.
+- Screenshots, logs, actas e ficheiros de evidencia nao podem conter passwords,
+  tokens, cookies, connection strings, dados bancarios reais ou dados reais de
+  cliente.
+- Qualquer evidencia partilhada fora do ambiente controlado deve ser revista e
+  redigida.
+- Funcionalidades marcadas como `futuro`, `parcial` ou `fora da V1` na matriz
+  V1 nao devem ser apresentadas como prontas.
+- Qualquer piloto exige backup pre-UAT/piloto, staging validado e sign-off
+  assinado.
+
+## 11. Pendentes aceites apos P0-08
 
 - CSP completa.
 - Rate limit centralizado em Redis/borda para multiplas instancias.

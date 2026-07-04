@@ -172,7 +172,24 @@ e exige aprovacao operacional.
 Runbook de backup, restore, rollback de imagem e rollback pos-migration:
 [`docs/BACKUP_RESTORE.md`](BACKUP_RESTORE.md).
 
-## 11. Publicacao (deploy futuro)
+## 11. UAT e piloto controlado
+
+Piloto controlado so pode ser decidido depois de UAT documentada e checklist
+assinada:
+
+- executar o roteiro [`UAT_TEST_SCRIPT.md`](UAT_TEST_SCRIPT.md);
+- confirmar a checklist [`PILOT_READINESS_CHECKLIST.md`](PILOT_READINESS_CHECKLIST.md);
+- anexar/guardar a acta [`UAT_SIGNOFF_TEMPLATE.md`](UAT_SIGNOFF_TEMPLATE.md);
+- respeitar a matriz [`V1_SCOPE_MATRIX.md`](V1_SCOPE_MATRIX.md), sem vender
+  funcionalidades marcadas como futuras;
+- criar backup antes de qualquer migration em ambiente real;
+- confirmar hardening P0-08, health sem secrets, headers basicos e logs sem
+  segredos.
+
+UAT e piloto controlado nao autorizam deploy real, dados reais ou provisionamento
+de cliente sem decisao operacional propria.
+
+## 12. Publicacao (deploy futuro)
 
 ```bash
 git pull

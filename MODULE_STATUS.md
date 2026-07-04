@@ -1,13 +1,13 @@
 # MODULE_STATUS — ANTS ERP
 
-_Última actualização: 2026-07-04_
+_Última actualização: 2026-07-05_
 
 Estado vivo do projecto. O conhecimento permanente (arquitectura, regras, comandos) está
 em [`CLAUDE.md`](CLAUDE.md).
 
-**Último commit funcional:** este commit (`chore(security): harden production runtime`)
-**Fase concluída:** `P0-08 — Hardening de producao`
-**Próximo passo:** P0-09 — UAT comercial e prontidao de piloto _(nao iniciado)_
+**Último commit funcional:** este commit (`docs(uat): add pilot readiness package`)
+**Fase concluída:** `P0-09 — UAT comercial e prontidao de piloto`
+**Próximo passo:** decisao comercial explicita: piloto controlado ou abertura de backlog P1
 
 ---
 
@@ -41,6 +41,7 @@ em [`CLAUDE.md`](CLAUDE.md).
 | **P0-06** | **Ambiente de staging Docker e validação de release** | ✅ |
 | **P0-07** | **Backup, Restore e Rollback operacional** | ✅ |
 | **P0-08** | **Hardening de producao** (env validation, defaults inseguros, Auth/cookies, headers, CORS, rate limit, logs, health e docs operacionais) | ✅ |
+| **P0-09** | **UAT comercial e prontidao de piloto** (roteiro UAT, checklist, matriz V1, sign-off e criterios de decisao) | ✅ |
 | 9 | RH & Salários | 🗺️ futuro |
 | X | RLS forçado em toda a BD (fase transversal, pré-produção) | 🗺️ futuro |
 
@@ -50,7 +51,7 @@ contabilidade 189/189** (8b 32 + 8c.1 30 + 8c.2a 18 + 8c.2b 34 + 8c.3 17 + P0-02
 em Windows nativo (30/30 páginas estaticas + `/api/health` dinamico) e Docker Linux com Node 20 + OpenSSL · imagens Docker de produção
 `web`, `worker` e target `migrate` OK · seed idempotente (2×) · login/contexto
 multiempresa 7/7 · `pnpm build` OK em Windows nativo (31/31 páginas, incluindo `/api/health`) ·
-staging Docker P0-08 OK (`docker:staging:build`, migrations explicitas, web/worker/postgres/redis,
+staging Docker P0-08/P0-09 OK (`docker:staging:build`, migrations explicitas, web/worker/postgres/redis,
 health `/api/health`, smoke `/login`, `/seleccionar-empresa` e headers).
 
 P0-07 acrescenta backup manual de staging, restore destrutivo com confirmacao explicita,
@@ -112,6 +113,24 @@ worker redige payloads sensiveis antes de logging; `/api/health` ficou dinamico,
 centralizado em Redis/borda para multiplas instancias, revogacao completa de sessoes persistidas,
 RLS transversal e observabilidade avancada. Proximo passo: `P0-09 — UAT comercial e prontidao de
 piloto` (nao iniciado).
+
+**P0-09 (2026-07-05):** concluido o pacote documental de UAT comercial e prontidao de piloto sem
+alteracoes funcionais, schema, migrations ou dependencias. Criados `docs/UAT_PILOT.md`,
+`docs/UAT_TEST_SCRIPT.md`, `docs/PILOT_READINESS_CHECKLIST.md`,
+`docs/UAT_SIGNOFF_TEMPLATE.md` e `docs/V1_SCOPE_MATRIX.md`. A matriz V1 separa explicitamente o
+que esta pronto para UAT, parcial, fora da V1 ou futuro, incluindo RH, salarios, POS,
+contratos/subscricoes, producao e restaurante/bar como futuro/fora da V1. `SETUP.md`,
+`docs/DEPLOYMENT.md` e `docs/SECURITY.md` passaram a apontar para o pacote UAT, exigindo dados
+ficticios, checklist assinada, backup pre-UAT/piloto e sign-off antes de qualquer piloto. Validado
+com `prisma validate`, `prisma migrate status`, `pnpm db:generate`, `pnpm typecheck`,
+`pnpm lint`, `pnpm test` (89/89), `pnpm test:integration:security:production-hardening` (16/16),
+`pnpm test:integration:auth:company-selection` (7/7),
+`pnpm test:integration:accounting:reversal:all` (44/44),
+`pnpm test:integration:accounting` (189/189), `pnpm build` e smoke staging com overrides temporarios
+seguros sem imprimir secrets (`docker:staging:migrate`, `docker:staging:up`, `docker:staging:ps`,
+`/api/health` 200, `/login` 200, `/seleccionar-empresa` 307 para `/login`, `docker:staging:down`).
+Proximo passo: decisao comercial explicita entre piloto controlado e abertura de backlog P1. Nao
+iniciar P1 automaticamente.
 
 **Hardening pré-produção P0-01 (2026-07-02):** seed demo bloqueado em `production`
 antes de criar o Prisma Client; credenciais demo removidas da interface de
@@ -623,8 +642,8 @@ db:generate` e `pnpm build`.
   por transacção, `ENABLE`/`FORCE ROW LEVEL SECURITY` + policies por empresa em **todas** as
   tabelas (não só Contabilidade), e testes de isolamento através da role real de runtime. O schema
   actual já está RLS-ready (`companyId` + FKs compostas em todas as tabelas).
-- **P0-09 — UAT comercial e prontidao de piloto** — validacao operacional com usuarios e dados
-  autorizados antes de qualquer piloto real. Nao iniciado.
+- **P0-09 — UAT comercial e prontidao de piloto** _(✅ concluída)_ — pacote documental e criterios
+  de decisao para validar operacionalmente a V1 com dados ficticios antes de qualquer piloto real.
 - **Fase 9 — RH & Salários** — colaboradores, contratos, processamento salarial (liga à
   contabilidade via `systemKeys` `SALARIES_EXPENSE`/`SALARIES_PAYABLE` e à tesouraria).
 - **Extensões da Facturação** — POS, cotações, NC/ND.

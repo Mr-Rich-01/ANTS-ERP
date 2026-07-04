@@ -29,7 +29,7 @@ Módulos já implementados: Auth/RBAC/Admin, Clientes, Fornecedores, Produtos &
 Stock, Vendas/Facturação, Compras, Tesouraria & Bancos, Hardening da
 Tesouraria, Contabilidade 8a, 8b, 8c.1, 8c.2a, 8c.2b, 8c.3,
 P0-03 completo (P0-03.0, P0-03a, P0-03b, P0-03c, P0-03d, P0-03e e P0-03f),
-P0-04, P0-05, P0-06, P0-07 e P0-08.
+P0-04, P0-05, P0-06, P0-07, P0-08 e P0-09.
 
 Estado actual da Contabilidade: P0-03 completo. A base de
 reversões está activa; recebimentos de clientes podem ser anulados, facturas sem
@@ -46,8 +46,10 @@ de empresa activa. A P0-06 criou o ambiente de staging Docker e a validação de
 release. A P0-07 criou a base operacional de Backup/Restore/Rollback. A P0-08
 reforcou o hardening de producao com validacao de env, bloqueio de placeholders,
 cookies seguros, headers, CORS same-origin, rate limit, logs sem secrets e health
-sem exposicao sensivel. A proxima fase e P0-09 — UAT comercial e prontidao de
-piloto, a definir e autorizar explicitamente.
+sem exposicao sensivel. A P0-09 criou o pacote de UAT comercial e prontidao de
+piloto com roteiro, checklist, matriz V1, template de sign-off, criterios de
+entrada/saida e regras para nao vender funcionalidades futuras. O proximo passo
+e decisao comercial explicita: piloto controlado ou abertura de backlog P1.
 
 ## Arquitectura Obrigatória
 
@@ -156,6 +158,12 @@ upgrade.
 - Não avançar automaticamente para a fase seguinte.
 - Nunca incluir segredos, passwords reais, tokens, connection strings privadas
   ou conteúdo sensível de `.env` em documentação ou commits.
+- Não usar dados reais em UAT, piloto, screenshots, logs ou documentação sem
+  aprovação explícita.
+- Não vender, demonstrar como pronto ou prometer funcionalidades marcadas como
+  futuras, parciais ou fora da V1 na matriz de escopo.
+- Qualquer piloto exige staging validado, backup pré-piloto e checklist/sign-off
+  assinado.
 
 ## Comandos
 
@@ -267,9 +275,12 @@ passwords não demonstrativas.
 - P0-06 concluída.
 - P0-07 concluída.
 - P0-08 concluída.
+- P0-09 concluída.
 - Commit base funcional antes da P0-03.0: `a1d608b`.
-- Próxima fase: P0-09 — UAT comercial e prontidão de piloto, a definir e autorizar explicitamente.
-- Não iniciar P0-09 sem validação limpa e autorização explícita.
+- Próximo passo: decisão comercial explícita sobre piloto controlado ou abertura
+  de backlog P1.
+- Não iniciar P1 nem piloto real sem decisão explícita, backup, staging validado
+  e checklist assinada.
 - `MODULE_STATUS.md` é a fonte principal para progresso e próximos passos.
 - `CLAUDE.md` deve ser preservado.
 - Quando `AGENTS.md` e `CLAUDE.md` divergirem, apresentar a divergência antes
