@@ -119,6 +119,21 @@ pnpm --filter @ants/database exec prisma migrate status
 Depois de executar um seed que introduza novas permissões, terminar a sessão e
 voltar a entrar para que a sessão obtenha as permissões actualizadas.
 
+### Login multiempresa
+
+O login não escolhe uma empresa de forma implícita quando o mesmo email tem
+acesso activo a mais de uma empresa. O comportamento esperado é:
+
+- uma empresa activa: entrada directa no ERP;
+- várias empresas activas: redireccionamento para `/seleccionar-empresa`;
+- nenhuma empresa activa: bloqueio do ERP operacional com mensagem para
+  contactar o administrador.
+
+A empresa activa é guardada apenas na sessão validada pelo servidor. URLs,
+formulários, localStorage ou payloads manipulados não são fonte de verdade para
+`companyId`; qualquer escolha é revalidada contra a conta autenticada e a empresa
+activa antes de actualizar o contexto.
+
 ### Produção
 
 Em produção, o seed de demonstração é proibido:
@@ -250,6 +265,12 @@ Agregado de todas as suites de reversões:
 
 ```bash
 pnpm test:integration:accounting:reversal:all
+```
+
+Teste dedicado de login/contexto multiempresa:
+
+```bash
+pnpm test:integration:auth:company-selection
 ```
 
 Build:

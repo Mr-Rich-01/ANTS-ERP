@@ -11,6 +11,7 @@ interface TopbarProps {
   userName: string;
   userEmail: string;
   userInitials: string;
+  companyName: string;
 }
 
 // Dados de UI (placeholders). TODO: ligar a sessão/notificações reais nas fases respectivas.
@@ -43,7 +44,17 @@ const iconBtn: React.CSSProperties = {
   flex: 'none',
 };
 
-export function Topbar({ userName, userEmail, userInitials }: TopbarProps) {
+function companyInitials(name: string): string {
+  return name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0] ?? '')
+    .join('')
+    .toUpperCase();
+}
+
+export function Topbar({ userName, userEmail, userInitials, companyName }: TopbarProps) {
   const { theme, toggleTheme, toggleCollapsed } = useShell();
   const router = useRouter();
   const [quickOpen, setQuickOpen] = useState(false);
@@ -150,6 +161,8 @@ export function Topbar({ userName, userEmail, userInitials }: TopbarProps) {
 
       {/* Empresa / filial */}
       <button
+        onClick={() => router.push('/seleccionar-empresa')}
+        title="Seleccionar empresa"
         style={{
           display: 'flex',
           alignItems: 'center',
@@ -176,11 +189,11 @@ export function Topbar({ userName, userEmail, userInitials }: TopbarProps) {
             flex: 'none',
           }}
         >
-          AC
+          {companyInitials(companyName) || 'E'}
         </span>
         <span style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.1, textAlign: 'left' }}>
-          <span style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text)' }}>ANTS Comercial, Lda</span>
-          <span style={{ fontSize: 10.5, color: 'var(--text3)' }}>Maputo · Sede</span>
+          <span style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text)' }}>{companyName}</span>
+          <span style={{ fontSize: 10.5, color: 'var(--text3)' }}>Empresa activa</span>
         </span>
         <span style={{ color: 'var(--text3)', display: 'inline-flex' }}>
           <Icon name="chevrons-up-down" size={15} />

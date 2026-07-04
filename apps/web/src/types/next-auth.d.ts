@@ -7,6 +7,7 @@ declare module 'next-auth' {
     isPlatformAdmin: boolean;
     mustChangePassword: boolean;
     permissions: string[];
+    availableCompanyIds: string[];
   }
   interface Session {
     user: {
@@ -15,6 +16,7 @@ declare module 'next-auth' {
       isPlatformAdmin: boolean;
       mustChangePassword: boolean;
       permissions: string[];
+      availableCompanyIds: string[];
     } & DefaultSession['user'];
   }
 }
@@ -25,5 +27,6 @@ declare module 'next-auth/jwt' {
     isPlatformAdmin?: boolean;
     mustChangePassword?: boolean;
     permissions?: string[];
+    availableCompanyIds?: string[];
   }
 }

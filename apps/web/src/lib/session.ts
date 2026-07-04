@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation';
-import type { RequestContext } from '@ants/domain';
+import { validateSessionCompany, type RequestContext } from '@ants/domain';
+import { prisma } from '@ants/database';
 import { auth } from '@/auth';
 
 export interface SessionUser {
@@ -10,6 +11,7 @@ export interface SessionUser {
   isPlatformAdmin: boolean;
   mustChangePassword: boolean;
   permissions: string[];
+  availableCompanyIds: string[];
 }
 
 /** Devolve o utilizador da sessão, ou null. */
@@ -29,11 +31,17 @@ export async function requireSession(): Promise<SessionUser> {
 /** Constrói o RequestContext (passado aos serviços de domínio). */
 export async function getContext(): Promise<RequestContext> {
   const user = await requireSession();
+  const activeUser = user.companyId ? await validateSessionCompany(prisma, user.id, user.companyId) : null;
   return {
-    companyId: user.companyId,
-    userId: user.id,
-    userName: user.name ?? undefined,
-    permissions: new Set(user.permissions),
-    isPlatformAdmin: user.isPlatformAdmin,
+    companyId: activeUser?.companyId ?? null,
+    userId: activeUser?.id ?? user.id,
+    userName: activeUser?.name ?? user.name ?? undefined,
+    permissions: new Set(activeUser?.permissions ?? []),
+    isPlatformAdmin: activeUser?.isPlatformAdmin ?? user.isPlatformAdmin,
   };
+}
+
+export async function hasValidActiveCompany(user: SessionUser): Promise<boolean> {
+  if (!user.companyId) return false;
+  return Boolean(await validateSessionCompany(prisma, user.id, user.companyId));
 }

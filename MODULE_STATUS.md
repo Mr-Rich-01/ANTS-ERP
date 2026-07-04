@@ -5,9 +5,9 @@ _Última actualização: 2026-07-04_
 Estado vivo do projecto. O conhecimento permanente (arquitectura, regras, comandos) está
 em [`CLAUDE.md`](CLAUDE.md).
 
-**Último commit funcional:** este commit (`chore(infra): preparar imagens Docker de produção`)
-**Fase concluída:** `P0-04 — Dockerfiles e preparação da imagem de produção`
-**Próximo passo:** definir e autorizar a fase seguinte _(não iniciado)_
+**Último commit funcional:** este commit (`fix(auth): require explicit company context`)
+**Fase concluída:** `P0-05 — Resolver ambiguidade de login multiempresa`
+**Próximo passo:** definir e autorizar P0-06 _(não iniciado)_
 
 ---
 
@@ -37,6 +37,7 @@ em [`CLAUDE.md`](CLAUDE.md).
 | **P0-03e** | **Estorno atómico de transferência entre contas** (`TreasuryMovement` OUT/IN→dois compensatórios, duas contas, idempotência e auditoria lógica única) | ✅ |
 | **P0-03f** | **Regressão integrada, UAT e documentação final dos estornos** (suite UAT, agregado de reversões, documentação operacional, limitações V1) | ✅ |
 | **P0-04** | **Dockerfiles e preparação da imagem de produção** | ✅ |
+| **P0-05** | **Resolver ambiguidade de login multiempresa** | ✅ |
 | 9 | RH & Salários | 🗺️ futuro |
 | X | RLS forçado em toda a BD (fase transversal, pré-produção) | 🗺️ futuro |
 
@@ -44,7 +45,8 @@ em [`CLAUDE.md`](CLAUDE.md).
 contabilidade 189/189** (8b 32 + 8c.1 30 + 8c.2a 18 + 8c.2b 34 + 8c.3 17 + P0-02 5 + P0-03.0 9 + P0-03b 10 + P0-03a 9 + P0-03c 7 + P0-03d 8 + P0-03e 6 + P0-03f 4;
 `pnpm test:integration:accounting`, sub: `…:c1`, `…:c2a`, `…:c2`, `…:c3`, `…:reversal:customer-payment`, `…:reversal:invoice`, `…:reversal:supplier-payment`, `…:reversal:purchase-receipt`, `…:reversal:treasury-transfer`, `…:reversal:uat`, `…:reversal:all`) · `prisma validate` OK · `prisma migrate status` OK · `pnpm build` OK
 em Windows nativo (28/28 páginas) e Docker Linux com Node 20 + OpenSSL · imagens Docker de produção
-`web`, `worker` e target `migrate` OK · seed idempotente (2×).
+`web`, `worker` e target `migrate` OK · seed idempotente (2×) · login/contexto
+multiempresa 7/7 · `pnpm build` OK em Windows nativo (30/30 páginas).
 
 **P0-04 (2026-07-04):** criada a preparação de imagem de produção sem alterações funcionais:
 Dockerfile multi-stage da web em `apps/web/Dockerfile` com Next standalone activado por
@@ -55,6 +57,15 @@ utilizador não-root; Dockerfile do worker em `apps/worker/Dockerfile` com build
 ganhou o serviço explícito `migrate` em profile `migration`; migrations não correm automaticamente no
 arranque e o seed demo continua proibido em produção. Documentação e scripts de build Docker foram
 actualizados em `docs/DEPLOYMENT.md`, `SETUP.md`, `.env.example` e `package.json`.
+
+**P0-05 (2026-07-04):** resolvida a ambiguidade de login multiempresa sem migration. O login
+autentica credenciais contra as contas activas do email; quando existe exactamente uma empresa
+activa validada, a sessão entra directamente nessa empresa; quando existem várias, a sessão fica
+sem `companyId` operacional e redirecciona para `/seleccionar-empresa`; quando não existe empresa
+activa, o ERP operacional fica bloqueado com mensagem clara. A escolha de empresa é validada no
+servidor contra sessão, conta activa e empresa activa antes de actualizar o JWT, e `RequestContext`
+revalida empresa/utilizador/permissões na base de dados para bloquear sessões antigas com empresa
+removida ou inactiva. Criado o comando `pnpm test:integration:auth:company-selection` (7/7).
 
 **Hardening pré-produção P0-01 (2026-07-02):** seed demo bloqueado em `production`
 antes de criar o Prisma Client; credenciais demo removidas da interface de
@@ -155,6 +166,14 @@ build e operação. Validações executadas: `pnpm typecheck`, `pnpm lint`, `pnp
 `pnpm docker:build:web`, `pnpm docker:build:worker`, `pnpm docker:production:build`, build do
 serviço `migrate` com profile `migration`, verificação de runtime não-root e ausência de `.env` nas
 imagens.
+
+**P0-05 (2026-07-04):** concluída a correcção de segurança do login multiempresa. `authenticate`
+deixou de usar a primeira conta encontrada por email como empresa implícita; contas com uma única
+empresa activa entram directamente, contas com várias empresas activas exigem escolha explícita em
+`/seleccionar-empresa`, e contas sem empresa activa ficam fora do ERP operacional. A escolha é
+guardada no JWT apenas por update server-side validado contra os `companyIds` autenticados no login,
+e o `RequestContext` revalida empresa/utilizador/permissões na base antes de executar domínio.
+Suite dedicada: `pnpm test:integration:auth:company-selection` (7/7).
 
 **Commit da 8c.3:** este commit exclusivo, `feat(accounting): integrate purchase receipts and supplier payments`.
 
@@ -531,8 +550,10 @@ db:generate` e `pnpm build`.
     estornos, com suite `pnpm test:integration:accounting:reversal:uat`, agregado
     `pnpm test:integration:accounting:reversal:all` e documentação
     `docs/reversals-uat.md`.
-  - **P0-04** _(✅ concluída)_: Dockerfiles e preparação da imagem de produção.
     Diferidos: COGS, backfill (dry-run) e ecrãs contabilísticos finais.
+  - **P0-04** _(✅ concluída)_: Dockerfiles e preparação da imagem de produção.
+  - **P0-05** _(✅ concluída)_: login multiempresa exige empresa activa validada; múltiplas
+    empresas activas vão para selector explícito, sem aceitar `companyId` do cliente como verdade.
 - **8d — Ecrãs**: plano de contas, diários, novo lançamento, detalhe, razão geral, balancete,
   extracto diário (linha a linha) + configuração contabilística (mapping de `systemKeys`).
 - **8e — Testes & validação final**: unidade + integração + isolamento multiempresa.

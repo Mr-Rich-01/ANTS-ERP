@@ -27,8 +27,9 @@ pnpm + Turborepo:
 
 Módulos já implementados: Auth/RBAC/Admin, Clientes, Fornecedores, Produtos &
 Stock, Vendas/Facturação, Compras, Tesouraria & Bancos, Hardening da
-Tesouraria, Contabilidade 8a, 8b, 8c.1, 8c.2a, 8c.2b, 8c.3 e
-P0-03 completo (P0-03.0, P0-03a, P0-03b, P0-03c, P0-03d, P0-03e e P0-03f).
+Tesouraria, Contabilidade 8a, 8b, 8c.1, 8c.2a, 8c.2b, 8c.3,
+P0-03 completo (P0-03.0, P0-03a, P0-03b, P0-03c, P0-03d, P0-03e e P0-03f),
+P0-04 e P0-05.
 
 Estado actual da Contabilidade: P0-03 completo. A base de
 reversões está activa; recebimentos de clientes podem ser anulados, facturas sem
@@ -39,8 +40,9 @@ ponta a ponta com reversão atómica de `PurchaseOrder`, `Supplier`, Stock, cust
 médio, contabilidade e auditoria. Transferências entre contas de Tesouraria podem
 ser estornadas atomicamente, revertendo as duas pernas e as duas contas em
 conjunto. A regressão integrada/UAT e a documentação final dos estornos foram
-criadas na P0-03f. A próxima fase é P0-04 — Dockerfiles e preparação de imagem
-de produção, mas não deve ser iniciada sem validação limpa e autorização explícita.
+criadas na P0-03f. A P0-04 preparou as imagens Docker de produção. A P0-05
+resolveu a ambiguidade de login multiempresa com selecção explícita e validada
+de empresa activa. A próxima fase é P0-06, a definir e autorizar explicitamente.
 
 ## Arquitectura Obrigatória
 
@@ -73,6 +75,9 @@ Responsabilidades:
 `RequestContext` é sempre derivado da sessão autenticada, nunca do cliente.
 Todas as queries de modelos com `companyId` devem passar por cliente isolado e
 novos modelos empresariais devem ser registados em `COMPANY_SCOPED`.
+Nunca aceitar `companyId` de URL, formulário, localStorage, header ou payload
+como fonte de verdade; qualquer escolha enviada pela UI deve ser revalidada no
+servidor contra sessão, conta/membership activa e empresa activa.
 
 ## Stack Declarada
 
@@ -184,6 +189,7 @@ pnpm test:integration:accounting:reversal:purchase-receipt
 pnpm test:integration:accounting:reversal:treasury-transfer
 pnpm test:integration:accounting:reversal:uat
 pnpm test:integration:accounting:reversal:all
+pnpm test:integration:auth:company-selection
 pnpm build
 ```
 
@@ -201,6 +207,7 @@ Testes de integração contabilísticos:
 - P0-03e: `pnpm test:integration:accounting:reversal:treasury-transfer`
 - P0-03f: `pnpm test:integration:accounting:reversal:uat`
 - P0-03 agregado: `pnpm test:integration:accounting:reversal:all`
+- P0-05: `pnpm test:integration:auth:company-selection`
 
 ## Credenciais de Teste Versionadas
 
@@ -228,9 +235,11 @@ passwords não demonstrativas.
 - P0-03e concluída.
 - P0-03f concluída.
 - P0-03 completo.
+- P0-04 concluída.
+- P0-05 concluída.
 - Commit base funcional antes da P0-03.0: `a1d608b`.
-- Próxima fase: P0-04 — Dockerfiles e preparação da imagem de produção.
-- Não iniciar P0-04 sem validação limpa e autorização explícita.
+- Próxima fase: P0-06 — a definir e autorizar explicitamente.
+- Não iniciar P0-06 sem validação limpa e autorização explícita.
 - `MODULE_STATUS.md` é a fonte principal para progresso e próximos passos.
 - `CLAUDE.md` deve ser preservado.
 - Quando `AGENTS.md` e `CLAUDE.md` divergirem, apresentar a divergência antes
