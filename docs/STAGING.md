@@ -153,6 +153,21 @@ docker compose --env-file .env.staging -f docker-compose.staging.yml logs -f --t
 docker compose --env-file .env.staging -f docker-compose.staging.yml ps
 ```
 
+## Backup e restore
+
+Antes de testes destrutivos, limpeza de volumes ou ensaios que possam substituir
+dados de staging, criar um backup manual:
+
+```bash
+pnpm ops:staging:backup
+```
+
+Restore completo e destrutivo fica documentado no runbook da P0-07:
+[`docs/BACKUP_RESTORE.md`](BACKUP_RESTORE.md).
+
+O restore deve ser ensaiado apenas em staging/local, exige confirmacao explicita
+e nao deve ser usado contra producao real nesta fase.
+
 ## Parar e limpar
 
 Parar sem apagar volumes:
@@ -185,6 +200,8 @@ docker compose --env-file .env.staging -f docker-compose.staging.yml down -v
 ```
 
 Nao usar este procedimento em dados reais sem plano aprovado de backup/restore.
+Para rollback de imagem e rollback pos-migration da P0-07, ver
+[`docs/BACKUP_RESTORE.md`](BACKUP_RESTORE.md).
 
 ## Seguranca
 
@@ -210,6 +227,7 @@ Nao usar este procedimento em dados reais sem plano aprovado de backup/restore.
 - `docker image ls "ants-erp-staging-*"` mostra imagens web/worker/migrate quando aplicavel.
 - `docker run --rm ants-erp-staging-web sh -lc "find /app -name '.env*' -print"` nao encontra envs.
 - `pnpm docker:staging:migrate` executado manualmente e sem erros.
+- `pnpm ops:staging:backup` executado antes de qualquer teste destrutivo.
 - `pnpm docker:staging:up` sobe web/worker/db/redis.
 - `curl http://localhost:3001/api/health` retorna HTTP 200.
 - `curl http://localhost:3001/login` retorna HTTP 200.

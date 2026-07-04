@@ -150,6 +150,15 @@ docker compose -f docker-compose.production.yml --profile migration run --rm mig
 
 O seed de demonstracao nunca deve ser executado em producao.
 
+Antes de migrations em ambiente real, fazer backup da base de dados e verificar
+que o ficheiro existe fora do Git. Rollback de imagem nao reverte a base de
+dados; se uma migration aplicada deixar a app incompatível, decidir
+explicitamente entre corrigir a app ou restaurar o backup. Restore e destrutivo
+e exige aprovacao operacional.
+
+Runbook de backup, restore, rollback de imagem e rollback pos-migration:
+[`docs/BACKUP_RESTORE.md`](BACKUP_RESTORE.md).
+
 ## 11. Publicacao (deploy futuro)
 
 ```bash

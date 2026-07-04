@@ -41,7 +41,11 @@
     "docker:staging:up": "docker compose --env-file .env.staging -f docker-compose.staging.yml up -d web worker",
     "docker:staging:ps": "docker compose --env-file .env.staging -f docker-compose.staging.yml ps",
     "docker:staging:logs": "docker compose --env-file .env.staging -f docker-compose.staging.yml logs -f --tail=100 web worker",
-    "docker:staging:down": "docker compose --env-file .env.staging -f docker-compose.staging.yml down"
+    "docker:staging:down": "docker compose --env-file .env.staging -f docker-compose.staging.yml down",
+    "ops:staging:backup": "node scripts/ops/staging-backup-db.mjs",
+    "ops:staging:restore": "node scripts/ops/staging-restore-db.mjs",
+    "ops:staging:backup:help": "node scripts/ops/staging-backup-db.mjs --help",
+    "ops:staging:restore:help": "node scripts/ops/staging-restore-db.mjs --help"
   },
   "devDependencies": {
     "eslint": "^9.11.1",

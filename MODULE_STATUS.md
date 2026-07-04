@@ -5,9 +5,9 @@ _Última actualização: 2026-07-04_
 Estado vivo do projecto. O conhecimento permanente (arquitectura, regras, comandos) está
 em [`CLAUDE.md`](CLAUDE.md).
 
-**Último commit funcional:** este commit (`chore(infra): add staging Docker release validation`)
-**Fase concluída:** `P0-06 — Ambiente de staging Docker e validação de release`
-**Próximo passo:** definir e autorizar P0-07 — Backup/Restore/Rollback _(não iniciado)_
+**Último commit funcional:** este commit (`chore(ops): add backup restore rollback runbook`)
+**Fase concluída:** `P0-07 — Backup, Restore e Rollback operacional`
+**Próximo passo:** P0-08 — Hardening de produção _(não iniciado)_
 
 ---
 
@@ -39,6 +39,7 @@ em [`CLAUDE.md`](CLAUDE.md).
 | **P0-04** | **Dockerfiles e preparação da imagem de produção** | ✅ |
 | **P0-05** | **Resolver ambiguidade de login multiempresa** | ✅ |
 | **P0-06** | **Ambiente de staging Docker e validação de release** | ✅ |
+| **P0-07** | **Backup, Restore e Rollback operacional** | ✅ |
 | 9 | RH & Salários | 🗺️ futuro |
 | X | RLS forçado em toda a BD (fase transversal, pré-produção) | 🗺️ futuro |
 
@@ -50,6 +51,11 @@ em Windows nativo (28/28 páginas) e Docker Linux com Node 20 + OpenSSL · image
 multiempresa 7/7 · `pnpm build` OK em Windows nativo (31/31 páginas, incluindo `/api/health`) ·
 staging Docker P0-06 OK (`docker:staging:build`, migrations explicitas, web/worker/postgres/redis,
 health `/api/health` e smoke `/login`).
+
+P0-07 acrescenta backup manual de staging, restore destrutivo com confirmacao explicita,
+runbook de rollback de imagem e rollback pos-migration, proteccao Git para dumps locais e
+ensaio operacional de backup/restore em staging/local. Backup antes de migration real passa a ser
+regra operacional. Restore nunca deve apontar para producao nesta fase.
 
 **P0-04 (2026-07-04):** criada a preparação de imagem de produção sem alterações funcionais:
 Dockerfile multi-stage da web em `apps/web/Dockerfile` com Next standalone activado por
@@ -83,6 +89,14 @@ com `pnpm typecheck`, `pnpm lint`, `pnpm test`, `pnpm test:integration:accountin
 `pnpm test:integration:accounting:reversal:all`, `pnpm test:integration:auth:company-selection`,
 `pnpm build`, `pnpm docker:staging:build`, `pnpm docker:staging:migrate`, `pnpm docker:staging:up`,
 `pnpm docker:staging:ps`, `/api/health`, `/seleccionar-empresa` e `/login`.
+
+**P0-07 (2026-07-04):** criada a base operacional de backup/restore/rollback sem deploy real,
+sem novas dependencias, sem schema e sem migrations. Foram adicionados scripts manuais para
+`pnpm ops:staging:backup` e restore destrutivo com `CONFIRM_RESTORE`, dumps locais ignorados pelo
+Git, runbook `docs/BACKUP_RESTORE.md`, referencias em staging/deployment/setup e regras para backup
+antes de migrations reais. Rollback de imagem fica separado de rollback de dados; se migration
+aplicada deixar a app incompativel, a decisao entre corrigir em frente ou restaurar backup exige
+aprovacao explicita. Proximo passo: `P0-08 — Hardening de producao` (nao iniciado).
 
 **Hardening pré-produção P0-01 (2026-07-02):** seed demo bloqueado em `production`
 antes de criar o Prisma Client; credenciais demo removidas da interface de
@@ -594,6 +608,8 @@ db:generate` e `pnpm build`.
   por transacção, `ENABLE`/`FORCE ROW LEVEL SECURITY` + policies por empresa em **todas** as
   tabelas (não só Contabilidade), e testes de isolamento através da role real de runtime. O schema
   actual já está RLS-ready (`companyId` + FKs compostas em todas as tabelas).
+- **P0-08 — Hardening de produção** — headers/CORS/rate limits, politicas operacionais finais,
+  reforcos de seguranca e preparacao antes de qualquer deploy real. Nao iniciado.
 - **Fase 9 — RH & Salários** — colaboradores, contratos, processamento salarial (liga à
   contabilidade via `systemKeys` `SALARIES_EXPENSE`/`SALARIES_PAYABLE` e à tesouraria).
 - **Extensões da Facturação** — POS, cotações, NC/ND.

@@ -29,7 +29,7 @@ Módulos já implementados: Auth/RBAC/Admin, Clientes, Fornecedores, Produtos &
 Stock, Vendas/Facturação, Compras, Tesouraria & Bancos, Hardening da
 Tesouraria, Contabilidade 8a, 8b, 8c.1, 8c.2a, 8c.2b, 8c.3,
 P0-03 completo (P0-03.0, P0-03a, P0-03b, P0-03c, P0-03d, P0-03e e P0-03f),
-P0-04, P0-05 e P0-06.
+P0-04, P0-05, P0-06 e P0-07.
 
 Estado actual da Contabilidade: P0-03 completo. A base de
 reversões está activa; recebimentos de clientes podem ser anulados, facturas sem
@@ -43,8 +43,8 @@ conjunto. A regressão integrada/UAT e a documentação final dos estornos foram
 criadas na P0-03f. A P0-04 preparou as imagens Docker de produção. A P0-05
 resolveu a ambiguidade de login multiempresa com selecção explícita e validada
 de empresa activa. A P0-06 criou o ambiente de staging Docker e a validação de
-release. A próxima fase é P0-07 — Backup/Restore/Rollback, a definir e autorizar
-explicitamente.
+release. A P0-07 criou a base operacional de Backup/Restore/Rollback. A próxima
+fase é P0-08 — Hardening de produção, a definir e autorizar explicitamente.
 
 ## Arquitectura Obrigatória
 
@@ -132,6 +132,10 @@ upgrade.
   provisionamento explícito.
 - Em staging Docker, migrations são sempre manuais e explícitas pelo serviço
   `migrate`; `web` e `worker` não executam migrations automaticamente.
+- Fazer backup antes de qualquer migration em ambiente real.
+- Nunca commitar backups, dumps, restores temporários ou artefactos com dados.
+- Restore é destrutivo e exige confirmação explícita; scripts de staging/local
+  não podem apontar para produção por defeito.
 - `.env.staging` nunca pode ser commitado; apenas `.env.staging.example` pode
   ser versionado com placeholders seguros.
 - Validar `typecheck`, `lint`, testes relevantes e `build` antes de cada commit.
@@ -161,6 +165,13 @@ Docker:
 ```bash
 pnpm docker:dev
 docker compose ps
+```
+
+Operação staging:
+
+```bash
+pnpm ops:staging:backup
+CONFIRM_RESTORE=I_UNDERSTAND_THIS_DESTROYS_STAGING_DATA pnpm ops:staging:restore -- backups/staging/<ficheiro>.dump
 ```
 
 Prisma:
@@ -244,9 +255,10 @@ passwords não demonstrativas.
 - P0-04 concluída.
 - P0-05 concluída.
 - P0-06 concluída.
+- P0-07 concluída.
 - Commit base funcional antes da P0-03.0: `a1d608b`.
-- Próxima fase: P0-07 — Backup/Restore/Rollback, a definir e autorizar explicitamente.
-- Não iniciar P0-07 sem validação limpa e autorização explícita.
+- Próxima fase: P0-08 — Hardening de produção, a definir e autorizar explicitamente.
+- Não iniciar P0-08 sem validação limpa e autorização explícita.
 - `MODULE_STATUS.md` é a fonte principal para progresso e próximos passos.
 - `CLAUDE.md` deve ser preservado.
 - Quando `AGENTS.md` e `CLAUDE.md` divergirem, apresentar a divergência antes

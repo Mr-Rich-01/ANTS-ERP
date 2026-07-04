@@ -339,3 +339,27 @@ curl http://localhost:3001/api/health
 `/login`, `/seleccionar-empresa` e logs de web/worker.
 
 Runbook completo: [`docs/STAGING.md`](docs/STAGING.md).
+
+### Backup/restore staging
+
+Criar backup manual da base de staging:
+
+```bash
+pnpm ops:staging:backup
+```
+
+Restaurar backup em staging/local e destrutivo e exige confirmacao explicita:
+
+```bash
+CONFIRM_RESTORE=I_UNDERSTAND_THIS_DESTROYS_STAGING_DATA pnpm ops:staging:restore -- backups/staging/ants-erp-staging-YYYYMMDD-HHMMSS.dump
+```
+
+PowerShell:
+
+```powershell
+$env:CONFIRM_RESTORE="I_UNDERSTAND_THIS_DESTROYS_STAGING_DATA"
+pnpm ops:staging:restore -- backups/staging/ants-erp-staging-YYYYMMDD-HHMMSS.dump
+Remove-Item Env:\CONFIRM_RESTORE
+```
+
+Runbook completo: [`docs/BACKUP_RESTORE.md`](docs/BACKUP_RESTORE.md).

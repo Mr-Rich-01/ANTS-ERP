@@ -44,3 +44,8 @@ design/_pretty.html
 
 # Backups / prompts (kept locally, not part of app source)
 Backups de prompts do chatgbt/
+backups/
+*.dump
+*.backup
+*.sql.gz
+*.restore.tmp
