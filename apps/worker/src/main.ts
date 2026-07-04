@@ -1,4 +1,5 @@
 import { Worker } from 'bullmq';
+import { redactLogValue } from './logging.js';
 import { connection, QUEUES } from './queues.js';
 
 // Worker de exemplo (notificações). Os processadores reais de cada fila
@@ -7,7 +8,7 @@ import { connection, QUEUES } from './queues.js';
 const notificationsWorker = new Worker(
   QUEUES.notifications,
   async (job) => {
-    console.log(`[notifications] a processar job ${job.id}`, job.data);
+    console.log(`[notifications] a processar job ${job.id}`, redactLogValue(job.data));
     return { processedAt: new Date().toISOString() };
   },
   { connection },

@@ -34,6 +34,8 @@ Editar `.env.staging` com valores exclusivos de staging:
 - `DATABASE_URL` usando host Docker `postgres`;
 - `REDIS_URL=redis://redis:6379`;
 - `STAGING_WEB_PORT`, por exemplo `3001`.
+- `ALLOW_LOCALHOST_RUNTIME_URLS=1`, apenas para permitir localhost neste
+  staging local em `NODE_ENV=production`.
 
 Nao usar `.env` de desenvolvimento, credenciais demo em ambiente real, secrets
 reais em ficheiros versionados ou seed automatico.
@@ -101,6 +103,7 @@ Verificar o health endpoint:
 
 ```bash
 curl http://localhost:3001/api/health
+curl -I http://localhost:3001/login
 ```
 
 Resposta esperada:
@@ -121,8 +124,11 @@ Smoke minimo de infra:
 - `web` fica saudavel pelo healthcheck do Compose;
 - `worker` esta em execucao; nesta fase e validado por status/logs, sem healthcheck falso;
 - `/api/health` retorna HTTP 200;
+- `/api/health` nao retorna envs, secrets, dados de empresa ou detalhes internos;
 - `/login` responde sem erro 5xx;
 - `/seleccionar-empresa` responde sem erro 5xx;
+- `curl -I http://localhost:3001/login` mostra `X-Content-Type-Options`,
+  `Referrer-Policy`, `X-Frame-Options` e `Permissions-Policy`;
 - logs de `web` e `worker` nao mostram erro de migration pendente, Prisma engine ou Redis.
 
 Smoke Auth P0-05:
@@ -220,6 +226,7 @@ Para rollback de imagem e rollback pos-migration da P0-07, ver
 - `pnpm typecheck` verde.
 - `pnpm lint` verde.
 - `pnpm test` verde.
+- `pnpm test:integration:security:production-hardening` verde.
 - `pnpm test:integration:accounting:reversal:all` verde quando a fase toca release contabilistica.
 - `pnpm test:integration:auth:company-selection` verde quando a fase toca autenticacao/contexto.
 - `pnpm build` verde.
@@ -230,6 +237,7 @@ Para rollback de imagem e rollback pos-migration da P0-07, ver
 - `pnpm ops:staging:backup` executado antes de qualquer teste destrutivo.
 - `pnpm docker:staging:up` sobe web/worker/db/redis.
 - `curl http://localhost:3001/api/health` retorna HTTP 200.
+- `curl -I http://localhost:3001/login` mostra headers de seguranca.
 - `curl http://localhost:3001/login` retorna HTTP 200.
 - `curl http://localhost:3001/seleccionar-empresa` nao retorna erro 5xx.
 - `pnpm docker:staging:ps` nao mostra containers em restart loop.

@@ -1,4 +1,5 @@
 import type { ConnectionOptions } from 'bullmq';
+import { assertWorkerRuntimeEnv } from './runtime-env.js';
 
 /**
  * Opções de ligação ao Redis para o BullMQ (derivadas de REDIS_URL).
@@ -6,6 +7,7 @@ import type { ConnectionOptions } from 'bullmq';
  * conflitos de tipos entre versões.
  */
 function buildConnection(): ConnectionOptions {
+  assertWorkerRuntimeEnv();
   const url = new URL(process.env.REDIS_URL ?? 'redis://localhost:6379');
   return {
     host: url.hostname,

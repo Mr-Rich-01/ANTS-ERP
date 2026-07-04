@@ -2,6 +2,7 @@
 
 import { AuthError } from 'next-auth';
 import { signIn } from '@/auth';
+import { checkLoginRateLimit } from '@/lib/rate-limit';
 
 export interface LoginState {
   error?: string;
@@ -13,6 +14,11 @@ export async function loginAction(_prev: LoginState, formData: FormData): Promis
 
   if (!email || !password) {
     return { error: 'Indique o email e a palavra-passe.' };
+  }
+
+  const rateLimit = checkLoginRateLimit(email);
+  if (!rateLimit.allowed) {
+    return { error: `Muitas tentativas. Tente novamente em ${rateLimit.retryAfterSeconds} segundos.` };
   }
 
   try {

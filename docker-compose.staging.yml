@@ -17,6 +17,7 @@ services:
       DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL in .env.staging}
       REDIS_URL: ${REDIS_URL:?Set REDIS_URL in .env.staging}
       PORT: ${PORT:-3000}
+      ALLOW_LOCALHOST_RUNTIME_URLS: ${ALLOW_LOCALHOST_RUNTIME_URLS:-}
     ports:
       - "${STAGING_WEB_PORT:-3001}:3000"
     depends_on:

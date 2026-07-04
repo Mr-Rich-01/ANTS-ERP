@@ -31,6 +31,7 @@
     "test:integration:accounting:reversal:uat": "pnpm --filter @ants/domain test:integration:reversals-uat",
     "test:integration:accounting:reversal:all": "pnpm --filter @ants/domain test:integration:reversal-all",
     "test:integration:auth:company-selection": "pnpm --filter @ants/domain test:integration:auth-company-selection",
+    "test:integration:security:production-hardening": "pnpm --filter @ants/shared test -- production-hardening && pnpm --filter @ants/database test -- production-hardening",
     "docker:dev": "docker compose up -d postgres redis",
     "docker:build:web": "docker build -f apps/web/Dockerfile -t ants-erp-web:local .",
     "docker:build:worker": "docker build -f apps/worker/Dockerfile -t ants-erp-worker:local .",

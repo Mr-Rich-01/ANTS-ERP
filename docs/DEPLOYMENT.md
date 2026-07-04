@@ -61,6 +61,15 @@ Servicos em `docker-compose.production.yml`: `reverse-proxy` (Caddy), `web`
 - `.env` fora do git (apenas `.env.example` versionado).
 - Gerar `AUTH_SECRET` forte: `npx auth secret` ou `openssl rand -base64 33`.
 - Password de Postgres forte e exclusiva.
+- Antes de subir, executar a validacao de seguranca:
+
+```bash
+pnpm test:integration:security:production-hardening
+```
+
+- Nunca usar placeholders como `change_me`, `replace_with`, `example`, valores
+  localhost ou secrets fracos em producao real. O runtime P0-08 falha cedo sem
+  imprimir o valor secreto.
 
 ## 6. Dados e backups
 
@@ -119,6 +128,10 @@ REDIS_URL=redis://redis:6379
 PORT=3000
 ```
 
+`APP_URL` e `AUTH_URL` devem ser HTTPS e publicos em producao real. `localhost`
+so e permitido em staging/local quando `ALLOW_LOCALHOST_RUNTIME_URLS=1` estiver
+definido explicitamente.
+
 Para `worker`:
 
 ```env
@@ -168,3 +181,15 @@ docker compose -f docker-compose.production.yml --profile migration run --rm mig
 docker compose -f docker-compose.production.yml up -d
 docker compose -f docker-compose.production.yml ps
 ```
+
+Checklist de seguranca antes de piloto:
+
+```bash
+pnpm test:integration:security:production-hardening
+curl -I https://erp.exemplo.co.mz/login
+curl -i https://erp.exemplo.co.mz/api/health
+```
+
+Confirmar headers HTTP, health sem secrets, logs sem tokens/passwords, sem CORS
+wildcard, migrations executadas apenas pelo servico `migrate` e backup criado
+antes de qualquer migration real.

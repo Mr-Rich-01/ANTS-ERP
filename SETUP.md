@@ -273,6 +273,12 @@ Teste dedicado de login/contexto multiempresa:
 pnpm test:integration:auth:company-selection
 ```
 
+Teste dedicado de hardening de producao:
+
+```bash
+pnpm test:integration:security:production-hardening
+```
+
 Build:
 
 ```bash

@@ -5,9 +5,9 @@ _Última actualização: 2026-07-04_
 Estado vivo do projecto. O conhecimento permanente (arquitectura, regras, comandos) está
 em [`CLAUDE.md`](CLAUDE.md).
 
-**Último commit funcional:** este commit (`chore(ops): add backup restore rollback runbook`)
-**Fase concluída:** `P0-07 — Backup, Restore e Rollback operacional`
-**Próximo passo:** P0-08 — Hardening de produção _(não iniciado)_
+**Último commit funcional:** este commit (`chore(security): harden production runtime`)
+**Fase concluída:** `P0-08 — Hardening de producao`
+**Próximo passo:** P0-09 — UAT comercial e prontidao de piloto _(nao iniciado)_
 
 ---
 
@@ -40,17 +40,18 @@ em [`CLAUDE.md`](CLAUDE.md).
 | **P0-05** | **Resolver ambiguidade de login multiempresa** | ✅ |
 | **P0-06** | **Ambiente de staging Docker e validação de release** | ✅ |
 | **P0-07** | **Backup, Restore e Rollback operacional** | ✅ |
+| **P0-08** | **Hardening de producao** (env validation, defaults inseguros, Auth/cookies, headers, CORS, rate limit, logs, health e docs operacionais) | ✅ |
 | 9 | RH & Salários | 🗺️ futuro |
 | X | RLS forçado em toda a BD (fase transversal, pré-produção) | 🗺️ futuro |
 
-**Validações actuais:** typecheck 6/6 · lint 6/6 · **testes unitários 73** · **integração de
+**Validações actuais:** typecheck 6/6 · lint 6/6 · **testes unitários 89** · **security hardening 16/16** · **auth company-selection 7/7** · **reversal all 44/44** · **integração de
 contabilidade 189/189** (8b 32 + 8c.1 30 + 8c.2a 18 + 8c.2b 34 + 8c.3 17 + P0-02 5 + P0-03.0 9 + P0-03b 10 + P0-03a 9 + P0-03c 7 + P0-03d 8 + P0-03e 6 + P0-03f 4;
 `pnpm test:integration:accounting`, sub: `…:c1`, `…:c2a`, `…:c2`, `…:c3`, `…:reversal:customer-payment`, `…:reversal:invoice`, `…:reversal:supplier-payment`, `…:reversal:purchase-receipt`, `…:reversal:treasury-transfer`, `…:reversal:uat`, `…:reversal:all`) · `prisma validate` OK · `prisma migrate status` OK · `pnpm build` OK
-em Windows nativo (28/28 páginas) e Docker Linux com Node 20 + OpenSSL · imagens Docker de produção
+em Windows nativo (30/30 páginas estaticas + `/api/health` dinamico) e Docker Linux com Node 20 + OpenSSL · imagens Docker de produção
 `web`, `worker` e target `migrate` OK · seed idempotente (2×) · login/contexto
 multiempresa 7/7 · `pnpm build` OK em Windows nativo (31/31 páginas, incluindo `/api/health`) ·
-staging Docker P0-06 OK (`docker:staging:build`, migrations explicitas, web/worker/postgres/redis,
-health `/api/health` e smoke `/login`).
+staging Docker P0-08 OK (`docker:staging:build`, migrations explicitas, web/worker/postgres/redis,
+health `/api/health`, smoke `/login`, `/seleccionar-empresa` e headers).
 
 P0-07 acrescenta backup manual de staging, restore destrutivo com confirmacao explicita,
 runbook de rollback de imagem e rollback pos-migration, proteccao Git para dumps locais e
@@ -96,7 +97,21 @@ sem novas dependencias, sem schema e sem migrations. Foram adicionados scripts m
 Git, runbook `docs/BACKUP_RESTORE.md`, referencias em staging/deployment/setup e regras para backup
 antes de migrations reais. Rollback de imagem fica separado de rollback de dados; se migration
 aplicada deixar a app incompativel, a decisao entre corrigir em frente ou restaurar backup exige
-aprovacao explicita. Proximo passo: `P0-08 — Hardening de producao` (nao iniciado).
+aprovacao explicita.
+
+**P0-08 (2026-07-04):** concluido o hardening de producao sem schema, migrations ou dependencias
+novas. Criada validacao central de env para web e worker, com bloqueio de placeholders,
+`AUTH_SECRET` fraco, URLs localhost/HTTP em producao real, `DATABASE_URL`/`REDIS_URL` invalidas e
+mensagens sem valores secretos. Staging local em `NODE_ENV=production` exige
+`ALLOW_LOCALHOST_RUNTIME_URLS=1` para localhost. Auth.js passou a usar cookies seguros em producao;
+headers globais de baixo risco foram adicionados via middleware Next; a app permanece same-origin,
+sem CORS wildcard; login e seleccao de empresa ganharam rate limit em memoria com chaves hashed; o
+worker redige payloads sensiveis antes de logging; `/api/health` ficou dinamico, sem secrets e com
+`Cache-Control: no-store`. Documentacao operacional actualizada em `docs/SECURITY.md`,
+`docs/DEPLOYMENT.md`, `docs/STAGING.md` e `SETUP.md`. Riscos residuais: CSP completa, rate limit
+centralizado em Redis/borda para multiplas instancias, revogacao completa de sessoes persistidas,
+RLS transversal e observabilidade avancada. Proximo passo: `P0-09 — UAT comercial e prontidao de
+piloto` (nao iniciado).
 
 **Hardening pré-produção P0-01 (2026-07-02):** seed demo bloqueado em `production`
 antes de criar o Prisma Client; credenciais demo removidas da interface de
@@ -608,8 +623,8 @@ db:generate` e `pnpm build`.
   por transacção, `ENABLE`/`FORCE ROW LEVEL SECURITY` + policies por empresa em **todas** as
   tabelas (não só Contabilidade), e testes de isolamento através da role real de runtime. O schema
   actual já está RLS-ready (`companyId` + FKs compostas em todas as tabelas).
-- **P0-08 — Hardening de produção** — headers/CORS/rate limits, politicas operacionais finais,
-  reforcos de seguranca e preparacao antes de qualquer deploy real. Nao iniciado.
+- **P0-09 — UAT comercial e prontidao de piloto** — validacao operacional com usuarios e dados
+  autorizados antes de qualquer piloto real. Nao iniciado.
 - **Fase 9 — RH & Salários** — colaboradores, contratos, processamento salarial (liga à
   contabilidade via `systemKeys` `SALARIES_EXPENSE`/`SALARIES_PAYABLE` e à tesouraria).
 - **Extensões da Facturação** — POS, cotações, NC/ND.

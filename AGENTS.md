@@ -29,7 +29,7 @@ Módulos já implementados: Auth/RBAC/Admin, Clientes, Fornecedores, Produtos &
 Stock, Vendas/Facturação, Compras, Tesouraria & Bancos, Hardening da
 Tesouraria, Contabilidade 8a, 8b, 8c.1, 8c.2a, 8c.2b, 8c.3,
 P0-03 completo (P0-03.0, P0-03a, P0-03b, P0-03c, P0-03d, P0-03e e P0-03f),
-P0-04, P0-05, P0-06 e P0-07.
+P0-04, P0-05, P0-06, P0-07 e P0-08.
 
 Estado actual da Contabilidade: P0-03 completo. A base de
 reversões está activa; recebimentos de clientes podem ser anulados, facturas sem
@@ -43,8 +43,11 @@ conjunto. A regressão integrada/UAT e a documentação final dos estornos foram
 criadas na P0-03f. A P0-04 preparou as imagens Docker de produção. A P0-05
 resolveu a ambiguidade de login multiempresa com selecção explícita e validada
 de empresa activa. A P0-06 criou o ambiente de staging Docker e a validação de
-release. A P0-07 criou a base operacional de Backup/Restore/Rollback. A próxima
-fase é P0-08 — Hardening de produção, a definir e autorizar explicitamente.
+release. A P0-07 criou a base operacional de Backup/Restore/Rollback. A P0-08
+reforcou o hardening de producao com validacao de env, bloqueio de placeholders,
+cookies seguros, headers, CORS same-origin, rate limit, logs sem secrets e health
+sem exposicao sensivel. A proxima fase e P0-09 — UAT comercial e prontidao de
+piloto, a definir e autorizar explicitamente.
 
 ## Arquitectura Obrigatória
 
@@ -138,6 +141,12 @@ upgrade.
   não podem apontar para produção por defeito.
 - `.env.staging` nunca pode ser commitado; apenas `.env.staging.example` pode
   ser versionado com placeholders seguros.
+- Em producao real, nunca aceitar secrets fracos, placeholders ou URLs localhost
+  para `APP_URL`/`AUTH_URL`.
+- `/api/health` nao pode expor secrets, envs completos, dados de empresa ou
+  detalhes internos sensiveis.
+- Nao adicionar CORS amplo ou `Access-Control-Allow-Origin: *` em endpoints
+  autenticados.
 - Validar `typecheck`, `lint`, testes relevantes e `build` antes de cada commit.
   O build foi classificado em 2026-06-30; se voltar a falhar, tratar como
   regressão nova e registar o primeiro erro real conforme `MODULE_STATUS.md`.
@@ -207,6 +216,7 @@ pnpm test:integration:accounting:reversal:treasury-transfer
 pnpm test:integration:accounting:reversal:uat
 pnpm test:integration:accounting:reversal:all
 pnpm test:integration:auth:company-selection
+pnpm test:integration:security:production-hardening
 pnpm build
 ```
 
@@ -256,9 +266,10 @@ passwords não demonstrativas.
 - P0-05 concluída.
 - P0-06 concluída.
 - P0-07 concluída.
+- P0-08 concluída.
 - Commit base funcional antes da P0-03.0: `a1d608b`.
-- Próxima fase: P0-08 — Hardening de produção, a definir e autorizar explicitamente.
-- Não iniciar P0-08 sem validação limpa e autorização explícita.
+- Próxima fase: P0-09 — UAT comercial e prontidão de piloto, a definir e autorizar explicitamente.
+- Não iniciar P0-09 sem validação limpa e autorização explícita.
 - `MODULE_STATUS.md` é a fonte principal para progresso e próximos passos.
 - `CLAUDE.md` deve ser preservado.
 - Quando `AGENTS.md` e `CLAUDE.md` divergirem, apresentar a divergência antes

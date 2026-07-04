@@ -76,7 +76,7 @@ export default async function SelectCompanyPage({ searchParams }: { searchParams
         {searchParams.erro && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, color: 'var(--bad)', background: 'var(--bad-bg)', padding: '9px 12px', borderRadius: 10, marginBottom: 14 }}>
             <Icon name="alert-triangle" size={15} />
-            Empresa inválida ou sem acesso activo.
+            {searchParams.erro === 'muitas-tentativas' ? 'Muitas tentativas. Aguarde um momento e tente novamente.' : 'Empresa inválida ou sem acesso activo.'}
           </div>
         )}
 

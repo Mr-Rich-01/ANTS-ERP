@@ -2,10 +2,14 @@ import NextAuth from 'next-auth';
 import Credentials from 'next-auth/providers/credentials';
 import { prisma } from '@ants/database';
 import { authenticate, selectActiveCompanyForEmail } from '@ants/domain';
+import { assertWebRuntimeEnv } from '@/lib/runtime-env';
+
+assertWebRuntimeEnv();
 
 export const { handlers, signIn, signOut, auth, unstable_update: updateSession } = NextAuth({
   session: { strategy: 'jwt', maxAge: 60 * 60 * 8 }, // 8 horas
   pages: { signIn: '/login' },
+  useSecureCookies: process.env.NODE_ENV === 'production',
   trustHost: true,
   providers: [
     Credentials({
