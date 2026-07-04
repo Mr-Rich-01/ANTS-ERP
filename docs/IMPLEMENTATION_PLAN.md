@@ -55,7 +55,7 @@ BOM, ordens, consumos, custo previsto vs real, qualidade.
 ## Fase 11 — Relatórios e dashboards
 Dashboards com dados reais, exportações PDF/Excel/CSV, agendamentos, relatório de operações.
 
-## Fase 12 — PWA, offline e produção
+## Fase futura - PWA, offline e producao
 PWA, POS offline idempotente, hardening, E2E, backups, **deploy VPS** (ver DEPLOYMENT.md).
 
 ---

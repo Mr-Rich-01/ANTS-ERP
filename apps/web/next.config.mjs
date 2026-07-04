@@ -1,7 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-  // 'standalone' é necessário para a imagem Docker de produção (Fase 12), mas
+  // 'standalone' e necessario para as imagens Docker de producao/staging, mas
   // o tracing cria symlinks que falham no Windows sem modo developer.
   // Activado via env (o Dockerfile define BUILD_STANDALONE=1).
   output: process.env.BUILD_STANDALONE ? 'standalone' : undefined,
@@ -9,6 +9,9 @@ const nextConfig = {
   // Módulos nativos / pesados não devem ser empacotados pelo bundler do servidor.
   experimental: {
     serverComponentsExternalPackages: ['@node-rs/argon2', '@prisma/client'],
+    outputFileTracingIncludes: {
+      '/*': ['./node_modules/@node-rs/**/*'],
+    },
   },
   // @ants/domain é transpilado (transpilePackages), o que arrasta a sua dependência
   // nativa @node-rs/argon2 para o bundle. Forçamos a externalização no servidor.

@@ -14,6 +14,7 @@
     "@ants/domain": "workspace:*",
     "@ants/shared": "workspace:*",
     "@ants/ui": "workspace:*",
+    "@node-rs/argon2": "^2.0.2",
     "@prisma/client": "^5.20.0",
     "lucide-react": "^0.445.0",
     "next": "^14.2.13",

@@ -1,68 +1,89 @@
-# DEPLOYMENT — ANTS ERP
+# DEPLOYMENT - ANTS ERP
 
-_Última actualização: 2026-07-04_
+_Ultima actualizacao: 2026-07-04_
 
-Alvo: **VPS Hostinger · Ubuntu Server · Docker Compose · Cloudflare**.
-Arquitectura: **monólito Next.js** + worker. O deploy real é executado na Fase 12.
+Alvo futuro: **VPS Hostinger, Ubuntu Server, Docker Compose e Cloudflare**.
+Arquitectura: **monolito Next.js** + worker. A P0-06 cobre apenas staging Docker local;
+deploy real em servidor permanece fora do escopo actual.
 
 ## 1. Desenvolvimento local
 
 ```bash
 corepack enable && corepack prepare pnpm@9.12.0 --activate
 pnpm install
-cp .env.example .env            # ajustar valores (AUTH_SECRET, DATABASE_URL, …)
+cp .env.example .env            # ajustar valores (AUTH_SECRET, DATABASE_URL, ...)
 pnpm docker:dev                 # sobe Postgres + Redis
 pnpm db:generate                # gera cliente Prisma
-pnpm db:migrate                 # cria/aplica migrações (Fase 1+)
-pnpm db:seed                    # dados de demonstração (só dev)
+pnpm db:migrate                 # cria/aplica migrations em desenvolvimento
+pnpm db:seed                    # dados de demonstracao (so dev)
 pnpm dev                        # web (Next) + worker
 ```
 
-- Web (UI + API interna): http://localhost:3000 · Route Handlers sob `/api/*`.
+- Web (UI + API interna): http://localhost:3000. Route Handlers sob `/api/*`.
 
-## 2. Produção (Docker Compose)
+## 2. Staging Docker (P0-06)
 
-Serviços em `docker-compose.production.yml`: `reverse-proxy` (Caddy), `web` (Next.js
-monólito), `worker`, `postgres`, `redis`.
+Runbook: [`docs/STAGING.md`](STAGING.md).
 
-- **Caddy** termina TLS e encaminha tudo → `web:3000` (o Next trata `/api` internamente).
-- **Cloudflare** à frente: DNS proxied, SSL **Full (Strict)**, WAF, rate limiting de borda.
-- **Postgres e Redis sem `ports:`** — acessíveis apenas na rede interna `ants_net`.
+```bash
+cp .env.staging.example .env.staging
+pnpm docker:staging:build
+pnpm docker:staging:migrate
+pnpm docker:staging:up
+pnpm docker:staging:ps
+curl http://localhost:3001/api/health
+```
+
+O Compose de staging usa `docker-compose.staging.yml`, publica apenas a web na
+porta local definida por `STAGING_WEB_PORT`, mantem Postgres/Redis internos e
+executa migrations apenas pelo profile explicito `migration`. Nao executa seed
+demo automaticamente.
+
+## 3. Producao (Docker Compose)
+
+Servicos em `docker-compose.production.yml`: `reverse-proxy` (Caddy), `web`
+(Next.js monolito), `worker`, `postgres`, `redis` e `migrate`.
+
+- **Caddy** termina TLS e encaminha tudo para `web:3000` (o Next trata `/api` internamente).
+- **Cloudflare** a frente: DNS proxied, SSL **Full (Strict)**, WAF, rate limiting de borda.
+- **Postgres e Redis sem `ports:`**: acessiveis apenas na rede interna `ants_net`.
 - Apenas o reverse-proxy publica **80/443**.
 
-## 3. Hardening do host (Ubuntu)
+## 4. Hardening do host (Ubuntu)
 
 - UFW: permitir 22, 80, 443; negar o resto.
-- SSH só por chave; desactivar login root e password.
-- `fail2ban` activo. Utilizador não-root para a aplicação.
-- Docker e Compose plugin instalados; actualizações de segurança automáticas.
+- SSH so por chave; desactivar login root e password.
+- `fail2ban` activo. Utilizador nao-root para a aplicacao.
+- Docker e Compose plugin instalados; actualizacoes de seguranca automaticas.
 
-## 4. Segredos
+## 5. Segredos
 
 - `.env` fora do git (apenas `.env.example` versionado).
-- Gerar `AUTH_SECRET` forte: `npx auth secret` (ou `openssl rand -base64 33`).
+- Gerar `AUTH_SECRET` forte: `npx auth secret` ou `openssl rand -base64 33`.
 - Password de Postgres forte e exclusiva.
 
-## 5. Dados e backups
+## 6. Dados e backups
 
 - Volumes nomeados: `ants_pgdata`, `ants_redisdata`, `caddy_data`.
-- Backup Postgres: `pg_dump` agendado (job/cron) → ficheiro **encriptado** → armazenamento externo.
-- Restauro: `pg_restore`/`psql` a partir do dump (procedimento testado periodicamente).
+- Backup Postgres: `pg_dump` agendado para ficheiro encriptado e armazenamento externo.
+- Restauro: `pg_restore`/`psql` a partir do dump, com procedimento testado periodicamente.
 
-## 6. Operação
+## 7. Operacao
 
-- Health checks por serviço (Postgres/Redis healthcheck; Route Handler `/api/health` na web).
-- Migrações: `prisma migrate deploy` executado antes de subir a nova versão da `web`.
-- Logs estruturados + rotação. Seed **nunca** em produção.
+- Health checks por servico: Postgres/Redis no Compose e Route Handler `/api/health` na web.
+  `/api/health` e liveness da web; readiness exige tambem dependencias saudaveis e smoke de rotas
+  reais como `/login` e `/seleccionar-empresa`.
+- Migrations: `prisma migrate deploy` executado antes de subir a nova versao da `web`.
+- Logs estruturados + rotacao. Seed **nunca** em producao.
 
-## 7. Imagens Docker de produção
+## 8. Imagens Docker de producao
 
-A P0-04 cria imagens multi-stage para os serviços executáveis reais:
+A P0-04 cria imagens multi-stage para os servicos executaveis reais:
 
 - `apps/web/Dockerfile`: Next.js 14 em `output: "standalone"`, activado no build por
   `BUILD_STANDALONE=1`, runtime com `node apps/web/server.js`.
 - `apps/worker/Dockerfile`: worker BullMQ compilado por `tsc`, runtime com `node dist/main.js`.
-- `apps/web/Dockerfile` também expõe o target `migrator`, usado apenas para o comando explícito
+- `apps/web/Dockerfile` tambem expoe o target `migrator`, usado apenas para o comando explicito
   `prisma migrate deploy`.
 
 Build local das imagens:
@@ -73,18 +94,18 @@ pnpm docker:build:worker
 pnpm docker:build
 ```
 
-Build via Compose de produção:
+Build via Compose de producao:
 
 ```bash
 pnpm docker:production:build
 ```
 
-As imagens usam Node 20 Debian slim com OpenSSL instalado, pnpm 9.12.0 via Corepack,
-lockfile congelado, Prisma Client gerado no build e utilizador não-root no runtime.
-`.env`, `.env.*`, `.git`, `node_modules`, caches, testes, logs, uploads locais e backups são
-excluídos pelo `.dockerignore`.
+As imagens usam Node 20 Debian slim com OpenSSL instalado, pnpm 9.12.0 via
+Corepack, lockfile congelado, Prisma Client gerado no build e utilizador nao-root
+no runtime. `.env`, `.env.*`, `.git`, `node_modules`, caches, testes, logs,
+uploads locais e backups sao excluidos pelo `.dockerignore`.
 
-## 8. Variáveis de ambiente obrigatórias
+## 9. Variaveis de ambiente obrigatorias
 
 Para `web`:
 
@@ -115,21 +136,21 @@ POSTGRES_PASSWORD=<password forte>
 POSTGRES_DB=<base_de_dados>
 ```
 
-Nunca usar credenciais demo, `.env` local, seed de demonstração ou connection strings privadas
-em documentação, commits ou imagem.
+Nunca usar credenciais demo, `.env` local, seed de demonstracao ou connection
+strings privadas em documentacao, commits ou imagem.
 
-## 9. Migrations e arranque
+## 10. Migrations e arranque
 
-As migrations não correm automaticamente no arranque de `web` ou `worker`. Executar de forma
-explícita antes de subir a nova versão:
+As migrations nao correm automaticamente no arranque de `web` ou `worker`.
+Executar de forma explicita antes de subir a nova versao:
 
 ```bash
 docker compose -f docker-compose.production.yml --profile migration run --rm migrate
 ```
 
-O seed de demonstração nunca deve ser executado em produção.
+O seed de demonstracao nunca deve ser executado em producao.
 
-## 10. Publicação (deploy)
+## 11. Publicacao (deploy futuro)
 
 ```bash
 git pull

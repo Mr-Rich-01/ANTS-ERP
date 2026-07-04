@@ -38,6 +38,9 @@ importers:
       '@ants/ui':
         specifier: workspace:*
         version: link:../../packages/ui
+      '@node-rs/argon2':
+        specifier: ^2.0.2
+        version: 2.0.2
       '@prisma/client':
         specifier: ^5.20.0
         version: 5.22.0(prisma@5.22.0)

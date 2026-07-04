@@ -5,9 +5,9 @@ _Última actualização: 2026-07-04_
 Estado vivo do projecto. O conhecimento permanente (arquitectura, regras, comandos) está
 em [`CLAUDE.md`](CLAUDE.md).
 
-**Último commit funcional:** este commit (`fix(auth): require explicit company context`)
-**Fase concluída:** `P0-05 — Resolver ambiguidade de login multiempresa`
-**Próximo passo:** definir e autorizar P0-06 _(não iniciado)_
+**Último commit funcional:** este commit (`chore(infra): add staging Docker release validation`)
+**Fase concluída:** `P0-06 — Ambiente de staging Docker e validação de release`
+**Próximo passo:** definir e autorizar P0-07 — Backup/Restore/Rollback _(não iniciado)_
 
 ---
 
@@ -38,6 +38,7 @@ em [`CLAUDE.md`](CLAUDE.md).
 | **P0-03f** | **Regressão integrada, UAT e documentação final dos estornos** (suite UAT, agregado de reversões, documentação operacional, limitações V1) | ✅ |
 | **P0-04** | **Dockerfiles e preparação da imagem de produção** | ✅ |
 | **P0-05** | **Resolver ambiguidade de login multiempresa** | ✅ |
+| **P0-06** | **Ambiente de staging Docker e validação de release** | ✅ |
 | 9 | RH & Salários | 🗺️ futuro |
 | X | RLS forçado em toda a BD (fase transversal, pré-produção) | 🗺️ futuro |
 
@@ -46,7 +47,9 @@ contabilidade 189/189** (8b 32 + 8c.1 30 + 8c.2a 18 + 8c.2b 34 + 8c.3 17 + P0-02
 `pnpm test:integration:accounting`, sub: `…:c1`, `…:c2a`, `…:c2`, `…:c3`, `…:reversal:customer-payment`, `…:reversal:invoice`, `…:reversal:supplier-payment`, `…:reversal:purchase-receipt`, `…:reversal:treasury-transfer`, `…:reversal:uat`, `…:reversal:all`) · `prisma validate` OK · `prisma migrate status` OK · `pnpm build` OK
 em Windows nativo (28/28 páginas) e Docker Linux com Node 20 + OpenSSL · imagens Docker de produção
 `web`, `worker` e target `migrate` OK · seed idempotente (2×) · login/contexto
-multiempresa 7/7 · `pnpm build` OK em Windows nativo (30/30 páginas).
+multiempresa 7/7 · `pnpm build` OK em Windows nativo (31/31 páginas, incluindo `/api/health`) ·
+staging Docker P0-06 OK (`docker:staging:build`, migrations explicitas, web/worker/postgres/redis,
+health `/api/health` e smoke `/login`).
 
 **P0-04 (2026-07-04):** criada a preparação de imagem de produção sem alterações funcionais:
 Dockerfile multi-stage da web em `apps/web/Dockerfile` com Next standalone activado por
@@ -66,6 +69,20 @@ activa, o ERP operacional fica bloqueado com mensagem clara. A escolha de empres
 servidor contra sessão, conta activa e empresa activa antes de actualizar o JWT, e `RequestContext`
 revalida empresa/utilizador/permissões na base de dados para bloquear sessões antigas com empresa
 removida ou inactiva. Criado o comando `pnpm test:integration:auth:company-selection` (7/7).
+
+**P0-06 (2026-07-04):** criado ambiente de staging Docker reproduzivel sem deploy real e sem seed
+demo automatico. `docker-compose.staging.yml` sobe `web`, `worker`, `postgres`, `redis` e `migrate`
+com migrations manuais pelo profile `migration`; `.env.staging.example` documenta placeholders
+seguros e URLs internas Docker; `/api/health` retorna JSON minimo sem autenticacao nem secrets; o
+runbook `docs/STAGING.md` cobre build, migrate, up, ps, logs, smoke, down/cleanup e checklist de
+release. O smoke encontrou e corrigiu uma falha real do standalone Docker: a web precisava de
+`@node-rs/argon2` como dependencia directa e do binario nativo Linux copiado para o runner. O
+adendo complementar clarificou liveness/readiness, smoke Auth P0-05, smoke Financeiro P0-03,
+confirmacao de ausencia de `.env` nas imagens e P0-07 reservado para Backup/Restore/Rollback. Validado
+com `pnpm typecheck`, `pnpm lint`, `pnpm test`, `pnpm test:integration:accounting`,
+`pnpm test:integration:accounting:reversal:all`, `pnpm test:integration:auth:company-selection`,
+`pnpm build`, `pnpm docker:staging:build`, `pnpm docker:staging:migrate`, `pnpm docker:staging:up`,
+`pnpm docker:staging:ps`, `/api/health`, `/seleccionar-empresa` e `/login`.
 
 **Hardening pré-produção P0-01 (2026-07-02):** seed demo bloqueado em `production`
 antes de criar o Prisma Client; credenciais demo removidas da interface de

@@ -29,7 +29,7 @@ Módulos já implementados: Auth/RBAC/Admin, Clientes, Fornecedores, Produtos &
 Stock, Vendas/Facturação, Compras, Tesouraria & Bancos, Hardening da
 Tesouraria, Contabilidade 8a, 8b, 8c.1, 8c.2a, 8c.2b, 8c.3,
 P0-03 completo (P0-03.0, P0-03a, P0-03b, P0-03c, P0-03d, P0-03e e P0-03f),
-P0-04 e P0-05.
+P0-04, P0-05 e P0-06.
 
 Estado actual da Contabilidade: P0-03 completo. A base de
 reversões está activa; recebimentos de clientes podem ser anulados, facturas sem
@@ -42,7 +42,9 @@ ser estornadas atomicamente, revertendo as duas pernas e as duas contas em
 conjunto. A regressão integrada/UAT e a documentação final dos estornos foram
 criadas na P0-03f. A P0-04 preparou as imagens Docker de produção. A P0-05
 resolveu a ambiguidade de login multiempresa com selecção explícita e validada
-de empresa activa. A próxima fase é P0-06, a definir e autorizar explicitamente.
+de empresa activa. A P0-06 criou o ambiente de staging Docker e a validação de
+release. A próxima fase é P0-07 — Backup/Restore/Rollback, a definir e autorizar
+explicitamente.
 
 ## Arquitectura Obrigatória
 
@@ -128,6 +130,10 @@ upgrade.
 - O seed deve ser idempotente e não destrutivo.
 - Seeds de demonstração nunca podem executar em `production`; produção usa
   provisionamento explícito.
+- Em staging Docker, migrations são sempre manuais e explícitas pelo serviço
+  `migrate`; `web` e `worker` não executam migrations automaticamente.
+- `.env.staging` nunca pode ser commitado; apenas `.env.staging.example` pode
+  ser versionado com placeholders seguros.
 - Validar `typecheck`, `lint`, testes relevantes e `build` antes de cada commit.
   O build foi classificado em 2026-06-30; se voltar a falhar, tratar como
   regressão nova e registar o primeiro erro real conforme `MODULE_STATUS.md`.
@@ -237,9 +243,10 @@ passwords não demonstrativas.
 - P0-03 completo.
 - P0-04 concluída.
 - P0-05 concluída.
+- P0-06 concluída.
 - Commit base funcional antes da P0-03.0: `a1d608b`.
-- Próxima fase: P0-06 — a definir e autorizar explicitamente.
-- Não iniciar P0-06 sem validação limpa e autorização explícita.
+- Próxima fase: P0-07 — Backup/Restore/Rollback, a definir e autorizar explicitamente.
+- Não iniciar P0-07 sem validação limpa e autorização explícita.
 - `MODULE_STATUS.md` é a fonte principal para progresso e próximos passos.
 - `CLAUDE.md` deve ser preservado.
 - Quando `AGENTS.md` e `CLAUDE.md` divergirem, apresentar a divergência antes

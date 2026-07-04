@@ -315,3 +315,27 @@ Para produção, executar migrations explicitamente:
 ```bash
 docker compose -f docker-compose.production.yml --profile migration run --rm migrate
 ```
+
+## Staging Docker
+
+A P0-06 adiciona um ambiente de staging local e reproduzivel, sem deploy real e
+sem seed demo automatico:
+
+```bash
+cp .env.staging.example .env.staging
+pnpm docker:staging:build
+pnpm docker:staging:migrate
+pnpm docker:staging:up
+pnpm docker:staging:ps
+```
+
+Health/smoke basico:
+
+```bash
+curl http://localhost:3001/api/health
+```
+
+`/api/health` e liveness da web. Para readiness, confirmar tambem `pnpm docker:staging:ps`,
+`/login`, `/seleccionar-empresa` e logs de web/worker.
+
+Runbook completo: [`docs/STAGING.md`](docs/STAGING.md).

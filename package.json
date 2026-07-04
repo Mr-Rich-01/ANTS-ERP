@@ -35,7 +35,13 @@
     "docker:build:web": "docker build -f apps/web/Dockerfile -t ants-erp-web:local .",
     "docker:build:worker": "docker build -f apps/worker/Dockerfile -t ants-erp-worker:local .",
     "docker:build": "pnpm docker:build:web && pnpm docker:build:worker",
-    "docker:production:build": "docker compose -f docker-compose.production.yml build"
+    "docker:production:build": "docker compose -f docker-compose.production.yml build",
+    "docker:staging:build": "docker compose --env-file .env.staging -f docker-compose.staging.yml build",
+    "docker:staging:migrate": "docker compose --env-file .env.staging -f docker-compose.staging.yml --profile migration run --rm migrate",
+    "docker:staging:up": "docker compose --env-file .env.staging -f docker-compose.staging.yml up -d web worker",
+    "docker:staging:ps": "docker compose --env-file .env.staging -f docker-compose.staging.yml ps",
+    "docker:staging:logs": "docker compose --env-file .env.staging -f docker-compose.staging.yml logs -f --tail=100 web worker",
+    "docker:staging:down": "docker compose --env-file .env.staging -f docker-compose.staging.yml down"
   },
   "devDependencies": {
     "eslint": "^9.11.1",

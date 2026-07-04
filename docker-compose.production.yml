@@ -1,6 +1,6 @@
 # ANTS ERP — Produção (VPS Hostinger / Ubuntu / Cloudflare)
 # Arquitectura: monólito Next.js (web) + worker BullMQ + Postgres + Redis + Caddy.
-# Os Dockerfiles das apps são criados na Fase 12 (deploy real).
+# Dockerfiles das apps preparados na P0-04; staging separado vive em docker-compose.staging.yml.
 # Regras: Postgres e Redis NUNCA expostos publicamente — apenas o reverse-proxy publica 80/443.
 services:
   reverse-proxy:

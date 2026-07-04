@@ -46,6 +46,8 @@ WORKDIR /app
 
 COPY --chown=node:node --from=builder /app/apps/web/.next/standalone ./
 COPY --chown=node:node --from=builder /app/apps/web/.next/static ./apps/web/.next/static
+COPY --chown=node:node --from=builder /app/node_modules/.pnpm/@node-rs+argon2-linux-x64-gnu@2.0.2/node_modules/@node-rs/argon2-linux-x64-gnu ./apps/web/node_modules/@node-rs/argon2-linux-x64-gnu
+COPY --chown=node:node --from=builder /app/node_modules/.pnpm/@node-rs+argon2-linux-x64-gnu@2.0.2/node_modules/@node-rs/argon2-linux-x64-gnu/argon2.linux-x64-gnu.node ./apps/web/node_modules/@node-rs/argon2/argon2.linux-x64-gnu.node
 
 USER node
 
