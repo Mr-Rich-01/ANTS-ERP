@@ -665,6 +665,390 @@ export async function createPayment(db: PrismaClient, ctx: RequestContext, input
   });
 }
 
+export const POS_FINAL_CUSTOMER_ID = '__POS_FINAL_CUSTOMER__';
+
+const posSaleInput = z.object({
+  invoiceIdempotencyKey: z.string().min(1, 'Chave de idempotência da factura obrigatória.'),
+  paymentIdempotencyKey: z.string().min(1, 'Chave de idempotência do recibo obrigatória.'),
+  issueDate: z.string().min(1, 'Seleccione a data de emissão.'),
+  customerId: z.string().min(1, 'Seleccione um cliente.'),
+  warehouseId: z.string().min(1, 'Seleccione o armazém de saída.'),
+  accountId: z.string().min(1, 'Seleccione a conta de tesouraria.'),
+  paymentMethod: z.enum(['CASH', 'MPESA', 'EMOLA', 'CARD', 'TRANSFER']).default('CASH'),
+  notes: z.string().trim().max(1000).optional(),
+  lines: z
+    .array(
+      z.object({
+        productId: z.string().min(1),
+        quantity: z.coerce.number().int().positive('Quantidade inválida.'),
+        discountPercent: z.coerce.number().min(0).max(100).default(0),
+      }),
+    )
+    .min(1, 'Carrinho vazio. Adicione pelo menos um produto.'),
+});
+
+export type PosSaleInput = z.input<typeof posSaleInput>;
+
+export interface PosSaleResult {
+  invoiceId: string;
+  invoiceNumber: string;
+  paymentId: string;
+  paymentNumber: string;
+}
+
+async function resolvePosCustomerTx(
+  tx: Prisma.TransactionClient,
+  ctx: RequestContext,
+  companyId: string,
+  customerId: string,
+): Promise<{ id: string; name: string; nuit: string | null; paymentTermDays: number }> {
+  if (customerId !== POS_FINAL_CUSTOMER_ID) {
+    const customer = await tx.customer.findFirst({ where: { companyId, id: customerId, status: 'ACTIVE' } });
+    if (!customer) throw new NotFoundError('Cliente inválido ou inactivo.');
+    return { id: customer.id, name: customer.name, nuit: customer.nuit, paymentTermDays: customer.paymentTermDays };
+  }
+
+  const existing = await tx.customer.findFirst({
+    where: { companyId, name: 'Cliente final', status: 'ACTIVE' },
+    orderBy: { createdAt: 'asc' },
+  });
+  if (existing) return { id: existing.id, name: existing.name, nuit: existing.nuit, paymentTermDays: existing.paymentTermDays };
+
+  const created = await tx.customer.create({
+    data: {
+      companyId,
+      name: 'Cliente final',
+      type: 'INDIVIDUAL',
+      paymentTermDays: 0,
+      creditLimit: 0,
+      notes: 'Cliente operacional criado automaticamente pelo POS.',
+      createdBy: ctx.userId,
+    },
+  });
+  await writeAudit(tx, ctx, {
+    action: 'customer.final_create',
+    entity: 'Customer',
+    entityId: created.id,
+    newValues: { name: created.name, source: 'POS' },
+  });
+  return { id: created.id, name: created.name, nuit: created.nuit, paymentTermDays: created.paymentTermDays };
+}
+
+/** Finaliza uma venda POS simples: factura + recibo, atomicos na mesma transaccao. */
+export async function createPosSale(db: PrismaClient, ctx: RequestContext, input: PosSaleInput): Promise<PosSaleResult> {
+  requirePermission(ctx, 'sales.create');
+  requirePermission(ctx, 'payments.receive');
+  const companyId = requireCompany(ctx);
+  const parsed = posSaleInput.safeParse(input);
+  if (!parsed.success) throw new ValidationError(parsed.error.issues[0]?.message ?? 'Dados inválidos.');
+  const data = parsed.data;
+  const issueDate = resolveAllowedIssueDate(data.issueDate);
+
+  if (data.lines.some((l) => l.discountPercent > 0) && !hasPermission(ctx, 'sales.approve_discount')) {
+    throw new ForbiddenError('Sem permissão para aplicar descontos.');
+  }
+
+  return db.$transaction(async (tx) => {
+    const customer = await resolvePosCustomerTx(tx, ctx, companyId, data.customerId);
+    const invoiceData: ParsedInvoiceInput = {
+      idempotencyKey: data.invoiceIdempotencyKey,
+      issueDate: data.issueDate,
+      customerId: customer.id,
+      warehouseId: data.warehouseId,
+      paymentMethod: data.paymentMethod,
+      notes: data.notes,
+      lines: data.lines,
+    };
+    const invoiceRequestFingerprint = invoiceFingerprint(invoiceData, issueDate);
+
+    const invoiceOp = await runIdempotentOperation<{ id: string; number: string }>(tx, ctx, {
+      scope: 'INVOICE_CREATE',
+      idempotencyKey: invoiceData.idempotencyKey,
+      requestFingerprint: invoiceRequestFingerprint,
+      expectedResourceType: 'Invoice',
+      loadExisting: async (resourceId) => {
+        const invoice = await tx.invoice.findFirst({ where: { companyId, id: resourceId }, select: { id: true, number: true } });
+        return invoice;
+      },
+      run: async () => {
+        const warehouse = await tx.warehouse.findFirst({ where: { id: invoiceData.warehouseId, companyId, status: 'ACTIVE' } });
+        if (!warehouse) throw new NotFoundError('Armazém não encontrado.');
+
+        const prepared = [] as Array<{
+          productId: string;
+          sku: string | null;
+          description: string;
+          unitPrice: number;
+          quantity: number;
+          discountPercent: number;
+          taxRate: number;
+          total: number;
+          available: number;
+        }>;
+
+        for (const line of invoiceData.lines) {
+          const product = await tx.product.findFirst({ where: { id: line.productId, companyId, status: 'ACTIVE' } });
+          if (!product) throw new NotFoundError('Produto não encontrado.');
+          const level = await tx.stockLevel.findUnique({ where: { productId_warehouseId: { productId: product.id, warehouseId: warehouse.id } } });
+          const available = level?.quantity ?? 0;
+          if (available < line.quantity) {
+            throw new ValidationError(`Stock insuficiente para ${product.name}: disponível ${available}, pedido ${line.quantity}.`);
+          }
+          const unitPrice = Number(product.salePrice);
+          const taxRate = Number(product.taxRate);
+          const r = computeLine({ quantity: line.quantity, unitPrice, discountPercent: line.discountPercent, taxPercent: taxRate });
+          prepared.push({
+            productId: product.id,
+            sku: product.sku,
+            description: product.name,
+            unitPrice,
+            quantity: line.quantity,
+            discountPercent: line.discountPercent,
+            taxRate,
+            total: r.total,
+            available,
+          });
+        }
+
+        const totals = computeDocumentTotals(
+          prepared.map((p) => ({ quantity: p.quantity, unitPrice: p.unitPrice, discountPercent: p.discountPercent, taxPercent: p.taxRate })),
+        );
+        assertConsistentTotals(totals);
+
+        const dueDate = new Date(issueDate.getTime() + customer.paymentTermDays * 86_400_000);
+        const number = await nextDocNumber(tx, companyId, 'FT', issueDate.getUTCFullYear());
+        const invoice = await tx.invoice.create({
+          data: {
+            companyId,
+            branchId: ctx.branchId ?? null,
+            number,
+            customerId: customer.id,
+            customerName: customer.name,
+            customerNuit: customer.nuit,
+            warehouseId: warehouse.id,
+            issueDate,
+            dueDate,
+            status: 'ISSUED',
+            subtotal: totals.subtotal,
+            discountTotal: totals.discount,
+            taxableBase: totals.taxable,
+            taxTotal: totals.tax,
+            total: totals.total,
+            amountPaid: 0,
+            paymentMethod: invoiceData.paymentMethod ?? null,
+            notes: invoiceData.notes ?? null,
+            createdBy: ctx.userId,
+          },
+        });
+
+        for (const p of prepared) {
+          await tx.invoiceLine.create({
+            data: {
+              companyId,
+              invoiceId: invoice.id,
+              productId: p.productId,
+              sku: p.sku,
+              description: p.description,
+              unitPrice: p.unitPrice,
+              quantity: p.quantity,
+              discountPercent: p.discountPercent,
+              taxRate: p.taxRate,
+              total: p.total,
+            },
+          });
+          const balanceAfter = p.available - p.quantity;
+          await tx.stockLevel.update({
+            where: { productId_warehouseId: { productId: p.productId, warehouseId: warehouse.id } },
+            data: { quantity: balanceAfter },
+          });
+          await tx.stockMovement.create({
+            data: {
+              companyId,
+              productId: p.productId,
+              warehouseId: warehouse.id,
+              invoiceId: invoice.id,
+              type: 'OUT',
+              quantity: -p.quantity,
+              balanceAfter,
+              document: number,
+              reason: 'Venda POS',
+              createdBy: ctx.userId,
+            },
+          });
+        }
+
+        await tx.customer.update({ where: { id: customer.id }, data: { balance: { increment: totals.total } } });
+
+        const ar = await getMappedAccountTx(tx, companyId, 'ACCOUNTS_RECEIVABLE');
+        const revenue = await getMappedAccountTx(tx, companyId, 'SALES_REVENUE');
+        const lines = [
+          { ledgerAccountId: ar.id, debit: totals.total, customerId: customer.id, description: `Factura POS ${number}` },
+          { ledgerAccountId: revenue.id, credit: totals.tax > 0 ? totals.taxable : totals.total, description: `Factura POS ${number}` },
+        ];
+        if (totals.tax > 0) {
+          const vat = await getMappedAccountTx(tx, companyId, 'VAT_OUTPUT');
+          lines.push({ ledgerAccountId: vat.id, credit: totals.tax, description: `Factura POS ${number}` });
+        }
+
+        await postAccountingEventTx(tx, ctx, {
+          journalType: 'SALES',
+          entryDate: invoice.issueDate,
+          dateLabel: 'A data de emissão',
+          description: `Factura POS ${number}`,
+          reference: number,
+          origin: { sourceType: 'INVOICE', sourceId: invoice.id, accountingEvent: 'SALE_ISSUED' },
+          lines,
+        });
+
+        await writeAudit(tx, ctx, {
+          action: 'invoice.issue',
+          entity: 'Invoice',
+          entityId: invoice.id,
+          newValues: {
+            number,
+            customerId: customer.id,
+            customer: customer.name,
+            issueDate: formatAccountingDate(invoice.issueDate),
+            total: totals.total,
+            taxableBase: totals.taxable,
+            taxTotal: totals.tax,
+            idempotencyKey: invoiceData.idempotencyKey,
+            source: 'POS',
+            accounting: { sourceType: 'INVOICE', accountingEvent: 'SALE_ISSUED' },
+          },
+        });
+
+        return { resourceType: 'Invoice', resourceId: invoice.id, result: { id: invoice.id, number } };
+      },
+    });
+
+    const invoice = await tx.invoice.findFirst({
+      where: { companyId, id: invoiceOp.result.id },
+      select: { id: true, number: true, total: true },
+    });
+    if (!invoice) throw new NotFoundError('Factura POS não encontrada após emissão.');
+
+    const paymentData: ParsedPaymentInput = {
+      idempotencyKey: data.paymentIdempotencyKey,
+      invoiceId: invoice.id,
+      amount: round2(Number(invoice.total)),
+      method: data.paymentMethod,
+      accountId: data.accountId,
+      notes: data.notes ? `POS: ${data.notes}` : 'POS',
+    };
+    const amount = round2(paymentData.amount);
+    const paymentRequestFingerprint = paymentFingerprint(paymentData);
+
+    const paymentOp = await runIdempotentOperation<{ id: string; number: string }>(tx, ctx, {
+      scope: 'CUSTOMER_PAYMENT_CREATE',
+      idempotencyKey: paymentData.idempotencyKey,
+      requestFingerprint: paymentRequestFingerprint,
+      expectedResourceType: 'Payment',
+      loadExisting: async (resourceId) => {
+        const payment = await tx.payment.findFirst({ where: { companyId, id: resourceId }, select: { id: true, number: true } });
+        if (!payment) return null;
+        const [movement, entry] = await Promise.all([
+          tx.treasuryMovement.findFirst({ where: { companyId, sourceType: 'RECEIPT', sourceId: payment.id, movementPurpose: 'RECEIPT_IN' }, select: { id: true } }),
+          tx.journalEntry.findFirst({ where: { companyId, sourceType: 'CUSTOMER_PAYMENT', sourceId: payment.id, accountingEvent: 'RECEIPT_POSTED' }, select: { id: true } }),
+        ]);
+        if (!movement || !entry) {
+          throw new ConflictError('Registo de idempotência aponta para um recibo incompleto (integridade).');
+        }
+        return payment;
+      },
+      run: async () => {
+        await tx.$queryRaw`SELECT id FROM invoices WHERE id = ${paymentData.invoiceId} AND "companyId" = ${companyId} FOR UPDATE`;
+        const paidInvoice = await tx.invoice.findFirst({ where: { id: paymentData.invoiceId, companyId } });
+        if (!paidInvoice) throw new NotFoundError('Factura não encontrada.');
+        if (paidInvoice.status === 'CANCELLED') throw new ConflictError('A factura está cancelada.');
+        const total = Number(paidInvoice.total);
+        const paid = Number(paidInvoice.amountPaid);
+        const outstanding = round2(total - paid);
+        if (outstanding <= 0) throw new ConflictError('A factura já está totalmente paga.');
+        if (amount > outstanding) throw new ValidationError(`O valor excede o saldo em dívida (${outstanding.toFixed(2)} MT).`);
+
+        const treasury = await resolveTreasuryLedgerTx(tx, companyId, paymentData.accountId);
+        const journalType = journalTypeForTreasury(treasury.treasuryType);
+        const ar = await getMappedAccountTx(tx, companyId, 'ACCOUNTS_RECEIVABLE');
+
+        const number = await nextDocNumber(tx, companyId, 'REC', new Date().getFullYear());
+        const payment = await tx.payment.create({
+          data: {
+            companyId,
+            number,
+            invoiceId: paidInvoice.id,
+            customerId: paidInvoice.customerId,
+            amount,
+            method: paymentData.method,
+            notes: paymentData.notes ?? null,
+            createdBy: ctx.userId,
+          },
+        });
+
+        const newPaid = round2(paid + amount);
+        await tx.invoice.update({
+          where: { id: paidInvoice.id },
+          data: { amountPaid: newPaid, status: newPaid >= total ? 'PAID' : 'PARTIAL' },
+        });
+        await tx.customer.update({ where: { id: paidInvoice.customerId }, data: { balance: { decrement: amount } } });
+
+        const treasuryMovement = await postTreasuryMovementTx(tx, companyId, ctx.userId, {
+          accountId: paymentData.accountId,
+          flow: 'IN',
+          amount,
+          category: 'Recibo',
+          description: `Recibo POS ${number} - ${paidInvoice.customerName}`,
+          document: number,
+          source: 'RECEIPT',
+          sourceType: 'RECEIPT',
+          sourceId: payment.id,
+          movementPurpose: 'RECEIPT_IN',
+          occurredAt: payment.paidAt,
+        });
+
+        await postAccountingEventTx(tx, ctx, {
+          journalType,
+          entryDate: payment.paidAt,
+          description: `Recebimento POS ${number}`,
+          reference: number,
+          origin: { sourceType: 'CUSTOMER_PAYMENT', sourceId: payment.id, accountingEvent: 'RECEIPT_POSTED' },
+          lines: [
+            { ledgerAccountId: treasury.ledgerAccountId, debit: amount, treasuryAccountId: treasury.treasuryAccountId, description: `Recebimento POS ${number}` },
+            { ledgerAccountId: ar.id, credit: amount, customerId: paidInvoice.customerId, description: `Recebimento POS ${number}` },
+          ],
+        });
+
+        await writeAudit(tx, ctx, {
+          action: 'payment.receive',
+          entity: 'Payment',
+          entityId: payment.id,
+          newValues: {
+            number,
+            invoice: paidInvoice.number,
+            invoiceId: paidInvoice.id,
+            customerId: paidInvoice.customerId,
+            amount,
+            treasuryAccountId: paymentData.accountId,
+            treasuryMovementId: treasuryMovement.movementId,
+            idempotencyKey: paymentData.idempotencyKey,
+            source: 'POS',
+            accounting: { sourceType: 'CUSTOMER_PAYMENT', accountingEvent: 'RECEIPT_POSTED', journalType },
+          },
+        });
+
+        return { resourceType: 'Payment', resourceId: payment.id, result: { id: payment.id, number } };
+      },
+    });
+
+    return {
+      invoiceId: invoiceOp.result.id,
+      invoiceNumber: invoiceOp.result.number,
+      paymentId: paymentOp.result.id,
+      paymentNumber: paymentOp.result.number,
+    };
+  });
+}
+
 const reverseCustomerPaymentInput = z.object({
   paymentId: z.string().min(1, 'Recebimento inválido.'),
   idempotencyKey: z.string().min(1, 'Chave de idempotência obrigatória.'),

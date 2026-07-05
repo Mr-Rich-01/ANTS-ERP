@@ -13,6 +13,7 @@ ser classificado como bloqueante, restricao aceite ou backlog futuro.
 - [ ] `pnpm lint` verde.
 - [ ] `pnpm test` verde.
 - [ ] Testes de integracao relevantes verdes.
+- [ ] `pnpm test:integration:pos` verde quando POS entrar no escopo do piloto.
 - [ ] `pnpm build` verde.
 - [ ] Sem migrations pendentes.
 - [ ] Sem branches locais soltas para a fase.
@@ -53,7 +54,9 @@ ser classificado como bloqueante, restricao aceite ou backlog futuro.
 - [ ] Clientes ficticios.
 - [ ] Fornecedores ficticios.
 - [ ] Produtos ficticios.
+- [ ] Produtos ficticios com stock suficiente para POS, quando aplicavel.
 - [ ] Contas de tesouraria ficticias.
+- [ ] Conta de tesouraria activa e mapeada para recebimentos POS.
 - [ ] Nenhum dado real de cliente.
 - [ ] Nenhum dado real bancario.
 - [ ] Nenhuma password real em evidencias.
@@ -70,6 +73,8 @@ ser classificado como bloqueante, restricao aceite ou backlog futuro.
 - [ ] Criterios de entrada aceites.
 - [ ] Criterios de saida aceites.
 - [ ] Template de sign-off preparado.
+- [ ] Limites do POS V1 aceites: sem mesas, cozinha, offline, devolucao POS,
+      turnos/fecho de caixa, scanner real e impressao termica avancada.
 
 ## 6. Decisao
 

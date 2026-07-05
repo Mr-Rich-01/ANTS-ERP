@@ -5,9 +5,9 @@ _Última actualização: 2026-07-05_
 Estado vivo do projecto. O conhecimento permanente (arquitectura, regras, comandos) está
 em [`CLAUDE.md`](CLAUDE.md).
 
-**Último commit funcional:** este commit (`docs(uat): add pilot readiness package`)
-**Fase concluída:** `P0-09 — UAT comercial e prontidao de piloto`
-**Próximo passo:** decisao comercial explicita: piloto controlado ou abertura de backlog P1
+**Último commit funcional:** pendente nesta branch (`feat(pos): enable basic checkout flow`)
+**Fase concluída:** `P1-01 — POS V1 funcional limitado`
+**Próximo passo:** decisao explicita sobre P1-02: fecho de caixa, recibo/impressao, restaurante/bar com mesas, offline ou scanner/codigo de barras real
 
 ---
 
@@ -42,12 +42,13 @@ em [`CLAUDE.md`](CLAUDE.md).
 | **P0-07** | **Backup, Restore e Rollback operacional** | ✅ |
 | **P0-08** | **Hardening de producao** (env validation, defaults inseguros, Auth/cookies, headers, CORS, rate limit, logs, health e docs operacionais) | ✅ |
 | **P0-09** | **UAT comercial e prontidao de piloto** (roteiro UAT, checklist, matriz V1, sign-off e criterios de decisao) | ✅ |
+| **P1-01** | **POS V1 funcional limitado** (checkout simples: produtos reais, Cliente final, factura + recibo, stock, tesouraria, contabilidade e auditoria) | ✅ |
 | 9 | RH & Salários | 🗺️ futuro |
 | X | RLS forçado em toda a BD (fase transversal, pré-produção) | 🗺️ futuro |
 
 **Validações actuais:** typecheck 6/6 · lint 6/6 · **testes unitários 89** · **security hardening 16/16** · **auth company-selection 7/7** · **reversal all 44/44** · **integração de
 contabilidade 189/189** (8b 32 + 8c.1 30 + 8c.2a 18 + 8c.2b 34 + 8c.3 17 + P0-02 5 + P0-03.0 9 + P0-03b 10 + P0-03a 9 + P0-03c 7 + P0-03d 8 + P0-03e 6 + P0-03f 4;
-`pnpm test:integration:accounting`, sub: `…:c1`, `…:c2a`, `…:c2`, `…:c3`, `…:reversal:customer-payment`, `…:reversal:invoice`, `…:reversal:supplier-payment`, `…:reversal:purchase-receipt`, `…:reversal:treasury-transfer`, `…:reversal:uat`, `…:reversal:all`) · `prisma validate` OK · `prisma migrate status` OK · `pnpm build` OK
+`pnpm test:integration:accounting`, sub: `…:c1`, `…:c2a`, `…:c2`, `…:c3`, `…:reversal:customer-payment`, `…:reversal:invoice`, `…:reversal:supplier-payment`, `…:reversal:purchase-receipt`, `…:reversal:treasury-transfer`, `…:reversal:uat`, `…:reversal:all`) · **POS 7/7** (`pnpm test:integration:pos`) · `prisma validate` OK · `prisma migrate status` OK · `pnpm build` OK
 em Windows nativo (30/30 páginas estaticas + `/api/health` dinamico) e Docker Linux com Node 20 + OpenSSL · imagens Docker de produção
 `web`, `worker` e target `migrate` OK · seed idempotente (2×) · login/contexto
 multiempresa 7/7 · `pnpm build` OK em Windows nativo (31/31 páginas, incluindo `/api/health`) ·
@@ -131,6 +132,22 @@ seguros sem imprimir secrets (`docker:staging:migrate`, `docker:staging:up`, `do
 `/api/health` 200, `/login` 200, `/seleccionar-empresa` 307 para `/login`, `docker:staging:down`).
 Proximo passo: decisao comercial explicita entre piloto controlado e abertura de backlog P1. Nao
 iniciar P1 automaticamente.
+
+**P1-01 (2026-07-05):** implementado POS V1 funcional limitado sem schema, migrations ou
+dependencias novas. `/pos` deixou de usar `RAW_PRODUCTS` mockados e passou a carregar produtos
+reais da empresa activa, stock por armazem, Cliente final, clientes existentes quando o perfil
+pode ve-los, contas de tesouraria activas e metodos visuais dinheiro/M-Pesa/e-Mola/cartao. A
+finalizacao chama `createPosSaleAction`, que deriva `RequestContext` da sessao e chama
+`createPosSale` no dominio. O dominio cria factura + recebimento numa unica transaccao, valida
+stock, cliente, armazem, conta de tesouraria e permissoes `sales.create`/`payments.receive`,
+baixa stock, cria `StockMovement OUT`, actualiza cliente, cria recibo, movimento de tesouraria,
+lancamentos `SALE_ISSUED`/`RECEIPT_POSTED`, auditoria e idempotencia com os scopes existentes
+`INVOICE_CREATE` e `CUSTOMER_PAYMENT_CREATE`. Criado `pnpm test:integration:pos` (7/7) cobrindo
+sucesso ponta a ponta, Cliente final, carrinho vazio, stock insuficiente, permissoes, isolamento
+multiempresa e replay idempotente. O perfil seed `Caixa` recebeu `stock.view` para poder usar POS.
+Limites V1: sem mesas, cozinha, comandas, garcons, turnos/fecho de caixa, offline, devolucao POS,
+scanner real/codigo de barras operacional, impressao termica avancada ou restaurante/bar completo.
+Proximo passo: decisao explicita sobre P1-02.
 
 **Hardening pré-produção P0-01 (2026-07-02):** seed demo bloqueado em `production`
 antes de criar o Prisma Client; credenciais demo removidas da interface de
@@ -646,7 +663,8 @@ db:generate` e `pnpm build`.
   de decisao para validar operacionalmente a V1 com dados ficticios antes de qualquer piloto real.
 - **Fase 9 — RH & Salários** — colaboradores, contratos, processamento salarial (liga à
   contabilidade via `systemKeys` `SALARIES_EXPENSE`/`SALARIES_PAYABLE` e à tesouraria).
-- **Extensões da Facturação** — POS, cotações, NC/ND.
+- **Extensões da Facturação/POS** — cotações, NC/ND, devolução POS, recibo/impressão avançada,
+  scanner/código de barras operacional e restaurante/bar completo com mesas.
 - **Extensões da Tesouraria** — conciliação bancária, fecho de caixa com contagem de denominações.
 - **Contabilidade (avançado)** — Balanço, Demonstração de Resultados, Fluxo de Caixa, mapa de
   antiguidade de saldos.

@@ -17,7 +17,8 @@ Estados usados:
 | Clientes | Listar, criar, editar e consultar saldos/extracto | pronto para UAT | `customers.ts`, `/clientes`, `/contas/perfil` | Sem CRM avancado | Incluir |
 | Fornecedores | Listar, criar, editar e consultar saldos/extracto | pronto para UAT | `suppliers.ts`, `/fornecedores`, `/contas/perfil` | Sem portal fornecedor | Incluir |
 | Produtos/Stock | Catalogo, armazens, inventario, movimentos e custo medio em compras | pronto para UAT | `products.ts`, `stock.ts`, `/produtos`, `/inventario` | Sem rastreios avancados/lotes | Incluir |
-| Vendas/Facturacao | Factura simples com stock, cliente, totais e recibos | pronto para UAT | `invoices.ts`, `/facturas`, `/facturas/nova`, `/facturas/documento` | Sem POS fiscal, NC/ND e COGS de venda | Incluir com limites |
+| Vendas/Facturacao | Factura simples com stock, cliente, totais, recibos e POS basico | pronto para UAT | `invoices.ts`, `/facturas`, `/facturas/nova`, `/facturas/documento`, `/pos`, `pnpm test:integration:pos` | Sem POS fiscal, NC/ND, devolucao POS e COGS de venda | Incluir com limites |
+| POS | Venda rapida com produtos reais, Cliente final, factura + recibo, stock, tesouraria, contabilidade e auditoria | parcial/pronto para UAT limitado | `createPosSale`, `/pos`, `pnpm test:integration:pos` | Sem mesas, cozinha, offline, turnos/fecho de caixa, scanner real e impressao termica avancada | Incluir apenas como checkout simples |
 | Recebimentos | Receber factura em conta de tesouraria com contabilidade | pronto para UAT | `createPayment`, `RECEIPT_POSTED`, testes 8c.2b/P0-03 | Exige conta de tesouraria mapeada | Incluir |
 | Compras | Ordem de compra e recepcao de mercadoria | pronto para UAT | `purchases.ts`, `/compras`, `/recepcao`, testes 8c.3 | Sem devolucao comercial ao fornecedor | Incluir |
 | Pagamentos | Pagamento a fornecedor com tesouraria e contabilidade | pronto para UAT | `createSupplierPayment`, `SUPPLIER_PAYMENT_POSTED`, testes 8c.3/P0-03 | Exige conta de tesouraria mapeada | Incluir |
@@ -32,4 +33,4 @@ Estados usados:
 | Salarios | Processamento salarial | futuro | `/rh` | Sem dominio, schema ou integracao | Fora da V1 |
 | Contratos/Subscricoes | Contratos e renovacoes | futuro | `/contratos`, `apps/web/src/lib/data/finance.ts` | UI/dados mockados | Fora da V1 |
 | Producao | Ordens, ficha tecnica e custo de producao | futuro | `/producao`, `apps/web/src/lib/data/production.ts` | UI/dados mockados | Fora da V1 |
-| Restaurante/Bar | POS/restaurante/bar | futuro | `/pos` usa catalogo local/mockado | Sem dominio fiscal/stock real de POS | Fora da V1 |
+| Restaurante/Bar | Mesas, comandas, cozinha, garcons e fluxo bar/restaurante completo | futuro | Nao implementado | POS V1 cobre apenas checkout simples | Fora da V1 |

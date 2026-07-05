@@ -59,6 +59,38 @@ Passos:
 12. Confirmar factura `CANCELADA`, stock reposto, saldo ajustado, auditoria e
     lancamento inverso.
 
+## 3A. Fluxo POS V1 limitado
+
+Dados ficticios sugeridos:
+
+- Cliente: `Cliente final` ou `Cliente UAT Maputo, Lda.`
+- Produto: `Produto UAT POS 01`
+- Conta: `Caixa UAT`
+- Armazem: `Loja UAT`
+
+Passos:
+
+1. Abrir `/pos`.
+2. Confirmar que produtos reais aparecem com nome, codigo, preco e stock.
+3. Pesquisar produto por nome ou codigo.
+4. Seleccionar armazem e confirmar que o carrinho inicia vazio.
+5. Adicionar produto ao carrinho.
+6. Aumentar e diminuir quantidade.
+7. Confirmar subtotal, incidencia, IVA e total.
+8. Seleccionar `Cliente final` ou cliente ficticio existente.
+9. Seleccionar metodo de pagamento e conta de tesouraria.
+10. Finalizar venda.
+11. Confirmar mensagem de sucesso com numero de factura e recibo.
+12. Abrir a factura pelo link apresentado.
+13. Confirmar factura `PAGA`, recibo activo, baixa de stock, movimento de
+    tesouraria, lancamentos contabilisticos e auditoria.
+14. Actualizar a pagina e confirmar que nao houve duplicacao da venda.
+15. Tentar vender quantidade superior ao stock e confirmar erro claro.
+
+Limites aceites neste fluxo: sem mesas, cozinha, comandas, garcons, turnos,
+fecho de caixa, offline, devolucao POS, scanner real ou impressao termica
+avancada.
+
 ## 4. Fluxo compras/fornecedores
 
 Dados ficticios sugeridos:

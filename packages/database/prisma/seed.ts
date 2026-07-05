@@ -168,7 +168,7 @@ async function seedDemo(prisma: PrismaClient) {
       keys: ['clients.view', 'clients.create', 'suppliers.view', 'suppliers.create', 'sales.view', 'sales.create', 'sales.approve_discount', 'purchases.create', 'purchases.approve', 'supplierPayments.reverse', 'purchaseReceipts.reverse', 'products.view', 'products.create', 'products.update', 'stock.view', 'stock.adjust', 'treasury.view', 'treasury.createMovement', 'treasury.transfer', 'treasury.manageAccounts', 'treasury.viewReports', 'treasury.reverseMovement', 'treasury.reverseTransfer', 'accounting.view', 'reports.export', 'audit.view'],
     },
     { name: 'Contabilista', description: 'Contabilidade e relatórios', keys: ['accounting.view', 'accounting.prepare', 'accounting.post', 'accounting.reverse', 'accounting.manageAccounts', 'accounting.managePeriods', 'accounting.manageSettings', 'payments.receive', 'suppliers.view', 'supplierPayments.reverse', 'purchaseReceipts.reverse', 'treasury.view', 'treasury.viewReports', 'reports.export', 'audit.view'] },
-    { name: 'Caixa', description: 'Vendas e recebimentos', keys: ['sales.view', 'sales.create', 'invoices.issue', 'payments.receive', 'treasury.view', 'treasury.createMovement', 'treasury.viewReports'] },
+    { name: 'Caixa', description: 'Vendas e recebimentos', keys: ['sales.view', 'sales.create', 'invoices.issue', 'payments.receive', 'stock.view', 'treasury.view', 'treasury.createMovement', 'treasury.viewReports'] },
     { name: 'Vendedor', description: 'Vendas e clientes', keys: ['sales.view', 'sales.create', 'clients.view', 'clients.create'] },
   ];
 
