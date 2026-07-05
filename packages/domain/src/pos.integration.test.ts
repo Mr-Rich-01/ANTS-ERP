@@ -26,15 +26,22 @@ interface Ids {
   period: string;
   salesJournal: string;
   cashJournal: string;
+  bankJournal: string;
   ar: string;
   revenue: string;
   vat: string;
   cashLedger: string;
+  bankLedger: string;
+  mpesaLedger: string;
+  emolaLedger: string;
   customer: string;
   otherCustomer: string;
   warehouse: string;
   product: string;
   cashAccount: string;
+  bankAccount: string;
+  mpesaAccount: string;
+  emolaAccount: string;
 }
 
 let ids!: Ids;
@@ -87,10 +94,14 @@ async function provision() {
   const period = await prisma.accountingPeriod.create({ data: { companyId: CA, fiscalYearId: fy.id, periodNumber: 1, code: '2026', name: '2026', startDate: D('2026-01-01'), endDate: D('2026-12-31'), status: 'OPEN' } });
   const salesJournal = await prisma.accountingJournal.create({ data: { companyId: CA, code: 'DV', name: 'Vendas', journalType: 'SALES', sequencePrefix: 'LV' } });
   const cashJournal = await prisma.accountingJournal.create({ data: { companyId: CA, code: 'DCX', name: 'Caixa', journalType: 'CASH', sequencePrefix: 'CX' } });
+  const bankJournal = await prisma.accountingJournal.create({ data: { companyId: CA, code: 'DB', name: 'Banco', journalType: 'BANK', sequencePrefix: 'BC' } });
 
   const group = (await ledger(CA, '1', 'Activo', 'ASSET', 'DEBIT')).id;
   const ar = (await ledger(CA, '121', 'Clientes', 'ASSET', 'DEBIT', group)).id;
   const cashLedger = (await ledger(CA, '111', 'Caixa', 'ASSET', 'DEBIT', group)).id;
+  const bankLedger = (await ledger(CA, '112', 'Banco', 'ASSET', 'DEBIT', group)).id;
+  const mpesaLedger = (await ledger(CA, '1131', 'M-Pesa', 'ASSET', 'DEBIT', group)).id;
+  const emolaLedger = (await ledger(CA, '1132', 'e-Mola', 'ASSET', 'DEBIT', group)).id;
   const vat = (await ledger(CA, '221', 'IVA liquidado', 'LIABILITY', 'CREDIT')).id;
   const revenue = (await ledger(CA, '411', 'Vendas', 'REVENUE', 'CREDIT')).id;
   await prisma.accountingMapping.createMany({
@@ -104,8 +115,11 @@ async function provision() {
   const customer = await prisma.customer.create({ data: { companyId: CA, name: 'Cliente POS', paymentTermDays: 0 } });
   const warehouse = await prisma.warehouse.create({ data: { companyId: CA, code: 'POS', name: 'Loja POS' } });
   const product = await prisma.product.create({ data: { companyId: CA, sku: 'POS-1', name: 'Produto POS', salePrice: 100, taxRate: 16 } });
-  await prisma.stockLevel.create({ data: { companyId: CA, productId: product.id, warehouseId: warehouse.id, quantity: 5 } });
+  await prisma.stockLevel.create({ data: { companyId: CA, productId: product.id, warehouseId: warehouse.id, quantity: 50 } });
   const cashAccount = await prisma.treasuryAccount.create({ data: { companyId: CA, name: 'Caixa POS', type: 'CASH', ledgerAccountId: cashLedger } });
+  const bankAccount = await prisma.treasuryAccount.create({ data: { companyId: CA, name: 'Cartao POS', type: 'BANK', ledgerAccountId: bankLedger } });
+  const mpesaAccount = await prisma.treasuryAccount.create({ data: { companyId: CA, name: 'M-Pesa POS', type: 'MOBILE', ledgerAccountId: mpesaLedger } });
+  const emolaAccount = await prisma.treasuryAccount.create({ data: { companyId: CA, name: 'e-Mola POS', type: 'MOBILE', ledgerAccountId: emolaLedger } });
 
   await prisma.company.create({ data: { id: CB, legalName: 'Smoke POS B' } });
   const otherCustomer = await prisma.customer.create({ data: { companyId: CB, name: 'Cliente B' } });
@@ -115,15 +129,22 @@ async function provision() {
     period: period.id,
     salesJournal: salesJournal.id,
     cashJournal: cashJournal.id,
+    bankJournal: bankJournal.id,
     ar,
     revenue,
     vat,
     cashLedger,
+    bankLedger,
+    mpesaLedger,
+    emolaLedger,
     customer: customer.id,
     otherCustomer: otherCustomer.id,
     warehouse: warehouse.id,
     product: product.id,
     cashAccount: cashAccount.id,
+    bankAccount: bankAccount.id,
+    mpesaAccount: mpesaAccount.id,
+    emolaAccount: emolaAccount.id,
   };
 }
 
@@ -146,7 +167,6 @@ function input(overrides: Partial<PosSaleInput> = {}): PosSaleInput {
     issueDate: CURRENT_DATE,
     customerId: ids.customer,
     warehouseId: ids.warehouse,
-    accountId: ids.cashAccount,
     paymentMethod: 'CASH',
     lines: [{ productId: ids.product, quantity: 2, discountPercent: 0 }],
     ...overrides,
@@ -181,10 +201,48 @@ describe('POS V1', () => {
     expect(Number(account.balance)).toBe(Number(beforeAccount.balance) + 232);
     expect(stockMovement?.reason).toBe('Venda POS');
     expect(treasuryMovement).toBeTruthy();
+    expect(treasuryMovement?.accountId).toBe(ids.cashAccount);
     expect(invoiceEntry).toBeTruthy();
     expect(paymentEntry).toBeTruthy();
     expect(invoiceAudit).toBeTruthy();
     expect(paymentAudit).toBeTruthy();
+  });
+
+  it.each([
+    ['CASH', 'cashAccount'],
+    ['MPESA', 'mpesaAccount'],
+    ['EMOLA', 'emolaAccount'],
+    ['CARD', 'bankAccount'],
+  ] as const)('resolve automaticamente a conta POS para %s', async (method, accountKey) => {
+    const result = await createPosSale(
+      prisma,
+      posCtx,
+      input({ paymentMethod: method, lines: [{ productId: ids.product, quantity: 1, discountPercent: 0 }] }),
+    );
+    const movement = await prisma.treasuryMovement.findFirstOrThrow({
+      where: { companyId: CA, sourceType: 'RECEIPT', sourceId: result.paymentId, movementPurpose: 'RECEIPT_IN' },
+    });
+    const entry = await prisma.journalEntry.findFirstOrThrow({
+      where: { companyId: CA, sourceType: 'CUSTOMER_PAYMENT', sourceId: result.paymentId, accountingEvent: 'RECEIPT_POSTED' },
+      include: { lines: true },
+    });
+    const expectedAccountId = ids[accountKey];
+    expect(movement.accountId).toBe(expectedAccountId);
+    expect(entry.lines.some((line) => line.treasuryAccountId === expectedAccountId && Number(line.debit) === 116)).toBe(true);
+  });
+
+  it('bloqueia checkout POS quando a conta automatica fica ambigua', async () => {
+    const duplicate = await ledger(CA, `111-${randomUUID()}`, 'Caixa duplicada', 'ASSET', 'DEBIT', ids.cashLedger);
+    const account = await prisma.treasuryAccount.create({ data: { companyId: CA, name: `Caixa Loja ${randomUUID()}`, type: 'CASH', ledgerAccountId: duplicate.id } });
+    const beforeInvoices = await prisma.invoice.count({ where: { companyId: CA } });
+    const beforePayments = await prisma.payment.count({ where: { companyId: CA } });
+
+    await expect(createPosSale(prisma, posCtx, input({ paymentMethod: 'CASH' }))).rejects.toThrow('mais de uma conta de caixa');
+
+    expect(await prisma.invoice.count({ where: { companyId: CA } })).toBe(beforeInvoices);
+    expect(await prisma.payment.count({ where: { companyId: CA } })).toBe(beforePayments);
+    await prisma.treasuryAccount.delete({ where: { id: account.id } });
+    await prisma.ledgerAccount.delete({ where: { id: duplicate.id } });
   });
 
   it('permite Cliente final criando o cliente operacional quando necessario', async () => {

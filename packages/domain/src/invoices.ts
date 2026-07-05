@@ -673,7 +673,7 @@ const posSaleInput = z.object({
   issueDate: z.string().min(1, 'Seleccione a data de emissão.'),
   customerId: z.string().min(1, 'Seleccione um cliente.'),
   warehouseId: z.string().min(1, 'Seleccione o armazém de saída.'),
-  accountId: z.string().min(1, 'Seleccione a conta de tesouraria.'),
+  accountId: z.string().trim().optional(),
   paymentMethod: z.enum(['CASH', 'MPESA', 'EMOLA', 'CARD', 'TRANSFER']).default('CASH'),
   notes: z.string().trim().max(1000).optional(),
   lines: z
@@ -694,6 +694,61 @@ export interface PosSaleResult {
   invoiceNumber: string;
   paymentId: string;
   paymentNumber: string;
+}
+
+type PosTreasuryCandidate = {
+  id: string;
+  name: string;
+  type: 'CASH' | 'BANK' | 'MOBILE' | 'OTHER';
+  ledgerAccountId: string | null;
+};
+
+function normaliseTreasuryName(name: string): string {
+  return name
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+}
+
+function pickSinglePreferred(candidates: PosTreasuryCandidate[], preferredPattern: RegExp, ambiguousMessage: string): PosTreasuryCandidate {
+  if (candidates.length === 1) return candidates[0]!;
+  const preferred = candidates.filter((account) => preferredPattern.test(normaliseTreasuryName(account.name)));
+  if (preferred.length === 1) return preferred[0]!;
+  throw new ValidationError(ambiguousMessage);
+}
+
+async function resolvePosTreasuryAccountIdTx(
+  tx: Prisma.TransactionClient,
+  companyId: string,
+  paymentMethod: PaymentMethod,
+  requestedAccountId?: string,
+): Promise<string> {
+  if (requestedAccountId) return requestedAccountId;
+  if (paymentMethod === 'TRANSFER') throw new ValidationError('O POS V1 aceita apenas Dinheiro, M-Pesa, e-Mola ou Cartao.');
+
+  const accounts = (await tx.treasuryAccount.findMany({
+    where: { companyId, status: 'ACTIVE', type: { in: ['CASH', 'BANK', 'MOBILE'] }, ledgerAccountId: { not: null } },
+    orderBy: [{ createdAt: 'asc' }, { name: 'asc' }],
+    select: { id: true, name: true, type: true, ledgerAccountId: true },
+  })) as PosTreasuryCandidate[];
+
+  if (paymentMethod === 'CASH') {
+    const cash = accounts.filter((account) => account.type === 'CASH');
+    if (cash.length === 0) throw new ValidationError('Nao existe conta de caixa activa e configurada para pagamentos em Dinheiro.');
+    return pickSinglePreferred(cash, /\b(caixa principal|principal|default|padrao)\b/, 'Existe mais de uma conta de caixa. Defina uma conta principal/default ou uma configuracao sem ambiguidade.').id;
+  }
+
+  if (paymentMethod === 'CARD') {
+    const bank = accounts.filter((account) => account.type === 'BANK');
+    if (bank.length === 0) throw new ValidationError('Nao existe conta bancaria activa e configurada para pagamentos por Cartao.');
+    return pickSinglePreferred(bank, /\b(cartao|card|pos|banco principal|principal|default|padrao)\b/, 'Existe mais de uma conta bancaria possivel para Cartao. Defina uma conta principal/default ou uma conta de cartao sem ambiguidade.').id;
+  }
+
+  const walletName = paymentMethod === 'MPESA' ? 'M-Pesa' : 'e-Mola';
+  const walletPattern = paymentMethod === 'MPESA' ? /\bm-?pesa\b/ : /\be-?mola\b/;
+  const wallet = accounts.filter((account) => account.type === 'MOBILE' && walletPattern.test(normaliseTreasuryName(account.name)));
+  if (wallet.length === 0) throw new ValidationError(`Nao existe conta de tesouraria activa e configurada para ${walletName}.`);
+  return pickSinglePreferred(wallet, /\b(principal|default|padrao)\b/, `Existe mais de uma conta ${walletName}. Defina uma conta principal/default para evitar ambiguidade.`).id;
 }
 
 async function resolvePosCustomerTx(
@@ -928,12 +983,13 @@ export async function createPosSale(db: PrismaClient, ctx: RequestContext, input
     });
     if (!invoice) throw new NotFoundError('Factura POS não encontrada após emissão.');
 
+    const accountId = await resolvePosTreasuryAccountIdTx(tx, companyId, data.paymentMethod, data.accountId);
     const paymentData: ParsedPaymentInput = {
       idempotencyKey: data.paymentIdempotencyKey,
       invoiceId: invoice.id,
       amount: round2(Number(invoice.total)),
       method: data.paymentMethod,
-      accountId: data.accountId,
+      accountId,
       notes: data.notes ? `POS: ${data.notes}` : 'POS',
     };
     const amount = round2(paymentData.amount);

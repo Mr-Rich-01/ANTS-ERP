@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useMemo, useState, useTransition } from 'react';
+import { useMemo, useState, useTransition } from 'react';
 import { civilDateInTimeZone, computeDocumentTotals } from '@ants/shared';
 import { Icon } from '@/components/Icon';
 import { ACCENT } from '@/lib/erp-nav';
@@ -20,13 +20,6 @@ export interface PosCustomerOpt {
 export interface PosWarehouseOpt {
   id: string;
   label: string;
-}
-
-export interface PosAccountOpt {
-  id: string;
-  name: string;
-  type: 'CASH' | 'BANK' | 'MOBILE' | 'OTHER';
-  balance: number;
 }
 
 export interface PosProductOpt {
@@ -74,13 +67,6 @@ function stockFor(product: PosProductOpt, warehouseId: string): number {
   return product.stockByWarehouse.find((s) => s.warehouseId === warehouseId)?.quantity ?? 0;
 }
 
-function preferredAccount(accounts: PosAccountOpt[], method: PaymentMethod): string {
-  if (method === 'CASH') return accounts.find((a) => a.type === 'CASH')?.id ?? accounts[0]?.id ?? '';
-  if (method === 'MPESA') return accounts.find((a) => /m-?pesa/i.test(a.name))?.id ?? accounts.find((a) => a.type === 'MOBILE')?.id ?? accounts[0]?.id ?? '';
-  if (method === 'EMOLA') return accounts.find((a) => /e-?mola/i.test(a.name))?.id ?? accounts.find((a) => a.type === 'MOBILE')?.id ?? accounts[0]?.id ?? '';
-  return accounts.find((a) => a.type === 'BANK')?.id ?? accounts[0]?.id ?? '';
-}
-
 const payOptions: Array<{ label: string; value: PaymentMethod; icon: string }> = [
   { label: 'Dinheiro', value: 'CASH', icon: 'banknote' },
   { label: 'M-Pesa', value: 'MPESA', icon: 'smartphone' },
@@ -90,22 +76,17 @@ const payOptions: Array<{ label: string; value: PaymentMethod; icon: string }> =
 
 const selectStyle: React.CSSProperties = { width: '100%', height: 38, border: '1px solid var(--border)', borderRadius: 10, padding: '0 11px', fontSize: 12.5, background: 'var(--card)', color: 'var(--text)', outline: 'none' };
 
-export function PosClient({ customers, warehouses, accounts, products, canSelectCustomer }: { customers: PosCustomerOpt[]; warehouses: PosWarehouseOpt[]; accounts: PosAccountOpt[]; products: PosProductOpt[]; canSelectCustomer: boolean }) {
+export function PosClient({ customers, warehouses, products, canSelectCustomer }: { customers: PosCustomerOpt[]; warehouses: PosWarehouseOpt[]; products: PosProductOpt[]; canSelectCustomer: boolean }) {
   const [pending, startTransition] = useTransition();
   const [warehouseId, setWarehouseId] = useState(warehouses[0]?.id ?? '');
   const [customerId, setCustomerId] = useState(FINAL_CUSTOMER_ID);
   const [method, setMethod] = useState<PaymentMethod>('CASH');
-  const [accountId, setAccountId] = useState(() => preferredAccount(accounts, 'CASH'));
   const [query, setQuery] = useState('');
   const [category, setCategory] = useState('Todos');
   const [cart, setCart] = useState<CartItem[]>([]);
   const [keys, setKeys] = useState(() => ({ invoice: newIdempotencyKey(), payment: newIdempotencyKey() }));
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<{ invoiceId: string; invoiceNumber: string; paymentNumber: string } | null>(null);
-
-  useEffect(() => {
-    setAccountId((current) => current || preferredAccount(accounts, method));
-  }, [accounts, method]);
 
   const categories = useMemo(() => ['Todos', ...Array.from(new Set(products.map((p) => p.category))).sort()], [products]);
   const visibleProducts = useMemo(() => {
@@ -155,17 +136,11 @@ export function PosClient({ customers, warehouses, accounts, products, canSelect
     setKeys({ invoice: newIdempotencyKey(), payment: newIdempotencyKey() });
   };
 
-  const selectPaymentMethod = (next: PaymentMethod) => {
-    setMethod(next);
-    setAccountId(preferredAccount(accounts, next));
-  };
-
   const finishSale = () => {
     setError(null);
     setSuccess(null);
     if (!warehouseId) return setError('Seleccione o armazém de saída.');
     if (!customerId) return setError('Seleccione um cliente.');
-    if (!accountId) return setError('Seleccione a conta de tesouraria.');
     if (cart.length === 0) return setError('Carrinho vazio. Adicione pelo menos um produto.');
     if (overStock.length > 0) return setError(`Stock insuficiente: ${overStock.map((item) => item.name).join(', ')}.`);
 
@@ -176,7 +151,6 @@ export function PosClient({ customers, warehouses, accounts, products, canSelect
         issueDate: civilDateInTimeZone(),
         customerId,
         warehouseId,
-        accountId,
         paymentMethod: method,
         notes: 'Venda POS',
         lines: cart.map((item) => ({ productId: item.productId, quantity: item.qty, discountPercent: 0 })),
@@ -253,22 +227,13 @@ export function PosClient({ customers, warehouses, accounts, products, canSelect
           </button>
         </div>
 
-        <div style={{ padding: 14, borderBottom: '1px solid var(--bd-soft)', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-          <div style={{ gridColumn: 'span 2' }}>
+        <div style={{ padding: 14, borderBottom: '1px solid var(--bd-soft)' }}>
+          <div>
             <label style={{ display: 'block', fontSize: 11.5, fontWeight: 700, color: 'var(--text3)', marginBottom: 5 }}>Cliente</label>
             <select value={customerId} onChange={(e) => setCustomerId(e.target.value)} style={selectStyle}>
               <option value={FINAL_CUSTOMER_ID}>Cliente final</option>
               {canSelectCustomer && customers.map((customer) => (
                 <option key={customer.id} value={customer.id}>{customer.name}</option>
-              ))}
-            </select>
-          </div>
-          <div style={{ gridColumn: 'span 2' }}>
-            <label style={{ display: 'block', fontSize: 11.5, fontWeight: 700, color: 'var(--text3)', marginBottom: 5 }}>Conta de tesouraria</label>
-            <select value={accountId} onChange={(e) => setAccountId(e.target.value)} style={selectStyle}>
-              {accounts.length === 0 && <option value="">Sem contas activas</option>}
-              {accounts.map((account) => (
-                <option key={account.id} value={account.id}>{account.name} · {account.type}</option>
               ))}
             </select>
           </div>
@@ -299,12 +264,12 @@ export function PosClient({ customers, warehouses, accounts, products, canSelect
         </div>
 
         <div style={{ padding: '13px 16px 15px', borderTop: '1px solid var(--bd-soft)', background: 'var(--card3)' }}>
-          <div style={{ display: 'grid', gap: 6, marginBottom: 10 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,minmax(0,1fr))', gap: 6, marginBottom: 10 }}>
             {payOptions.map((option) => {
               const active = method === option.value;
               return (
-                <button key={option.value} onClick={() => selectPaymentMethod(option.value)} disabled={pending} style={{ height: 34, borderRadius: 8, border: `1px solid ${active ? ACCENT : 'var(--border)'}`, background: active ? ACCENT : 'var(--card)', color: active ? '#fff' : 'var(--text2)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, fontSize: 12, fontWeight: 750 }}>
-                  <Icon name={option.icon} size={15} />
+                <button key={option.value} onClick={() => setMethod(option.value)} disabled={pending} aria-pressed={active} title={option.label} style={{ minWidth: 0, height: 36, borderRadius: 8, border: `1px solid ${active ? ACCENT : 'var(--border)'}`, background: active ? ACCENT : 'var(--card)', color: active ? '#fff' : 'var(--text2)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, fontSize: 11.5, fontWeight: 800, whiteSpace: 'nowrap', padding: '0 6px', cursor: pending ? 'default' : 'pointer' }}>
+                  <Icon name={option.icon} size={14} />
                   {option.label}
                 </button>
               );

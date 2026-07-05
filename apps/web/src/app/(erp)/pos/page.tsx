@@ -1,9 +1,9 @@
 import { redirect } from 'next/navigation';
 import { forCompany } from '@ants/database';
-import { hasPermission, listAccounts, listCustomers, listWarehouses } from '@ants/domain';
+import { hasPermission, listCustomers, listWarehouses } from '@ants/domain';
 import { NoPermission } from '@/components/NoPermission';
 import { getContext } from '@/lib/session';
-import { PosClient, type PosAccountOpt, type PosCustomerOpt, type PosProductOpt, type PosWarehouseOpt } from './PosClient';
+import { PosClient, type PosCustomerOpt, type PosProductOpt, type PosWarehouseOpt } from './PosClient';
 
 export const dynamic = 'force-dynamic';
 
@@ -21,10 +21,9 @@ export default async function PosPage() {
 
   const db = forCompany(ctx.companyId);
   const canViewCustomers = hasPermission(ctx, 'clients.view');
-  const [customers, warehouses, accounts, products] = await Promise.all([
+  const [customers, warehouses, products] = await Promise.all([
     canViewCustomers ? listCustomers(db, ctx) : Promise.resolve([]),
     listWarehouses(db, ctx),
-    listAccounts(db, ctx),
     db.product.findMany({
       where: { status: 'ACTIVE' },
       orderBy: { name: 'asc' },
@@ -36,9 +35,6 @@ export default async function PosPage() {
     .filter((c) => c.status === 'ACTIVE')
     .map((c) => ({ id: c.id, name: c.name, nuit: c.nuit ?? '', phone: c.phone ?? '' }));
   const warehouseOpts: PosWarehouseOpt[] = warehouses.map((w) => ({ id: w.id, label: `${w.name} (${w.code})` }));
-  const accountOpts: PosAccountOpt[] = accounts
-    .filter((a) => a.status === 'ACTIVE' && a.type !== 'OTHER')
-    .map((a) => ({ id: a.id, name: a.name, type: a.type, balance: a.balance }));
   const productOpts: PosProductOpt[] = products.map((p) => ({
     id: p.id,
     sku: p.sku,
@@ -53,7 +49,6 @@ export default async function PosPage() {
     <PosClient
       customers={customerOpts}
       warehouses={warehouseOpts}
-      accounts={accountOpts}
       products={productOpts}
       canSelectCustomer={canViewCustomers}
     />
