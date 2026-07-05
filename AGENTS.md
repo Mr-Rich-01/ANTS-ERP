@@ -29,7 +29,8 @@ Módulos já implementados: Auth/RBAC/Admin, Clientes, Fornecedores, Produtos &
 Stock, Vendas/Facturação, Compras, Tesouraria & Bancos, Hardening da
 Tesouraria, Contabilidade 8a, 8b, 8c.1, 8c.2a, 8c.2b, 8c.3,
 P0-03 completo (P0-03.0, P0-03a, P0-03b, P0-03c, P0-03d, P0-03e e P0-03f),
-P0-04, P0-05, P0-06, P0-07, P0-08, P0-09 e P1-01 POS V1 limitado.
+P0-04, P0-05, P0-06, P0-07, P0-08, P0-09, P1-01 POS V1 limitado e
+P1-02 Relatórios V1 operacionais.
 
 Estado actual da Contabilidade: P0-03 completo. A base de
 reversões está activa; recebimentos de clientes podem ser anulados, facturas sem
@@ -50,7 +51,11 @@ sem exposicao sensivel. A P0-09 criou o pacote de UAT comercial e prontidao de
 piloto com roteiro, checklist, matriz V1, template de sign-off, criterios de
 entrada/saida e regras para nao vender funcionalidades futuras. A P1-01 ligou
 `/pos` a produtos reais, Cliente final, factura + recibo, stock, tesouraria,
-contabilidade e auditoria como checkout simples pronto para UAT limitado. O
+contabilidade e auditoria como checkout simples pronto para UAT limitado. A
+P1-02 ligou `/relatorios` a dados reais do domínio/base de dados para vendas,
+clientes, antiguidade de saldos, compras, fornecedores, stock, fluxo de caixa e
+auditoria, com filtros básicos e exportação CSV simples, mantendo PDF/Excel
+avançados, salários, produção, BI e relatórios personalizados como futuro. O
 proximo passo deve ser decidido explicitamente dentro do backlog P1.
 
 ## Arquitectura Obrigatória
@@ -228,6 +233,7 @@ pnpm test:integration:accounting:reversal:all
 pnpm test:integration:auth:company-selection
 pnpm test:integration:security:production-hardening
 pnpm test:integration:pos
+pnpm test:integration:reports
 pnpm build
 ```
 
@@ -281,10 +287,11 @@ passwords não demonstrativas.
 - P0-08 concluída.
 - P0-09 concluída.
 - P1-01 POS V1 funcional limitado concluida.
+- P1-02 Relatórios V1 operacionais concluida.
 - Commit base funcional antes da P0-03.0: `a1d608b`.
-- Proximo passo: decisao explicita sobre P1-02 (fecho de caixa, recibo/impressao,
-  restaurante/bar com mesas, offline ou scanner/codigo de barras real).
-- Nao iniciar P1-02 nem piloto real sem decisao explicita, backup, staging
+- Proximo passo: decisao explicita sobre P1-03 (impressao/PDF profissional,
+  fecho de caixa, restaurante/bar com mesas ou scanner/codigo de barras real).
+- Nao iniciar P1-03 nem piloto real sem decisao explicita, backup, staging
   validado e checklist assinada.
 - `MODULE_STATUS.md` é a fonte principal para progresso e próximos passos.
 - `CLAUDE.md` deve ser preservado.

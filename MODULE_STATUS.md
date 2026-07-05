@@ -6,8 +6,8 @@ Estado vivo do projecto. O conhecimento permanente (arquitectura, regras, comand
 em [`CLAUDE.md`](CLAUDE.md).
 
 **Último commit funcional:** pendente nesta branch (`feat(pos): enable basic checkout flow`)
-**Fase concluída:** `P1-01 — POS V1 funcional limitado`
-**Próximo passo:** decisao explicita sobre P1-02: fecho de caixa, recibo/impressao, restaurante/bar com mesas, offline ou scanner/codigo de barras real
+**Fase concluída:** `P1-02 — Relatorios V1 operacionais`
+**Próximo passo:** decisao explicita sobre P1-03: impressao/PDF profissional, fecho de caixa, restaurante/bar com mesas ou scanner/codigo de barras real
 
 ---
 
@@ -43,6 +43,7 @@ em [`CLAUDE.md`](CLAUDE.md).
 | **P0-08** | **Hardening de producao** (env validation, defaults inseguros, Auth/cookies, headers, CORS, rate limit, logs, health e docs operacionais) | ✅ |
 | **P0-09** | **UAT comercial e prontidao de piloto** (roteiro UAT, checklist, matriz V1, sign-off e criterios de decisao) | ✅ |
 | **P1-01** | **POS V1 funcional limitado** (checkout simples: produtos reais, Cliente final, factura + recibo, stock, tesouraria, contabilidade e auditoria) | ✅ |
+| **P1-02** | **Relatorios V1 operacionais** (vendas, clientes, antiguidade, compras, fornecedores, stock, fluxo de caixa e auditoria com filtros basicos + CSV) | ✅ |
 | 9 | RH & Salários | 🗺️ futuro |
 | X | RLS forçado em toda a BD (fase transversal, pré-produção) | 🗺️ futuro |
 
@@ -51,7 +52,7 @@ contabilidade 189/189** (8b 32 + 8c.1 30 + 8c.2a 18 + 8c.2b 34 + 8c.3 17 + P0-02
 `pnpm test:integration:accounting`, sub: `…:c1`, `…:c2a`, `…:c2`, `…:c3`, `…:reversal:customer-payment`, `…:reversal:invoice`, `…:reversal:supplier-payment`, `…:reversal:purchase-receipt`, `…:reversal:treasury-transfer`, `…:reversal:uat`, `…:reversal:all`) · **POS 7/7** (`pnpm test:integration:pos`) · `prisma validate` OK · `prisma migrate status` OK · `pnpm build` OK
 em Windows nativo (30/30 páginas estaticas + `/api/health` dinamico) e Docker Linux com Node 20 + OpenSSL · imagens Docker de produção
 `web`, `worker` e target `migrate` OK · seed idempotente (2×) · login/contexto
-multiempresa 7/7 · `pnpm build` OK em Windows nativo (31/31 páginas, incluindo `/api/health`) ·
+multiempresa 7/7 · **relatorios 7/7** (`pnpm test:integration:reports`) · `pnpm build` OK em Windows nativo (31/31 páginas, incluindo `/api/health`) ·
 staging Docker P0-08/P0-09 OK (`docker:staging:build`, migrations explicitas, web/worker/postgres/redis,
 health `/api/health`, smoke `/login`, `/seleccionar-empresa` e headers).
 
@@ -147,7 +148,21 @@ sucesso ponta a ponta, Cliente final, carrinho vazio, stock insuficiente, permis
 multiempresa e replay idempotente. O perfil seed `Caixa` recebeu `stock.view` para poder usar POS.
 Limites V1: sem mesas, cozinha, comandas, garcons, turnos/fecho de caixa, offline, devolucao POS,
 scanner real/codigo de barras operacional, impressao termica avancada ou restaurante/bar completo.
-Proximo passo: decisao explicita sobre P1-02.
+Proximo passo cumprido por decisao explicita: P1-02 Relatorios V1 operacionais.
+
+**P1-02 (2026-07-05):** implementados Relatorios V1 operacionais sem schema, migrations ou
+dependencias novas. `/relatorios` deixou de usar dados mockados de
+`apps/web/src/lib/data/reports.ts` e passou a chamar `packages/domain/src/reports.ts` com
+`RequestContext`, `requirePermission`, `forCompany` e filtros basicos por periodo, cliente,
+fornecedor, produto, conta de tesouraria, tipo de movimento e utilizador quando aplicavel. Foram
+entregues relatorio de vendas, extracto de clientes, antiguidade de saldos, relatorio de compras,
+extracto de fornecedores, movimentos de stock, fluxo de caixa e todas as operacoes/auditoria, todos
+com exportacao CSV via `/relatorios/exportar`. PDF e Excel avancados ficam desactivados/futuros; a
+biblioteca marca salarios, producao, BI, reconciliacao bancaria, margens robustas e relatorio
+personalizado como futuro para nao vender mock como pronto. Criado `pnpm test:integration:reports`
+(7/7) cobrindo isolamento `companyId`, saldos de clientes/fornecedores, fluxo de caixa, stock, CSV
+e bloqueio por permissao.
+Proximo passo: decisao explicita sobre P1-03.
 
 **Hardening pré-produção P0-01 (2026-07-02):** seed demo bloqueado em `production`
 antes de criar o Prisma Client; credenciais demo removidas da interface de

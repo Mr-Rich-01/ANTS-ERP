@@ -14,6 +14,7 @@ ser classificado como bloqueante, restricao aceite ou backlog futuro.
 - [ ] `pnpm test` verde.
 - [ ] Testes de integracao relevantes verdes.
 - [ ] `pnpm test:integration:pos` verde quando POS entrar no escopo do piloto.
+- [ ] `pnpm test:integration:reports` verde quando relatorios entrarem no escopo do piloto.
 - [ ] `pnpm build` verde.
 - [ ] Sem migrations pendentes.
 - [ ] Sem branches locais soltas para a fase.
@@ -75,6 +76,9 @@ ser classificado como bloqueante, restricao aceite ou backlog futuro.
 - [ ] Template de sign-off preparado.
 - [ ] Limites do POS V1 aceites: sem mesas, cozinha, offline, devolucao POS,
       turnos/fecho de caixa, scanner real e impressao termica avancada.
+- [ ] Limites dos relatorios V1 aceites: CSV simples pronto; PDF bonito, Excel
+      avancado, salarios, producao, BI avancado e relatorios personalizados
+      ficam futuros.
 
 ## 6. Decisao
 

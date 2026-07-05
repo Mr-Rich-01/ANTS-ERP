@@ -91,6 +91,35 @@ Limites aceites neste fluxo: sem mesas, cozinha, comandas, garcons, turnos,
 fecho de caixa, offline, devolucao POS, scanner real ou impressao termica
 avancada.
 
+## 3B. Fluxo relatorios V1
+
+Dados ficticios sugeridos:
+
+- Periodo: mes corrente da UAT.
+- Cliente com pelo menos uma factura e um recebimento.
+- Fornecedor com pelo menos uma compra/recepcao e um pagamento.
+- Produto com movimentos de venda/compra/ajuste.
+- Conta de tesouraria com entradas e saidas.
+
+Passos:
+
+1. Abrir `/relatorios`.
+2. Confirmar que o relatorio de vendas apresenta totais reais do periodo.
+3. Filtrar por data inicial/final e confirmar que os totais mudam conforme os dados.
+4. Gerar `Relatorio de vendas` e exportar CSV.
+5. Gerar `Extracto de clientes` e exportar CSV.
+6. Gerar `Antiguidade de saldos` e confirmar buckets 0-30, 31-60, 61-90 e +90 dias.
+7. Gerar `Relatorio de compras` e `Extracto de fornecedores`.
+8. Gerar `Movimentos de stock` e confirmar entradas/saidas/ajustes.
+9. Gerar `Fluxo de caixa` e confirmar entradas, saidas e saldo por conta.
+10. Gerar `Todas as operacoes` e confirmar auditoria por data/utilizador/entidade.
+11. Confirmar que PDF e Excel avancados aparecem como futuros/desactivados.
+12. Confirmar que salarios, producao e relatorio personalizado nao aparecem como prontos.
+
+Limites aceites neste fluxo: CSV simples pronto; PDF bonito, Excel avancado,
+salarios, producao, BI avancado, reconciliacao bancaria e relatorios
+personalizados ficam para fases futuras.
+
 ## 4. Fluxo compras/fornecedores
 
 Dados ficticios sugeridos:

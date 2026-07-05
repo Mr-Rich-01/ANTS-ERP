@@ -33,6 +33,7 @@
     "test:integration:auth:company-selection": "pnpm --filter @ants/domain test:integration:auth-company-selection",
     "test:integration:security:production-hardening": "pnpm --filter @ants/shared test -- production-hardening && pnpm --filter @ants/database test -- production-hardening",
     "test:integration:pos": "pnpm --filter @ants/domain test:integration:pos",
+    "test:integration:reports": "pnpm --filter @ants/domain test:integration:reports",
     "docker:dev": "docker compose up -d postgres redis",
     "docker:build:web": "docker build -f apps/web/Dockerfile -t ants-erp-web:local .",
     "docker:build:worker": "docker build -f apps/worker/Dockerfile -t ants-erp-worker:local .",
