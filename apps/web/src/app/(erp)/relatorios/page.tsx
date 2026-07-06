@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { forCompany } from '@ants/database';
 import {
+  getCompanyPrintProfile,
   getOperationalReport,
   getReportFilterOptions,
   hasPermission,
@@ -15,6 +16,8 @@ import {
 } from '@ants/domain';
 import { Icon } from '@/components/Icon';
 import { NoPermission } from '@/components/NoPermission';
+import { PrintButton } from '@/components/PrintButton';
+import { CompanyHeader, DocumentFooter } from '@/components/print/PrintLayout';
 import { getContext } from '@/lib/session';
 import { fmt } from '@/lib/format';
 import { ACCENT } from '@/lib/erp-nav';
@@ -79,6 +82,22 @@ function exportHref(key: OperationalReportKey, filters: ReportFilters): string {
   qs.set('report', key);
   appendPublicFilters(qs, filters);
   return `/relatorios/exportar?${qs.toString()}`;
+}
+
+function generatedAt(): string {
+  const d = new Date();
+  return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
+function filtersLabel(filters: ReportFilters): string {
+  const labels = [`Periodo: ${filters.from} a ${filters.to}`];
+  if (filters.customerId) labels.push('Cliente filtrado');
+  if (filters.supplierId) labels.push('Fornecedor filtrado');
+  if (filters.productId) labels.push('Produto filtrado');
+  if (filters.treasuryAccountId) labels.push('Conta filtrada');
+  if (filters.movementType) labels.push(`Tipo: ${filters.movementType}`);
+  if (filters.userId) labels.push('Utilizador filtrado');
+  return labels.join(' · ');
 }
 
 function groupedDefinitions() {
@@ -169,15 +188,16 @@ export default async function RelatoriosPage({ searchParams }: { searchParams: S
   }
   const db = forCompany(ctx.companyId);
   const rawFilters = filtersFromSearch(searchParams);
-  const [options, report] = await Promise.all([
+  const [options, report, company] = await Promise.all([
     getReportFilterOptions(db, ctx),
     getOperationalReport(db, ctx, selectedKey, rawFilters),
+    getCompanyPrintProfile(db, ctx),
   ]);
   const filters = report.filters;
 
   return (
     <div style={pageWrap}>
-      <div style={{ ...panel, padding: 16, display: 'flex', flexDirection: 'column', gap: 14 }}>
+      <div className="ants-noprint" style={{ ...panel, padding: 16, display: 'flex', flexDirection: 'column', gap: 14 }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
           <span style={{ color: 'var(--accent-fg)', background: 'var(--accent-bg)', padding: 9, borderRadius: 10, display: 'inline-flex' }}>
             <Icon name={REPORT_DEFINITIONS.find((d) => d.key === selectedKey)?.icon ?? 'bar-chart-3'} size={18} />
@@ -193,6 +213,7 @@ export default async function RelatoriosPage({ searchParams }: { searchParams: S
             <Icon name="file-text" size={14} />
             PDF futuro
           </button>
+          <PrintButton label="Imprimir / Guardar PDF" />
           <button disabled style={{ ...actionBtn, opacity: 0.48, cursor: 'not-allowed', color: 'var(--ok)' }} title="Excel avancado fica para fase futura">
             <Icon name="sheet" size={14} />
             Excel futuro
@@ -281,12 +302,31 @@ export default async function RelatoriosPage({ searchParams }: { searchParams: S
         </form>
       </div>
 
-      <SummaryGrid report={report} />
-      <ReportTable report={report} />
+      <div className="ants-report-print">
+        <div className="ants-print-only">
+          <CompanyHeader
+            company={company}
+            title={report.title}
+            documentNumber={report.periodLabel}
+            meta={
+              <div style={{ fontSize: 12, color: '#5f7378', lineHeight: 1.5 }}>
+                {filtersLabel(filters)}
+                <br />
+                Gerado em {generatedAt()}
+              </div>
+            }
+          />
+        </div>
+        <SummaryGrid report={report} />
+        <ReportTable report={report} />
+        <div className="ants-print-only">
+          <DocumentFooter company={company} />
+        </div>
+      </div>
 
-      <div>
+      <div className="ants-noprint">
         <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text)', marginBottom: 4 }}>Biblioteca de relatorios</div>
-        <div style={{ fontSize: 12.5, color: 'var(--text3)', marginBottom: 14 }}>Relatorios V1 usam dados reais e exportam CSV. PDF e Excel avancados ficam para fase futura.</div>
+        <div style={{ fontSize: 12.5, color: 'var(--text3)', marginBottom: 14 }}>Relatorios V1 usam dados reais, exportam CSV e podem ser impressos/guardados em PDF pelo navegador. PDF e Excel avancados ficam para fase futura.</div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
           {groupedDefinitions().map(([group, items]) => (
             <div key={group}>

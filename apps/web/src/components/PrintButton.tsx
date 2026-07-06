@@ -3,10 +3,12 @@
 import { Icon } from '@/components/Icon';
 import { ACCENT } from '@/lib/erp-nav';
 
-export function PrintButton() {
+export function PrintButton({ label = 'Imprimir', title }: { label?: string; title?: string }) {
   return (
     <button
+      type="button"
       onClick={() => window.print()}
+      title={title ?? label}
       style={{
         display: 'flex',
         alignItems: 'center',
@@ -22,7 +24,7 @@ export function PrintButton() {
       }}
     >
       <Icon name="printer" size={16} />
-      Imprimir
+      {label}
     </button>
   );
 }

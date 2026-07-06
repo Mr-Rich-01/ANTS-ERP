@@ -1,13 +1,13 @@
 # MODULE_STATUS — ANTS ERP
 
-_Última actualização: 2026-07-05_
+_Última actualização: 2026-07-06_
 
 Estado vivo do projecto. O conhecimento permanente (arquitectura, regras, comandos) está
 em [`CLAUDE.md`](CLAUDE.md).
 
-**Último commit funcional:** pendente nesta branch (`feat(pos): enable basic checkout flow`)
-**Fase concluída:** `P1-02 — Relatorios V1 operacionais`
-**Próximo passo:** decisao explicita sobre P1-03: impressao/PDF profissional, fecho de caixa, restaurante/bar com mesas ou scanner/codigo de barras real
+**Último commit funcional:** pendente nesta branch (`feat(print): add professional document printing`)
+**Fase concluída:** `P1-03 — Impressao/PDF profissional`
+**Próximo passo:** decisao explicita sobre P1-04: fecho de caixa, impressao termica POS, restaurante/bar com mesas ou scanner/codigo de barras real
 
 ---
 
@@ -44,6 +44,7 @@ em [`CLAUDE.md`](CLAUDE.md).
 | **P0-09** | **UAT comercial e prontidao de piloto** (roteiro UAT, checklist, matriz V1, sign-off e criterios de decisao) | ✅ |
 | **P1-01** | **POS V1 funcional limitado** (checkout simples: produtos reais, Cliente final, factura + recibo, stock, tesouraria, contabilidade e auditoria) | ✅ |
 | **P1-02** | **Relatorios V1 operacionais** (vendas, clientes, antiguidade, compras, fornecedores, stock, fluxo de caixa e auditoria com filtros basicos + CSV) | ✅ |
+| **P1-03** | **Impressao/PDF profissional** (factura, recibo, fecho diario de caixa e relatorios V1 com HTML/CSS print e guardar PDF pelo navegador) | ✅ |
 | 9 | RH & Salários | 🗺️ futuro |
 | X | RLS forçado em toda a BD (fase transversal, pré-produção) | 🗺️ futuro |
 
@@ -163,6 +164,23 @@ personalizado como futuro para nao vender mock como pronto. Criado `pnpm test:in
 (7/7) cobrindo isolamento `companyId`, saldos de clientes/fornecedores, fluxo de caixa, stock, CSV
 e bloqueio por permissao.
 Proximo passo: decisao explicita sobre P1-03.
+
+**P1-03 (2026-07-06):** implementada impressao/PDF profissional por HTML/CSS print, sem schema,
+migrations ou dependencias novas. `/facturas/documento` ganhou cabecalho/rodape de impressao com
+identidade da empresa, endereco de filial quando disponivel e referencias bancarias/carteiras sem
+saldos; `/facturas/recibo` foi criado como recibo autonomo imprimivel com cliente, factura
+relacionada, metodo, conta de tesouraria, valor, emissor e estado/anulacao; `/tesouraria/fecho`
+passou a imprimir relatorio diario de caixa com empresa, conta/data, operador, entradas, saidas,
+recebimentos, pagamentos, transferencias, saldo inicial/final, total do dia e assinaturas; `/relatorios`
+passou a oferecer `Imprimir / Guardar PDF` para relatorios V1 gerados, mantendo PDF automatico/fiscal
+e Excel avancado como futuro/desactivado. Foram criados componentes simples de apresentacao
+`PrintLayout`, `CompanyHeader`, `DocumentFooter`, `MoneyCell` e `SignatureBlock`, e o CSS print foi
+reforcado para A4, modo claro, tabelas e quebras de pagina. A suite `pnpm test:integration:reports`
+foi expandida para cobrir factura/recibo imprimiveis, relatorio diario de caixa, perfil imprimivel da
+empresa, bloqueio por permissao e isolamento `companyId`. Limites: guardar PDF pelo dialogo do
+navegador; PDF fiscal oficial, assinatura digital/fiscal, envio por email, impressao termica avancada
+e layouts personalizaveis ficam futuros. Proximo passo: decisao explicita sobre P1-04; nao iniciar
+P1-04 automaticamente.
 
 **Hardening pré-produção P0-01 (2026-07-02):** seed demo bloqueado em `production`
 antes de criar o Prisma Client; credenciais demo removidas da interface de

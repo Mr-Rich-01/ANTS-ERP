@@ -61,6 +61,25 @@ export interface InvoicePaymentItem {
   treasuryAccountName: string | null;
 }
 
+export interface CustomerPaymentReceipt {
+  id: string;
+  number: string;
+  amount: number;
+  method: PaymentMethod;
+  paidAt: Date;
+  status: 'ACTIVE' | 'REVERSED';
+  reversedAt: Date | null;
+  reversalReason: string | null;
+  notes: string | null;
+  customerName: string;
+  customerNuit: string | null;
+  invoiceId: string | null;
+  invoiceNumber: string | null;
+  invoiceTotal: number | null;
+  treasuryAccountName: string | null;
+  emittedBy: string | null;
+}
+
 export interface InvoiceDetail {
   id: string;
   number: string;
@@ -141,9 +160,9 @@ export async function listInvoices(db: PrismaClient, ctx: RequestContext): Promi
 
 export async function getInvoice(db: PrismaClient, ctx: RequestContext, id: string): Promise<InvoiceDetail> {
   requirePermission(ctx, 'sales.view');
-  requireCompany(ctx);
+  const companyId = requireCompany(ctx);
   const i = await db.invoice.findFirst({
-    where: { id },
+    where: { companyId, id },
     include: {
       lines: { orderBy: { id: 'asc' } },
       payments: { orderBy: { paidAt: 'asc' } },
@@ -156,7 +175,7 @@ export async function getInvoice(db: PrismaClient, ctx: RequestContext, id: stri
   const paymentIds = i.payments.map((p) => p.id);
   const paymentMovements = paymentIds.length
     ? await db.treasuryMovement.findMany({
-        where: { sourceType: 'RECEIPT', sourceId: { in: paymentIds }, movementPurpose: 'RECEIPT_IN' },
+        where: { companyId, sourceType: 'RECEIPT', sourceId: { in: paymentIds }, movementPurpose: 'RECEIPT_IN' },
         include: { account: { select: { id: true, name: true } } },
       })
     : [];
@@ -206,6 +225,46 @@ export async function getInvoice(db: PrismaClient, ctx: RequestContext, id: stri
       treasuryAccountId: movementByPayment.get(p.id)?.account.id ?? null,
       treasuryAccountName: movementByPayment.get(p.id)?.account.name ?? null,
     })),
+  };
+}
+
+export async function getCustomerPaymentReceipt(db: PrismaClient, ctx: RequestContext, paymentId: string): Promise<CustomerPaymentReceipt> {
+  requirePermission(ctx, 'sales.view');
+  const companyId = requireCompany(ctx);
+  const payment = await db.payment.findFirst({
+    where: { companyId, id: paymentId },
+    include: {
+      customer: { select: { name: true, nuit: true } },
+      invoice: { select: { id: true, number: true, total: true, customerName: true, customerNuit: true } },
+    },
+  });
+  if (!payment) throw new NotFoundError('Recibo não encontrado.');
+
+  const [movement, user] = await Promise.all([
+    db.treasuryMovement.findFirst({
+      where: { companyId, sourceType: 'RECEIPT', sourceId: payment.id, movementPurpose: 'RECEIPT_IN' },
+      include: { account: { select: { name: true } } },
+    }),
+    payment.createdBy ? db.user.findFirst({ where: { companyId, id: payment.createdBy }, select: { name: true, email: true } }) : Promise.resolve(null),
+  ]);
+
+  return {
+    id: payment.id,
+    number: payment.number,
+    amount: Number(payment.amount),
+    method: payment.method as PaymentMethod,
+    paidAt: payment.paidAt,
+    status: payment.status as 'ACTIVE' | 'REVERSED',
+    reversedAt: payment.reversedAt,
+    reversalReason: payment.reversalReason,
+    notes: payment.notes,
+    customerName: payment.invoice?.customerName ?? payment.customer.name,
+    customerNuit: payment.invoice?.customerNuit ?? payment.customer.nuit,
+    invoiceId: payment.invoice?.id ?? null,
+    invoiceNumber: payment.invoice?.number ?? null,
+    invoiceTotal: payment.invoice ? Number(payment.invoice.total) : null,
+    treasuryAccountName: movement?.account.name ?? null,
+    emittedBy: user?.name || user?.email || payment.createdBy,
   };
 }
 

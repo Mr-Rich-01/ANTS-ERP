@@ -1,6 +1,6 @@
 # Roteiro comercial de testes UAT - ANTS ERP
 
-_Ultima actualizacao: 2026-07-05_
+_Ultima actualizacao: 2026-07-06_
 
 Executar este roteiro com dados ficticios e ambiente identificado. Registar o
 resultado de cada passo como `Aprovado`, `Reprovado`, `Bloqueado` ou `Nao
@@ -48,8 +48,12 @@ Passos:
 2. Confirmar saldo inicial do cliente.
 3. Criar factura simples com produto em stock.
 4. Confirmar numero, linhas, totais, estado e baixa de stock.
+4.1. Clicar `Imprimir / Guardar PDF` na factura e confirmar cabecalho da empresa,
+     NUIT, linhas, subtotal, IVA, total e rodape.
 5. Registar recebimento em conta de tesouraria.
 6. Confirmar impacto em saldo do cliente e estado da factura.
+6.1. Abrir o recibo pela factura, clicar `Imprimir / Guardar PDF` e confirmar
+     cliente, factura relacionada, metodo, conta de tesouraria e valor pago.
 7. Confirmar movimento de tesouraria.
 8. Confirmar lancamento contabilistico se aplicavel ao ecran/evidencia
    disponivel.
@@ -114,11 +118,41 @@ Passos:
 9. Gerar `Fluxo de caixa` e confirmar entradas, saidas e saldo por conta.
 10. Gerar `Todas as operacoes` e confirmar auditoria por data/utilizador/entidade.
 11. Confirmar que PDF e Excel avancados aparecem como futuros/desactivados.
-12. Confirmar que salarios, producao e relatorio personalizado nao aparecem como prontos.
+12. Clicar `Imprimir / Guardar PDF` e confirmar que apenas o relatorio gerado
+    aparece no layout de impressao.
+13. Confirmar que salarios, producao e relatorio personalizado nao aparecem como prontos.
 
-Limites aceites neste fluxo: CSV simples pronto; PDF bonito, Excel avancado,
-salarios, producao, BI avancado, reconciliacao bancaria e relatorios
-personalizados ficam para fases futuras.
+Limites aceites neste fluxo: CSV simples pronto; impressao/guardar PDF via
+navegador pronto; PDF fiscal/automatico, Excel avancado, salarios, producao,
+BI avancado, reconciliacao bancaria e relatorios personalizados ficam para
+fases futuras.
+
+## 3C. Impressao/PDF comercial P1-03
+
+Dados ficticios obrigatorios. Nao usar dados reais em documentos, screenshots
+ou PDFs guardados durante UAT.
+
+Passos:
+
+1. Abrir uma factura existente em `/facturas/documento`.
+2. Confirmar cabecalho da empresa, NUIT, telefone/email, endereco se existir e
+   referencias bancarias/carteiras se existirem.
+3. Confirmar cliente, NUIT do cliente se existir, itens, quantidades, preco
+   unitario, subtotal, IVA, total, estado e recibos.
+4. Clicar `Imprimir / Guardar PDF` e confirmar layout A4 limpo.
+5. Abrir um recibo em `/facturas/recibo`.
+6. Confirmar numero, data, cliente, factura relacionada, metodo, conta de
+   tesouraria, valor pago, caixa/emissor e observacoes/anulacao se existirem.
+7. Clicar `Imprimir / Guardar PDF` e confirmar layout limpo.
+8. Abrir `/tesouraria/fecho`, seleccionar conta e data ficticias e imprimir.
+9. Confirmar saldo inicial, entradas, saidas, recebimentos, pagamentos,
+   transferencias, saldo final, total do dia e assinaturas.
+10. Abrir `/relatorios`, gerar `Relatorio de vendas` e imprimir/guardar PDF.
+11. Confirmar periodo, filtros aplicados, totais, tabelas e data/hora de
+    geracao.
+12. Confirmar que nao existe promessa de PDF fiscal oficial, assinatura digital,
+    envio automatico por email, layout personalizavel ou impressao termica
+    avancada.
 
 ## 4. Fluxo compras/fornecedores
 

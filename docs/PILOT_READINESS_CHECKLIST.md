@@ -1,6 +1,6 @@
 # Checklist de prontidao de piloto - ANTS ERP
 
-_Ultima actualizacao: 2026-07-05_
+_Ultima actualizacao: 2026-07-06_
 
 Usar esta checklist antes de qualquer piloto controlado. Um item em aberto deve
 ser classificado como bloqueante, restricao aceite ou backlog futuro.
@@ -15,6 +15,8 @@ ser classificado como bloqueante, restricao aceite ou backlog futuro.
 - [ ] Testes de integracao relevantes verdes.
 - [ ] `pnpm test:integration:pos` verde quando POS entrar no escopo do piloto.
 - [ ] `pnpm test:integration:reports` verde quando relatorios entrarem no escopo do piloto.
+- [ ] Impressao/PDF comercial validado para factura, recibo, fecho de caixa e
+      relatorio de vendas quando P1-03 entrar no escopo do piloto.
 - [ ] `pnpm build` verde.
 - [ ] Sem migrations pendentes.
 - [ ] Sem branches locais soltas para a fase.
@@ -60,6 +62,8 @@ ser classificado como bloqueante, restricao aceite ou backlog futuro.
 - [ ] Conta de tesouraria activa e mapeada para recebimentos POS.
 - [ ] Nenhum dado real de cliente.
 - [ ] Nenhum dado real bancario.
+- [ ] Nenhuma referencia bancaria real em documentos/PDFs de UAT sem aprovacao
+      explicita.
 - [ ] Nenhuma password real em evidencias.
 
 ## 5. Operacao
@@ -76,9 +80,12 @@ ser classificado como bloqueante, restricao aceite ou backlog futuro.
 - [ ] Template de sign-off preparado.
 - [ ] Limites do POS V1 aceites: sem mesas, cozinha, offline, devolucao POS,
       turnos/fecho de caixa, scanner real e impressao termica avancada.
-- [ ] Limites dos relatorios V1 aceites: CSV simples pronto; PDF bonito, Excel
-      avancado, salarios, producao, BI avancado e relatorios personalizados
-      ficam futuros.
+- [ ] Limites dos relatorios V1 aceites: CSV simples e impressao/guardar PDF
+      pelo navegador prontos; PDF fiscal/automatico, Excel avancado, salarios,
+      producao, BI avancado e relatorios personalizados ficam futuros.
+- [ ] Limites da impressao P1-03 aceites: sem assinatura digital/fiscal, sem
+      integracao fiscal, sem envio automatico por email, sem impressao termica
+      avancada e sem layouts personalizaveis.
 
 ## 6. Decisao
 

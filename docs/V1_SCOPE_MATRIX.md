@@ -1,6 +1,6 @@
 # Matriz de funcionalidades V1 - ANTS ERP
 
-_Ultima actualizacao: 2026-07-05_
+_Ultima actualizacao: 2026-07-06_
 
 Estados usados:
 
@@ -18,6 +18,7 @@ Estados usados:
 | Fornecedores | Listar, criar, editar e consultar saldos/extracto | pronto para UAT | `suppliers.ts`, `/fornecedores`, `/contas/perfil` | Sem portal fornecedor | Incluir |
 | Produtos/Stock | Catalogo, armazens, inventario, movimentos e custo medio em compras | pronto para UAT | `products.ts`, `stock.ts`, `/produtos`, `/inventario` | Sem rastreios avancados/lotes | Incluir |
 | Vendas/Facturacao | Factura simples com stock, cliente, totais, recibos e POS basico | pronto para UAT | `invoices.ts`, `/facturas`, `/facturas/nova`, `/facturas/documento`, `/pos`, `pnpm test:integration:pos` | Sem POS fiscal, NC/ND, devolucao POS e COGS de venda | Incluir com limites |
+| Impressao/PDF comercial | Factura, recibo, relatorio diario de caixa e relatorios V1 com impressao/guardar PDF pelo navegador | pronto para UAT | `/facturas/documento`, `/facturas/recibo`, `/tesouraria/fecho`, `/relatorios`, `PrintButton`, CSS print, `pnpm test:integration:reports` | PDF fiscal oficial, assinatura digital/fiscal, envio por email, impressao termica avancada e layout personalizavel ficam futuros | Incluir com limites |
 | POS | Venda rapida com produtos reais, Cliente final, factura + recibo, stock, tesouraria, contabilidade e auditoria | parcial/pronto para UAT limitado | `createPosSale`, `/pos`, `pnpm test:integration:pos` | Sem mesas, cozinha, offline, turnos/fecho de caixa, scanner real e impressao termica avancada | Incluir apenas como checkout simples |
 | Recebimentos | Receber factura em conta de tesouraria com contabilidade | pronto para UAT | `createPayment`, `RECEIPT_POSTED`, testes 8c.2b/P0-03 | Exige conta de tesouraria mapeada | Incluir |
 | Compras | Ordem de compra e recepcao de mercadoria | pronto para UAT | `purchases.ts`, `/compras`, `/recepcao`, testes 8c.3 | Sem devolucao comercial ao fornecedor | Incluir |
@@ -25,7 +26,7 @@ Estados usados:
 | Tesouraria | Contas, movimentos, transferencias e relatorio diario | pronto para UAT | `treasury.ts`, `/tesouraria`, `/tesouraria/fecho` | Conciliacao bancaria ainda futura | Incluir |
 | Contabilidade | Plano, periodos, mappings, lancamentos, razao e balancete no dominio | parcial | `accounting.ts`, suites 8b/8c, pagina `/contabilidade` | Ecras contabilisticos finais 8d ainda pendentes | Incluir como integracao/backoffice limitado |
 | Reversoes | P0-03 ponta a ponta para recebimentos, facturas, pagamentos, recepcoes e transferencias | pronto para UAT | `docs/reversals-uat.md`, `pnpm test:integration:accounting:reversal:all` | Sem estorno parcial/NC/ND | Incluir com limites V1 |
-| Relatorios | Relatorios V1 operacionais com filtros basicos e CSV | pronto para UAT | `packages/domain/src/reports.ts`, `/relatorios`, `/relatorios/exportar`, `pnpm test:integration:reports` | PDF bonito, Excel avancado, salarios, producao, BI e relatorio personalizado ficam futuros | Incluir com limites |
+| Relatorios | Relatorios V1 operacionais com filtros basicos, CSV e impressao/guardar PDF pelo navegador | pronto para UAT | `packages/domain/src/reports.ts`, `/relatorios`, `/relatorios/exportar`, `pnpm test:integration:reports` | PDF automatico/fiscal, Excel avancado, salarios, producao, BI e relatorio personalizado ficam futuros | Incluir com limites |
 | Backup/Restore | Backup manual, restore destrutivo e rollback documentado | pronto para UAT | `docs/BACKUP_RESTORE.md`, scripts `ops:staging:*` | Sem storage remoto/encriptacao automatica | Incluir como runbook manual |
 | Staging/Deploy | Staging Docker, imagens web/worker/migrate, health | pronto para UAT | `docs/STAGING.md`, `docker-compose.staging.yml`, P0-06/P0-08 | Deploy real VPS fora do escopo | Incluir staging; excluir deploy real |
 | Seguranca | Env validation, placeholders bloqueados, headers, CORS same-origin, rate limit, logs redigidos, health minimo | pronto para UAT | `docs/SECURITY.md`, testes production-hardening 16/16 | CSP, rate limit centralizado, RLS e observabilidade futuras | Incluir com riscos aceites |

@@ -1,10 +1,11 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { forCompany } from '@ants/database';
-import { dailyReport, hasPermission, listAccounts } from '@ants/domain';
+import { dailyReport, getCompanyPrintProfile, hasPermission, listAccounts } from '@ants/domain';
 import { getContext } from '@/lib/session';
 import { Icon } from '@/components/Icon';
 import { PrintButton } from '@/components/PrintButton';
+import { CompanyHeader, DocumentFooter, PrintLayout, SignatureBlock } from '@/components/print/PrintLayout';
 import { fmt } from '@/lib/format';
 
 export const dynamic = 'force-dynamic';
@@ -41,7 +42,12 @@ export default async function FechoPage({ searchParams }: { searchParams: { acco
 
   const accountId = accounts.find((a) => a.id === searchParams.account)?.id ?? accounts[0]!.id;
   const date = searchParams.date || todayISO();
-  const report = await dailyReport(db, ctx, accountId, date);
+  const [report, company] = await Promise.all([dailyReport(db, ctx, accountId, date), getCompanyPrintProfile(db, ctx)]);
+  const activeMovements = report.movements.filter((m) => m.status === 'ACTIVE');
+  const receiptTotal = activeMovements.filter((m) => m.movementPurpose === 'RECEIPT_IN' || m.source === 'RECEIPT').reduce((sum, m) => sum + m.amount, 0);
+  const paymentTotal = activeMovements.filter((m) => m.movementPurpose === 'SUPPLIER_PAYMENT_OUT' || m.source === 'SUPPLIER_PAYMENT').reduce((sum, m) => sum + m.amount, 0);
+  const transferTotal = activeMovements.filter((m) => m.source === 'TRANSFER' || Boolean(m.transferId)).reduce((sum, m) => sum + m.amount, 0);
+  const dayNet = report.totalIn - report.totalOut;
 
   return (
     <div style={{ padding: '14px 26px 30px', display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -67,8 +73,19 @@ export default async function FechoPage({ searchParams }: { searchParams: { acco
         </form>
       </div>
 
-      <div className="ants-docwrap" style={{ display: 'flex', justifyContent: 'center' }}>
-        <div className="ants-sheet" style={{ width: '100%', maxWidth: 760, background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, padding: '28px 32px' }}>
+      <PrintLayout>
+          <CompanyHeader
+            company={company}
+            title="Relatório diário de caixa"
+            documentNumber={report.date}
+            meta={
+              <div style={{ fontSize: 12.5, color: '#5f7378', lineHeight: 1.5 }}>
+                {report.accountName}
+                <br />
+                Caixa: {report.operator}
+              </div>
+            }
+          />
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 18, flexWrap: 'wrap', borderBottom: '1px solid var(--bd-soft)', paddingBottom: 16 }}>
             <div>
               <div style={{ fontSize: 17, fontWeight: 700, color: 'var(--text)' }}>Relatório diário de caixa</div>
@@ -89,6 +106,10 @@ export default async function FechoPage({ searchParams }: { searchParams: { acco
               ['Entradas', `+ ${fmt(report.totalIn)}`, 'var(--ok)'],
               ['Saídas', `− ${fmt(report.totalOut)}`, 'var(--bad)'],
               ['Saldo final', fmt(report.closingBalance), 'var(--accent-fg)'],
+              ['Vendas/recebimentos', fmt(receiptTotal), 'var(--ok)'],
+              ['Pagamentos', fmt(paymentTotal), 'var(--bad)'],
+              ['Transferências', fmt(transferTotal), 'var(--text2)'],
+              ['Total do dia', fmt(dayNet), dayNet >= 0 ? 'var(--ok)' : 'var(--bad)'],
             ].map(([l, v, c]) => (
               <div key={l} style={{ border: '1px solid var(--border)', borderRadius: 11, padding: '12px 14px' }}>
                 <div style={{ fontSize: 11.5, color: 'var(--text2)' }}>{l}</div>
@@ -136,16 +157,9 @@ export default async function FechoPage({ searchParams }: { searchParams: { acco
           </div>
 
           {/* Assinaturas */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 40, marginTop: 44 }}>
-            <div style={{ flex: 1, textAlign: 'center' }}>
-              <div style={{ borderTop: '1px solid var(--bd-soft)', paddingTop: 7, fontSize: 11.5, color: 'var(--text3)' }}>O Operador ({report.operator})</div>
-            </div>
-            <div style={{ flex: 1, textAlign: 'center' }}>
-              <div style={{ borderTop: '1px solid var(--bd-soft)', paddingTop: 7, fontSize: 11.5, color: 'var(--text3)' }}>Conferido por</div>
-            </div>
-          </div>
-        </div>
-      </div>
+          <SignatureBlock leftLabel={`O Caixa (${report.operator})`} rightLabel="Supervisor" />
+          <DocumentFooter company={company} />
+      </PrintLayout>
     </div>
   );
 }

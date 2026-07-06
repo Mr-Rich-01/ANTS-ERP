@@ -5,8 +5,11 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { prisma } from '@ants/database';
 import type { RequestContext } from './context';
-import { ForbiddenError } from './errors';
+import { ForbiddenError, NotFoundError } from './errors';
+import { getCompanyPrintProfile } from './admin';
+import { getCustomerPaymentReceipt, getInvoice } from './invoices';
 import { exportOperationalReportCsv, getOperationalReport } from './reports';
+import { dailyReport } from './treasury';
 
 const CA = 'reports-v1-a';
 const CB = 'reports-v1-b';
@@ -26,6 +29,14 @@ const allPerms = [
   'treasury.viewReports',
   'audit.view',
 ];
+
+let fixture: {
+  invoiceA?: string;
+  invoiceB?: string;
+  paymentA?: string;
+  paymentB?: string;
+  accountA?: string;
+} = {};
 
 async function teardown(companyId: string) {
   await prisma.auditLog.deleteMany({ where: { companyId } });
@@ -50,14 +61,15 @@ async function teardown(companyId: string) {
 }
 
 async function provisionCompanyA() {
-  await prisma.company.create({ data: { id: CA, legalName: 'Reports A, Lda.' } });
+  await prisma.company.create({ data: { id: CA, legalName: 'Reports A, Lda.', tradeName: 'Reports A', nuit: '400111222', email: 'print@reports-a.test', phone: '+258 84 111 2222' } });
+  await prisma.branch.create({ data: { companyId: CA, code: 'MAP', name: 'Maputo', address: 'Av. Julius Nyerere, Maputo' } });
   const user = await prisma.user.create({ data: { companyId: CA, email: 'reports-a@ants.test', passwordHash: 'x', name: 'Ana Relatorios', mustChangePassword: false } });
   const customer = await prisma.customer.create({ data: { companyId: CA, name: 'Cliente A', balance: 150, paymentTermDays: 15 } });
   const supplier = await prisma.supplier.create({ data: { companyId: CA, name: 'Fornecedor A', balance: 200 } });
   const warehouse = await prisma.warehouse.create({ data: { companyId: CA, code: 'A', name: 'Armazem A' } });
   const product = await prisma.product.create({ data: { companyId: CA, sku: 'REP-A', name: 'Produto A', salePrice: 100, avgCost: 60 } });
   await prisma.stockLevel.create({ data: { companyId: CA, productId: product.id, warehouseId: warehouse.id, quantity: 10 } });
-  const account = await prisma.treasuryAccount.create({ data: { companyId: CA, name: 'Caixa A', type: 'CASH', balance: 50 } });
+  const account = await prisma.treasuryAccount.create({ data: { companyId: CA, name: 'BCI Reports', type: 'BANK', reference: 'IBAN TESTE 123', balance: 50 } });
   const invoice = await prisma.invoice.create({
     data: {
       companyId: CA,
@@ -102,6 +114,7 @@ async function provisionCompanyA() {
   await prisma.treasuryMovement.create({ data: { companyId: CA, accountId: account.id, flow: 'IN', amount: 198, balanceAfter: 198, category: 'Recibo', document: payment.number, source: 'RECEIPT', sourceType: 'RECEIPT', sourceId: payment.id, movementPurpose: 'RECEIPT_IN', createdBy: user.id, occurredAt: D('2026-07-02') } });
   await prisma.treasuryMovement.create({ data: { companyId: CA, accountId: account.id, flow: 'OUT', amount: 32, balanceAfter: 166, category: 'Pagamento', document: 'PG 2026/0001', source: 'SUPPLIER_PAYMENT', createdBy: user.id, occurredAt: D('2026-07-04') } });
   await prisma.auditLog.create({ data: { companyId: CA, userId: user.id, action: 'invoice.issue', entity: 'Invoice', entityId: invoice.id, result: 'success', createdAt: D('2026-07-01') } });
+  fixture = { ...fixture, invoiceA: invoice.id, paymentA: payment.id, accountA: account.id };
 }
 
 async function provisionCompanyB() {
@@ -129,10 +142,12 @@ async function provisionCompanyB() {
       createdBy: `${CB}-user`,
     },
   });
+  const payment = await prisma.payment.create({ data: { companyId: CB, number: 'REC 2026/9999', invoiceId: invoice.id, customerId: customer.id, amount: 999, method: 'CASH', paidAt: D('2026-07-02') } });
   await prisma.invoiceLine.create({ data: { companyId: CB, invoiceId: invoice.id, productId: product.id, sku: product.sku, description: product.name, unitPrice: 999, quantity: 1, total: 999 } });
   await prisma.stockMovement.create({ data: { companyId: CB, productId: product.id, warehouseId: warehouse.id, invoiceId: invoice.id, type: 'OUT', quantity: -1, balanceAfter: 0, document: invoice.number, reason: 'Venda B', createdAt: D('2026-07-01') } });
   await prisma.purchaseOrder.create({ data: { companyId: CB, number: 'OC 2026/9999', supplierId: supplier.id, supplierName: supplier.name, warehouseId: warehouse.id, orderDate: D('2026-07-03'), subtotal: 999, taxTotal: 0, total: 999, receivedValue: 999, amountPaid: 0 } });
-  await prisma.treasuryMovement.create({ data: { companyId: CB, accountId: account.id, flow: 'IN', amount: 999, balanceAfter: 999, category: 'Recibo', document: 'REC 2026/9999', source: 'RECEIPT', occurredAt: D('2026-07-02') } });
+  await prisma.treasuryMovement.create({ data: { companyId: CB, accountId: account.id, flow: 'IN', amount: 999, balanceAfter: 999, category: 'Recibo', document: payment.number, source: 'RECEIPT', sourceType: 'RECEIPT', sourceId: payment.id, movementPurpose: 'RECEIPT_IN', occurredAt: D('2026-07-02') } });
+  fixture = { ...fixture, invoiceB: invoice.id, paymentB: payment.id };
 }
 
 beforeAll(async () => {
@@ -195,5 +210,33 @@ describe('Relatorios V1 operacionais', () => {
   it('utilizador sem permissao e bloqueado', async () => {
     await expect(getOperationalReport(prisma, ctx(CA, ['reports.export']), 'sales', { from: '2026-07-01', to: '2026-07-31' })).rejects.toBeInstanceOf(ForbiddenError);
     await expect(exportOperationalReportCsv(prisma, ctx(CA, ['sales.view']), 'sales', { from: '2026-07-01', to: '2026-07-31' })).rejects.toBeInstanceOf(ForbiddenError);
+  });
+
+  it('factura e recibo imprimiveis respeitam companyId e permissao', async () => {
+    const invoice = await getInvoice(prisma, ctx(CA, allPerms), fixture.invoiceA!);
+    const receipt = await getCustomerPaymentReceipt(prisma, ctx(CA, allPerms), fixture.paymentA!);
+
+    expect(invoice.number).toBe('FT 2026/0001');
+    expect(receipt.number).toBe('REC 2026/0001');
+    expect(receipt.treasuryAccountName).toBe('BCI Reports');
+    await expect(getInvoice(prisma, ctx(CA, allPerms), fixture.invoiceB!)).rejects.toBeInstanceOf(NotFoundError);
+    await expect(getCustomerPaymentReceipt(prisma, ctx(CA, allPerms), fixture.paymentB!)).rejects.toBeInstanceOf(NotFoundError);
+    await expect(getInvoice(prisma, ctx(CA, ['reports.export']), fixture.invoiceA!)).rejects.toBeInstanceOf(ForbiddenError);
+  });
+
+  it('relatorio diario de caixa usa movimentos reais e bloqueia sem permissao', async () => {
+    const report = await dailyReport(prisma, ctx(CA, allPerms), fixture.accountA!, '2026-07-02');
+    expect(report.movements).toHaveLength(1);
+    expect(report.totalIn).toBe(198);
+    expect(report.movements[0]?.document).toBe('REC 2026/0001');
+    await expect(dailyReport(prisma, ctx(CA, ['sales.view']), fixture.accountA!, '2026-07-02')).rejects.toBeInstanceOf(ForbiddenError);
+  });
+
+  it('perfil imprimivel da empresa inclui identidade, endereco e referencias sem saldos', async () => {
+    const profile = await getCompanyPrintProfile(prisma, ctx(CA, allPerms));
+    expect(profile?.legalName).toBe('Reports A, Lda.');
+    expect(profile?.nuit).toBe('400111222');
+    expect(profile?.address).toBe('Av. Julius Nyerere, Maputo');
+    expect(profile?.bankAccounts).toEqual([{ name: 'BCI Reports', type: 'BANK', reference: 'IBAN TESTE 123' }]);
   });
 });

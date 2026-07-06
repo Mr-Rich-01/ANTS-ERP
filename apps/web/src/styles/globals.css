@@ -94,13 +94,26 @@ input::placeholder {
   font-family: var(--font-mono), 'IBM Plex Mono', ui-monospace, monospace;
 }
 
+.ants-print-only {
+  display: none;
+}
+
 @media print {
+  @page {
+    size: A4;
+    margin: 13mm;
+  }
   .ants-noprint {
     display: none !important;
+  }
+  .ants-print-only {
+    display: block !important;
   }
   html,
   body {
     background: #fff !important;
+    color: #16282c !important;
+    font-size: 11px !important;
   }
   .ants-shell,
   .ants-main,
@@ -108,5 +121,55 @@ input::placeholder {
     height: auto !important;
     overflow: visible !important;
     display: block !important;
+  }
+  .ants-docwrap {
+    padding: 0 !important;
+    display: block !important;
+  }
+  .ants-sheet,
+  .ants-report-print {
+    width: 100% !important;
+    max-width: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    background: #fff !important;
+    color: #16282c !important;
+  }
+  .ants-sheet *,
+  .ants-report-print * {
+    color-adjust: exact;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+  .ants-print-logo {
+    background: #0e2a30 !important;
+    color: #fff !important;
+  }
+  table {
+    page-break-inside: auto;
+  }
+  thead {
+    display: table-header-group;
+  }
+  tfoot {
+    display: table-footer-group;
+  }
+  tr,
+  .ants-row {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+  .ants-signatures {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+  .ants-pcard:hover,
+  .ants-row:hover {
+    transform: none !important;
+    box-shadow: none !important;
+    background: transparent !important;
   }
 }

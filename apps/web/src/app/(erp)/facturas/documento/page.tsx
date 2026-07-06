@@ -2,10 +2,11 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { forCompany } from '@ants/database';
 import { civilDateInTimeZone } from '@ants/shared';
-import { getCompanyIdentity, getInvoice, hasPermission, listAccounts, DomainError, type InvoiceDisplayStatus, type PaymentMethod } from '@ants/domain';
+import { getCompanyPrintProfile, getInvoice, hasPermission, listAccounts, DomainError, type InvoiceDisplayStatus, type PaymentMethod } from '@ants/domain';
 import { getContext } from '@/lib/session';
 import { Icon } from '@/components/Icon';
 import { PrintButton } from '@/components/PrintButton';
+import { CompanyHeader, DocumentFooter, PrintLayout } from '@/components/print/PrintLayout';
 import { fmt } from '@/lib/format';
 import { PaymentDialog } from '@/components/facturas/PaymentDialog';
 import { PaymentReversalDialog } from '@/components/facturas/PaymentReversalDialog';
@@ -63,7 +64,7 @@ export default async function DocumentoPage({ searchParams }: { searchParams: { 
     }
     throw e;
   }
-  const company = await getCompanyIdentity(db, ctx);
+  const company = await getCompanyPrintProfile(db, ctx);
   const accounts = hasPermission(ctx, 'treasury.view') ? (await listAccounts(db, ctx)).filter((a) => a.status === 'ACTIVE').map((a) => ({ id: a.id, label: a.name })) : [];
 
   const [statusLabel, statusColor, statusBg] = STATUS[inv.displayStatus];
@@ -76,7 +77,6 @@ export default async function DocumentoPage({ searchParams }: { searchParams: { 
   const reversalDate = civilDateInTimeZone();
   const cancellationDate = reversalDate;
   const docTh: React.CSSProperties = { padding: '10px 12px', fontSize: 10.5, fontWeight: 600, letterSpacing: '.5px', textTransform: 'uppercase' };
-  const initial = (company?.tradeName ?? company?.legalName ?? 'A').charAt(0).toUpperCase();
   const documentMeta: Array<[string, string, boolean]> = [
     ['Data de emissão', fmtDate(inv.issueDate), true],
     ['Vencimento', fmtDate(inv.dueDate), true],
@@ -123,36 +123,19 @@ export default async function DocumentoPage({ searchParams }: { searchParams: { 
               }
             />
           )}
-          <PrintButton />
+          <PrintButton label="Imprimir / Guardar PDF" />
         </div>
       </div>
 
-      <div className="ants-docwrap" style={{ padding: '18px 26px 40px', display: 'flex', justifyContent: 'center' }}>
-        <div className="ants-sheet" style={{ width: '100%', maxWidth: 800, background: '#ffffff', color: '#16282c', border: '1px solid #e6eaea', borderRadius: 6, boxShadow: '0 10px 40px rgba(16,40,45,.12)', padding: '46px 48px', fontSize: 13 }}>
+      <PrintLayout>
           {/* Cabeçalho */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 24, paddingBottom: 22, borderBottom: '2px solid #13343b' }}>
-            <div style={{ display: 'flex', gap: 14 }}>
-              <div style={{ width: 54, height: 54, borderRadius: 12, background: '#0e2a30', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 26, flex: 'none' }}>
-                {initial}
-              </div>
-              <div>
-                <div style={{ fontSize: 18, fontWeight: 700, color: '#0e2a30', letterSpacing: '-.2px' }}>{company?.tradeName ?? company?.legalName ?? 'Empresa'}</div>
-                <div style={{ fontSize: 11.5, color: '#5f7378', lineHeight: 1.65, marginTop: 4 }}>
-                  {company?.legalName}
-                  <br />
-                  {company?.phone ? `Tel: ${company.phone} · ` : ''}
-                  {company?.email ?? ''}
-                  <br />
-                  <strong style={{ color: '#16282c' }}>NUIT:</strong> {company?.nuit ?? '—'}
-                </div>
-              </div>
-            </div>
-            <div style={{ textAlign: 'right' }}>
-              <div style={{ fontSize: 22, fontWeight: 700, letterSpacing: '1px', color: '#13343b' }}>FACTURA</div>
-              <div className="font-mono" style={{ fontSize: 12.5, color: '#5f7378', marginTop: 6 }}>
-                {inv.number}
-              </div>
-              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 600, color: statusColor, background: statusBg, padding: '3px 10px', borderRadius: 20, marginTop: 8 }}>
+          <CompanyHeader
+            company={company}
+            title="Factura"
+            documentNumber={inv.number}
+            status={
+              <>
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 600, color: statusColor, background: statusBg, padding: '3px 10px', borderRadius: 20 }}>
                 <span style={{ width: 6, height: 6, borderRadius: '50%', background: statusColor }} />
                 {statusLabel}
               </div>
@@ -161,8 +144,9 @@ export default async function DocumentoPage({ searchParams }: { searchParams: { 
                   CANCELADA
                 </div>
               )}
-            </div>
-          </div>
+              </>
+            }
+          />
 
           {/* Facturar a + datas */}
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: 24, marginTop: 22 }}>
@@ -256,6 +240,9 @@ export default async function DocumentoPage({ searchParams }: { searchParams: { 
                     <span className="tnum" style={{ color: p.status === 'REVERSED' ? '#8b3a32' : '#16282c', fontWeight: 600, textDecoration: p.status === 'REVERSED' ? 'line-through' : undefined }}>
                       {fmt(p.amount)}
                     </span>
+                    <Link className="ants-noprint" href={`/facturas/recibo?id=${p.id}`} title="Abrir recibo imprimível" style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 28, height: 28, borderRadius: 8, border: '1px solid #d9e4e5', background: '#f8fbfb', color: '#13343b' }}>
+                      <Icon name="file-text" size={14} />
+                    </Link>
                     {canCancelPayment && p.status === 'ACTIVE' && (
                       <span className="ants-noprint">
                         <PaymentReversalDialog
@@ -306,13 +293,8 @@ export default async function DocumentoPage({ searchParams }: { searchParams: { 
             </div>
           </div>
 
-          <div style={{ marginTop: 40, paddingTop: 14, borderTop: '1px solid #eef2f2', textAlign: 'center', fontSize: 10.5, color: '#9aa7a9', lineHeight: 1.6 }}>
-            Obrigado pela sua preferência. Documento processado por sistema ANTS ERP.
-            <br />
-            {company?.legalName} · NUIT {company?.nuit ?? '—'}
-          </div>
-        </div>
-      </div>
+          <DocumentFooter company={company} />
+      </PrintLayout>
     </div>
   );
 }

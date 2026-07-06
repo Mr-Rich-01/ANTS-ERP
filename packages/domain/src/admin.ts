@@ -47,6 +47,11 @@ export interface CompanyIdentity {
   locale: string;
 }
 
+export interface CompanyPrintProfile extends CompanyIdentity {
+  address: string | null;
+  bankAccounts: Array<{ name: string; type: string; reference: string | null }>;
+}
+
 /** Lista os utilizadores da empresa activa (com perfis e filiais). */
 export async function listCompanyUsers(db: PrismaClient, ctx: RequestContext): Promise<CompanyUser[]> {
   requirePermission(ctx, 'users.manage');
@@ -121,6 +126,29 @@ export async function getCompanyIdentity(db: PrismaClient, ctx: RequestContext):
     currency: c.currency,
     currencySymbol: c.currencySymbol,
     locale: c.locale,
+  };
+}
+
+/** Dados públicos da empresa para documentos imprimíveis, sem saldos nem segredos. */
+export async function getCompanyPrintProfile(db: PrismaClient, ctx: RequestContext): Promise<CompanyPrintProfile | null> {
+  const companyId = requireCompany(ctx);
+  const c = await getCompanyIdentity(db, ctx);
+  if (!c) return null;
+  const [branch, bankAccounts] = await Promise.all([
+    ctx.branchId
+      ? db.branch.findFirst({ where: { companyId, id: ctx.branchId }, select: { address: true } })
+      : db.branch.findFirst({ where: { companyId, status: 'ACTIVE' }, orderBy: { code: 'asc' }, select: { address: true } }),
+    db.treasuryAccount.findMany({
+      where: { companyId, status: 'ACTIVE', type: { in: ['BANK', 'MOBILE'] }, reference: { not: null } },
+      orderBy: [{ type: 'asc' }, { name: 'asc' }],
+      select: { name: true, type: true, reference: true },
+      take: 4,
+    }),
+  ]);
+  return {
+    ...c,
+    address: branch?.address ?? null,
+    bankAccounts,
   };
 }
 
