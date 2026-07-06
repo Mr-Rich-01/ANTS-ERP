@@ -7,6 +7,7 @@ em [`CLAUDE.md`](CLAUDE.md).
 
 **Último commit funcional:** pendente nesta branch (`feat(print): add professional document printing`)
 **Fase concluída:** `P1-03 — Impressao/PDF profissional`
+**UAT interna/demo:** V1 candidata a demo externa apos UAT interna, aprovada com ressalvas em 2026-07-06 (`docs/UAT_INTERNAL_DEMO_REPORT.md`)
 **Próximo passo:** decisao explicita sobre P1-04: fecho de caixa, impressao termica POS, restaurante/bar com mesas ou scanner/codigo de barras real
 
 ---
@@ -53,7 +54,7 @@ contabilidade 189/189** (8b 32 + 8c.1 30 + 8c.2a 18 + 8c.2b 34 + 8c.3 17 + P0-02
 `pnpm test:integration:accounting`, sub: `…:c1`, `…:c2a`, `…:c2`, `…:c3`, `…:reversal:customer-payment`, `…:reversal:invoice`, `…:reversal:supplier-payment`, `…:reversal:purchase-receipt`, `…:reversal:treasury-transfer`, `…:reversal:uat`, `…:reversal:all`) · **POS 7/7** (`pnpm test:integration:pos`) · `prisma validate` OK · `prisma migrate status` OK · `pnpm build` OK
 em Windows nativo (30/30 páginas estaticas + `/api/health` dinamico) e Docker Linux com Node 20 + OpenSSL · imagens Docker de produção
 `web`, `worker` e target `migrate` OK · seed idempotente (2×) · login/contexto
-multiempresa 7/7 · **relatorios 7/7** (`pnpm test:integration:reports`) · `pnpm build` OK em Windows nativo (31/31 páginas, incluindo `/api/health`) ·
+multiempresa 7/7 · **POS 12/12** (`pnpm test:integration:pos`) · **relatorios 10/10** (`pnpm test:integration:reports`) · `pnpm build` OK em Windows nativo (31/31 páginas, incluindo `/api/health`) ·
 staging Docker P0-08/P0-09 OK (`docker:staging:build`, migrations explicitas, web/worker/postgres/redis,
 health `/api/health`, smoke `/login`, `/seleccionar-empresa` e headers).
 
@@ -181,6 +182,18 @@ empresa, bloqueio por permissao e isolamento `companyId`. Limites: guardar PDF p
 navegador; PDF fiscal oficial, assinatura digital/fiscal, envio por email, impressao termica avancada
 e layouts personalizaveis ficam futuros. Proximo passo: decisao explicita sobre P1-04; nao iniciar
 P1-04 automaticamente.
+
+**UAT interna/demo candidate (2026-07-06):** executada validacao interna da V1 actual em
+`test/internal-uat-demo`, com relatorio em `docs/UAT_INTERNAL_DEMO_REPORT.md`. Resultado:
+aprovado com ressalvas para demo externa, sem bloqueadores e sem alteracoes funcionais. Validacoes
+verdes: `prisma validate`, `prisma migrate status`, `pnpm db:generate`, `pnpm typecheck`,
+`pnpm lint`, `pnpm test` (89/89), `pnpm test:integration:reports` (10/10),
+`pnpm test:integration:pos` (12/12), `pnpm test:integration:accounting` (189/189),
+`pnpm test:integration:security:production-hardening` (16/16),
+`pnpm test:integration:auth:company-selection` (7/7) e `pnpm build`. Ressalvas antes da demo
+externa: revalidar logout em browser limpo e corrigir titulo visual fixo
+`Factura FT 2026/0337` em `apps/web/src/lib/erp-nav.ts`. Esta UAT nao marca producao pronta,
+nao autoriza piloto real e nao inicia P1-04.
 
 **Hardening pré-produção P0-01 (2026-07-02):** seed demo bloqueado em `production`
 antes de criar o Prisma Client; credenciais demo removidas da interface de

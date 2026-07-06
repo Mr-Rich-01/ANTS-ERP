@@ -293,6 +293,9 @@ passwords não demonstrativas.
 - P1-01 POS V1 funcional limitado concluida.
 - P1-02 Relatórios V1 operacionais concluida.
 - P1-03 Impressão/PDF profissional concluida.
+- V1 candidata a demo externa apos UAT interna em 2026-07-06, aprovada com
+  ressalvas e registada em `docs/UAT_INTERNAL_DEMO_REPORT.md`; nao marca
+  producao pronta, nao autoriza piloto real e nao inicia P1-04.
 - Commit base funcional antes da P0-03.0: `a1d608b`.
 - Proximo passo: decisao explicita sobre P1-04 (fecho de caixa, impressao
   termica POS, restaurante/bar com mesas ou scanner/codigo de barras real).

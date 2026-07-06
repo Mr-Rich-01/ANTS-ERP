@@ -5,6 +5,16 @@ _Ultima actualizacao: 2026-07-06_
 Usar esta checklist antes de qualquer piloto controlado. Um item em aberto deve
 ser classificado como bloqueante, restricao aceite ou backlog futuro.
 
+## Estado UAT interna
+
+- V1 candidata a demo externa apos UAT interna de 2026-07-06.
+- Resultado: aprovado com ressalvas, sem bloqueadores.
+- Evidencia: `docs/UAT_INTERNAL_DEMO_REPORT.md`.
+- Ressalvas antes da demo externa: revalidar logout em browser limpo e corrigir
+  o titulo visual fixo `Factura FT 2026/0337`.
+- Esta decisao nao marca producao pronta e nao autoriza piloto real sem staging
+  validado, backup pre-piloto e sign-off assinado.
+
 ## 1. Codigo
 
 - [ ] `main` limpa.
