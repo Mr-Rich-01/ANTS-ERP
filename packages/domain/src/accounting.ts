@@ -1044,3 +1044,487 @@ export async function getTrialBalance(db: PrismaClient, ctx: RequestContext, opt
   rows.sort((a, b) => a.code.localeCompare(b.code));
   return { rows, totalDebit: round2(totalDebit), totalCredit: round2(totalCredit) };
 }
+
+// ─────────────────────────────────────────────────────────────
+// Relatórios V1 de Contabilidade (P1-04)
+// ─────────────────────────────────────────────────────────────
+
+export type AccountingReportKind = 'journal' | 'ledger' | 'trial-balance';
+export type AccountingReportStatusFilter = JournalEntryStatus | 'POSTED_AND_REVERSED';
+
+export interface AccountingReportFilters {
+  from?: string;
+  to?: string;
+  ledgerAccountId?: string;
+  journalId?: string;
+  sourceType?: string;
+  journalType?: AccountingJournalType;
+  status?: AccountingReportStatusFilter;
+  q?: string;
+  limit?: number;
+}
+
+export interface AccountingReportOptions {
+  accounts: Array<{ id: string; code: string; name: string; accountType: LedgerAccountType; normalBalance: NormalBalance; parentId: string | null; level: number; isPosting: boolean; isActive: boolean }>;
+  journals: Array<{ id: string; code: string; name: string; journalType: AccountingJournalType; isActive: boolean }>;
+  sourceTypes: string[];
+  currentFiscalYear: { id: string; name: string; startDate: string; endDate: string } | null;
+}
+
+export interface AccountingJournalReportLine {
+  entryId: string;
+  entryNumber: string;
+  entryDate: string;
+  postingDate: string | null;
+  journalCode: string;
+  journalName: string;
+  journalType: AccountingJournalType;
+  status: JournalEntryStatus;
+  description: string;
+  reference: string | null;
+  sourceType: string | null;
+  sourceId: string | null;
+  accountingEvent: string | null;
+  postedById: string | null;
+  postedByName: string | null;
+  lineNumber: number;
+  accountId: string;
+  accountCode: string;
+  accountName: string;
+  lineDescription: string | null;
+  debit: number;
+  credit: number;
+}
+
+export interface AccountingJournalReport {
+  filters: Required<Pick<AccountingReportFilters, 'from' | 'to'>> & Omit<AccountingReportFilters, 'from' | 'to'>;
+  lines: AccountingJournalReportLine[];
+  totalDebit: number;
+  totalCredit: number;
+  isBalanced: boolean;
+  inconsistentEntryNumbers: string[];
+}
+
+export interface AccountLedgerReportRow {
+  entryId: string;
+  entryNumber: string;
+  date: string;
+  description: string;
+  reference: string | null;
+  sourceType: string | null;
+  accountingEvent: string | null;
+  debit: number;
+  credit: number;
+  balance: number;
+}
+
+export interface AccountLedgerReport {
+  filters: Required<Pick<AccountingReportFilters, 'from' | 'to'>> & Omit<AccountingReportFilters, 'from' | 'to'>;
+  account: { id: string; code: string; name: string; normalBalance: NormalBalance } | null;
+  openingBalance: number;
+  rows: AccountLedgerReportRow[];
+  totalDebit: number;
+  totalCredit: number;
+  closingBalance: number;
+}
+
+export interface TrialBalanceReportRow {
+  accountId: string;
+  code: string;
+  name: string;
+  accountType: LedgerAccountType;
+  normalBalance: NormalBalance;
+  openingBalance: number;
+  debit: number;
+  credit: number;
+  closingDebit: number;
+  closingCredit: number;
+}
+
+export interface TrialBalanceReport {
+  filters: Required<Pick<AccountingReportFilters, 'from' | 'to'>> & Omit<AccountingReportFilters, 'from' | 'to'>;
+  rows: TrialBalanceReportRow[];
+  totalDebit: number;
+  totalCredit: number;
+  totalClosingDebit: number;
+  totalClosingCredit: number;
+  isBalanced: boolean;
+  movementCount: number;
+}
+
+const DEFAULT_REPORT_LIMIT = 500;
+
+function startOfCurrentYear(): string {
+  return `${new Date().getUTCFullYear()}-01-01`;
+}
+
+function endOfCurrentYear(): string {
+  return `${new Date().getUTCFullYear()}-12-31`;
+}
+
+function normalizeAccountingReportFilters(filters: AccountingReportFilters = {}): Required<Pick<AccountingReportFilters, 'from' | 'to'>> & Omit<AccountingReportFilters, 'from' | 'to'> {
+  const from = filters.from?.trim() || startOfCurrentYear();
+  const to = filters.to?.trim() || endOfCurrentYear();
+  const fromDate = parseAccountingDate(from);
+  const toDate = parseAccountingDate(to);
+  if (fromDate > toDate) throw new ValidationError('A data inicial não pode ser posterior à data final.');
+  return {
+    ...filters,
+    from,
+    to,
+    ledgerAccountId: filters.ledgerAccountId?.trim() || undefined,
+    journalId: filters.journalId?.trim() || undefined,
+    sourceType: filters.sourceType?.trim() || undefined,
+    q: filters.q?.trim() || undefined,
+    limit: filters.limit ? Math.min(Math.max(Math.trunc(filters.limit), 1), 2000) : DEFAULT_REPORT_LIMIT,
+  };
+}
+
+function reportDateWhere(filters: Required<Pick<AccountingReportFilters, 'from' | 'to'>>): Prisma.DateTimeFilter {
+  return { gte: parseAccountingDate(filters.from), lte: parseAccountingDate(filters.to) };
+}
+
+function postedOrReversedWhere(): Prisma.EnumJournalEntryStatusFilter {
+  return { in: ['POSTED', 'REVERSED'] };
+}
+
+function reportEntryWhere(companyId: string, filters: ReturnType<typeof normalizeAccountingReportFilters>, opts: { postedOnly?: boolean } = {}): Prisma.JournalEntryWhereInput {
+  const where: Prisma.JournalEntryWhereInput = { companyId, entryDate: reportDateWhere(filters) };
+  if (opts.postedOnly) {
+    where.status = postedOrReversedWhere();
+  } else if (filters.status && filters.status !== 'POSTED_AND_REVERSED') {
+    where.status = filters.status;
+  } else if (filters.status === 'POSTED_AND_REVERSED') {
+    where.status = postedOrReversedWhere();
+  }
+  if (filters.journalId) where.journalId = filters.journalId;
+  if (filters.sourceType) where.sourceType = filters.sourceType;
+  if (filters.journalType) where.journal = { companyId, journalType: filters.journalType };
+  if (filters.ledgerAccountId) where.lines = { some: { companyId, ledgerAccountId: filters.ledgerAccountId } };
+  if (filters.q) {
+    where.OR = [
+      { entryNumber: { contains: filters.q, mode: 'insensitive' } },
+      { description: { contains: filters.q, mode: 'insensitive' } },
+      { reference: { contains: filters.q, mode: 'insensitive' } },
+    ];
+  }
+  return where;
+}
+
+async function postedUserNames(db: PrismaClient, companyId: string, userIds: string[]): Promise<Map<string, string>> {
+  const ids = [...new Set(userIds.filter(Boolean))];
+  if (!ids.length) return new Map();
+  const users = await db.user.findMany({ where: { companyId, id: { in: ids } }, select: { id: true, name: true, email: true } });
+  return new Map(users.map((u) => [u.id, u.name || u.email]));
+}
+
+export async function getAccountingReportOptions(db: PrismaClient, ctx: RequestContext): Promise<AccountingReportOptions> {
+  requirePermission(ctx, 'accounting.view');
+  const companyId = requireCompany(ctx);
+  const [accounts, journals, sources, currentFiscalYear] = await Promise.all([
+    db.ledgerAccount.findMany({
+      where: { companyId },
+      orderBy: { code: 'asc' },
+      select: { id: true, code: true, name: true, accountType: true, normalBalance: true, parentId: true, level: true, isPosting: true, isActive: true },
+    }),
+    db.accountingJournal.findMany({
+      where: { companyId },
+      orderBy: { code: 'asc' },
+      select: { id: true, code: true, name: true, journalType: true, isActive: true },
+    }),
+    db.journalEntry.findMany({
+      where: { companyId, sourceType: { not: null } },
+      distinct: ['sourceType'],
+      orderBy: { sourceType: 'asc' },
+      select: { sourceType: true },
+    }),
+    db.fiscalYear.findFirst({
+      where: { companyId, isCurrent: true },
+      select: { id: true, name: true, startDate: true, endDate: true },
+    }),
+  ]);
+  return {
+    accounts: accounts.map((a) => ({ ...a, accountType: a.accountType as LedgerAccountType, normalBalance: a.normalBalance as NormalBalance })),
+    journals: journals.map((j) => ({ ...j, journalType: j.journalType as AccountingJournalType })),
+    sourceTypes: sources.map((s) => s.sourceType).filter((s): s is string => !!s),
+    currentFiscalYear: currentFiscalYear
+      ? { id: currentFiscalYear.id, name: currentFiscalYear.name, startDate: formatAccountingDate(currentFiscalYear.startDate), endDate: formatAccountingDate(currentFiscalYear.endDate) }
+      : null,
+  };
+}
+
+export async function getAccountingJournalReport(db: PrismaClient, ctx: RequestContext, rawFilters: AccountingReportFilters = {}): Promise<AccountingJournalReport> {
+  requirePermission(ctx, 'accounting.view');
+  const companyId = requireCompany(ctx);
+  const filters = normalizeAccountingReportFilters(rawFilters);
+  const entries = await db.journalEntry.findMany({
+    where: reportEntryWhere(companyId, filters),
+    include: {
+      journal: { select: { code: true, name: true, journalType: true } },
+      lines: { orderBy: { lineNumber: 'asc' }, include: { ledgerAccount: { select: { id: true, code: true, name: true } } } },
+    },
+    orderBy: [{ entryDate: 'asc' }, { entryNumber: 'asc' }],
+    take: filters.limit,
+  });
+  const userNames = await postedUserNames(db, companyId, entries.map((e) => e.postedById ?? e.createdById ?? '').filter(Boolean));
+  let totalDebit = 0;
+  let totalCredit = 0;
+  const inconsistentEntryNumbers: string[] = [];
+  const lines: AccountingJournalReportLine[] = [];
+  for (const e of entries) {
+    const entryDebit = round2(Number(e.totalDebit));
+    const entryCredit = round2(Number(e.totalCredit));
+    if (e.status !== 'DRAFT' && entryDebit !== entryCredit) inconsistentEntryNumbers.push(e.entryNumber);
+    for (const l of e.lines) {
+      const debit = round2(Number(l.debit));
+      const credit = round2(Number(l.credit));
+      totalDebit += debit;
+      totalCredit += credit;
+      lines.push({
+        entryId: e.id,
+        entryNumber: e.entryNumber,
+        entryDate: formatAccountingDate(e.entryDate),
+        postingDate: e.postingDate ? formatAccountingDate(e.postingDate) : null,
+        journalCode: e.journal.code,
+        journalName: e.journal.name,
+        journalType: e.journal.journalType as AccountingJournalType,
+        status: e.status as JournalEntryStatus,
+        description: e.description,
+        reference: e.reference,
+        sourceType: e.sourceType,
+        sourceId: e.sourceId,
+        accountingEvent: e.accountingEvent,
+        postedById: e.postedById ?? e.createdById,
+        postedByName: userNames.get(e.postedById ?? e.createdById ?? '') ?? null,
+        lineNumber: l.lineNumber,
+        accountId: l.ledgerAccount.id,
+        accountCode: l.ledgerAccount.code,
+        accountName: l.ledgerAccount.name,
+        lineDescription: l.description,
+        debit,
+        credit,
+      });
+    }
+  }
+  totalDebit = round2(totalDebit);
+  totalCredit = round2(totalCredit);
+  return { filters, lines, totalDebit, totalCredit, isBalanced: totalDebit === totalCredit && inconsistentEntryNumbers.length === 0, inconsistentEntryNumbers };
+}
+
+export async function getAccountLedgerReport(db: PrismaClient, ctx: RequestContext, ledgerAccountId: string, rawFilters: AccountingReportFilters = {}): Promise<AccountLedgerReport> {
+  requirePermission(ctx, 'accounting.view');
+  const companyId = requireCompany(ctx);
+  const filters = normalizeAccountingReportFilters({ ...rawFilters, ledgerAccountId });
+  const account = await db.ledgerAccount.findFirst({ where: { companyId, id: ledgerAccountId }, select: { id: true, code: true, name: true, normalBalance: true } });
+  if (!account) throw new NotFoundError('Conta não encontrada.');
+
+  const opening = await db.journalEntryLine.aggregate({
+    where: {
+      companyId,
+      ledgerAccountId,
+      journalEntry: { companyId, status: postedOrReversedWhere(), entryDate: { lt: parseAccountingDate(filters.from) } },
+    },
+    _sum: { debit: true, credit: true },
+  });
+  const debitNormal = account.normalBalance === 'DEBIT';
+  const openingDebit = round2(Number(opening._sum.debit ?? 0));
+  const openingCredit = round2(Number(opening._sum.credit ?? 0));
+  const openingBalance = round2(debitNormal ? openingDebit - openingCredit : openingCredit - openingDebit);
+
+  const lines = await db.journalEntryLine.findMany({
+    where: { companyId, ledgerAccountId, journalEntry: reportEntryWhere(companyId, filters, { postedOnly: true }) },
+    include: { journalEntry: { select: { id: true, entryNumber: true, entryDate: true, postingDate: true, description: true, reference: true, sourceType: true, accountingEvent: true } } },
+    orderBy: [{ journalEntry: { entryDate: 'asc' } }, { journalEntry: { entryNumber: 'asc' } }, { lineNumber: 'asc' }],
+  });
+  let balance = openingBalance;
+  let totalDebit = 0;
+  let totalCredit = 0;
+  const rows: AccountLedgerReportRow[] = lines.map((l) => {
+    const debit = round2(Number(l.debit));
+    const credit = round2(Number(l.credit));
+    totalDebit += debit;
+    totalCredit += credit;
+    balance = round2(balance + (debitNormal ? debit - credit : credit - debit));
+    const date = l.journalEntry.postingDate ?? l.journalEntry.entryDate;
+    return {
+      entryId: l.journalEntry.id,
+      entryNumber: l.journalEntry.entryNumber,
+      date: formatAccountingDate(date),
+      description: l.journalEntry.description,
+      reference: l.journalEntry.reference,
+      sourceType: l.journalEntry.sourceType,
+      accountingEvent: l.journalEntry.accountingEvent,
+      debit,
+      credit,
+      balance,
+    };
+  });
+  return {
+    filters,
+    account: { id: account.id, code: account.code, name: account.name, normalBalance: account.normalBalance as NormalBalance },
+    openingBalance,
+    rows,
+    totalDebit: round2(totalDebit),
+    totalCredit: round2(totalCredit),
+    closingBalance: round2(balance),
+  };
+}
+
+export async function getTrialBalanceReport(db: PrismaClient, ctx: RequestContext, rawFilters: AccountingReportFilters = {}): Promise<TrialBalanceReport> {
+  requirePermission(ctx, 'accounting.view');
+  const companyId = requireCompany(ctx);
+  const filters = normalizeAccountingReportFilters(rawFilters);
+  const baseLineWhere: Prisma.JournalEntryLineWhereInput = {
+    companyId,
+    journalEntry: reportEntryWhere(companyId, filters, { postedOnly: true }),
+  };
+  if (filters.ledgerAccountId) baseLineWhere.ledgerAccountId = filters.ledgerAccountId;
+
+  const [openingGrouped, periodGrouped] = await Promise.all([
+    db.journalEntryLine.groupBy({
+      by: ['ledgerAccountId'],
+      where: {
+        companyId,
+        ...(filters.ledgerAccountId ? { ledgerAccountId: filters.ledgerAccountId } : {}),
+        journalEntry: {
+          companyId,
+          status: postedOrReversedWhere(),
+          entryDate: { lt: parseAccountingDate(filters.from) },
+          ...(filters.journalId ? { journalId: filters.journalId } : {}),
+          ...(filters.sourceType ? { sourceType: filters.sourceType } : {}),
+          ...(filters.journalType ? { journal: { companyId, journalType: filters.journalType } } : {}),
+        },
+      },
+      _sum: { debit: true, credit: true },
+    }),
+    db.journalEntryLine.groupBy({
+      by: ['ledgerAccountId'],
+      where: baseLineWhere,
+      _sum: { debit: true, credit: true },
+      _count: { _all: true },
+    }),
+  ]);
+  const accountIds = [...new Set([...openingGrouped.map((g) => g.ledgerAccountId), ...periodGrouped.map((g) => g.ledgerAccountId)])];
+  const accounts = await db.ledgerAccount.findMany({
+    where: { companyId, id: { in: accountIds } },
+    select: { id: true, code: true, name: true, accountType: true, normalBalance: true },
+  });
+  const byId = new Map(accounts.map((a) => [a.id, a]));
+  const openingById = new Map(openingGrouped.map((g) => [g.ledgerAccountId, { debit: round2(Number(g._sum.debit ?? 0)), credit: round2(Number(g._sum.credit ?? 0)) }]));
+  const periodById = new Map(periodGrouped.map((g) => [g.ledgerAccountId, { debit: round2(Number(g._sum.debit ?? 0)), credit: round2(Number(g._sum.credit ?? 0)), count: g._count._all }]));
+  let totalDebit = 0;
+  let totalCredit = 0;
+  let totalClosingDebit = 0;
+  let totalClosingCredit = 0;
+  let movementCount = 0;
+  const rows: TrialBalanceReportRow[] = accountIds.map((accountId) => {
+    const account = byId.get(accountId);
+    const opening = openingById.get(accountId) ?? { debit: 0, credit: 0 };
+    const period = periodById.get(accountId) ?? { debit: 0, credit: 0, count: 0 };
+    const openingSigned = round2(opening.debit - opening.credit);
+    const closingSigned = round2(openingSigned + period.debit - period.credit);
+    const closingDebit = round2(Math.max(closingSigned, 0));
+    const closingCredit = round2(Math.max(-closingSigned, 0));
+    totalDebit += period.debit;
+    totalCredit += period.credit;
+    totalClosingDebit += closingDebit;
+    totalClosingCredit += closingCredit;
+    movementCount += period.count;
+    return {
+      accountId,
+      code: account?.code ?? '?',
+      name: account?.name ?? '?',
+      accountType: (account?.accountType ?? 'ASSET') as LedgerAccountType,
+      normalBalance: (account?.normalBalance ?? 'DEBIT') as NormalBalance,
+      openingBalance: openingSigned,
+      debit: period.debit,
+      credit: period.credit,
+      closingDebit,
+      closingCredit,
+    };
+  });
+  rows.sort((a, b) => a.code.localeCompare(b.code));
+  totalDebit = round2(totalDebit);
+  totalCredit = round2(totalCredit);
+  return {
+    filters,
+    rows,
+    totalDebit,
+    totalCredit,
+    totalClosingDebit: round2(totalClosingDebit),
+    totalClosingCredit: round2(totalClosingCredit),
+    isBalanced: totalDebit === totalCredit,
+    movementCount,
+  };
+}
+
+function accountingCsvEscape(value: string): string {
+  if (/[;"\r\n]/.test(value)) return `"${value.replace(/"/g, '""')}"`;
+  return value;
+}
+
+function accountingCsvLine(values: Array<string | number | null | undefined>): string {
+  return values.map((v) => accountingCsvEscape(v === null || v === undefined ? '' : String(v))).join(';');
+}
+
+function accountingMoney(value: number): string {
+  return value.toFixed(2).replace('.', ',');
+}
+
+export async function exportAccountingJournalCsv(db: PrismaClient, ctx: RequestContext, filters: AccountingReportFilters = {}): Promise<{ filename: string; content: string }> {
+  requirePermission(ctx, 'reports.export');
+  const report = await getAccountingJournalReport(db, ctx, filters);
+  const lines = [
+    accountingCsvLine(['Diário de lançamentos']),
+    accountingCsvLine(['Período', `${report.filters.from} a ${report.filters.to}`]),
+    accountingCsvLine(['Data', 'Número', 'Diário', 'Estado', 'Origem', 'Evento', 'Referência', 'Descrição', 'Conta', 'Nome da conta', 'Descrição da linha', 'Débito', 'Crédito', 'Utilizador']),
+    ...report.lines.map((l) => accountingCsvLine([
+      l.postingDate ?? l.entryDate,
+      l.entryNumber,
+      l.journalCode,
+      l.status,
+      l.sourceType,
+      l.accountingEvent,
+      l.reference,
+      l.description,
+      l.accountCode,
+      l.accountName,
+      l.lineDescription,
+      accountingMoney(l.debit),
+      accountingMoney(l.credit),
+      l.postedByName ?? l.postedById,
+    ])),
+    accountingCsvLine(['Totais', '', '', '', '', '', '', '', '', '', '', accountingMoney(report.totalDebit), accountingMoney(report.totalCredit), report.isBalanced ? 'Balanceado' : 'Desequilibrado']),
+  ];
+  return { filename: `contabilidade-diario-${report.filters.from}-${report.filters.to}.csv`, content: lines.join('\n') };
+}
+
+export async function exportAccountLedgerCsv(db: PrismaClient, ctx: RequestContext, ledgerAccountId: string, filters: AccountingReportFilters = {}): Promise<{ filename: string; content: string }> {
+  requirePermission(ctx, 'reports.export');
+  const report = await getAccountLedgerReport(db, ctx, ledgerAccountId, filters);
+  const lines = [
+    accountingCsvLine(['Razão / extracto por conta']),
+    accountingCsvLine(['Conta', report.account ? `${report.account.code} - ${report.account.name}` : '']),
+    accountingCsvLine(['Período', `${report.filters.from} a ${report.filters.to}`]),
+    accountingCsvLine(['Saldo inicial', accountingMoney(report.openingBalance)]),
+    accountingCsvLine(['Data', 'Número', 'Origem', 'Evento', 'Referência', 'Descrição', 'Débito', 'Crédito', 'Saldo acumulado']),
+    ...report.rows.map((r) => accountingCsvLine([r.date, r.entryNumber, r.sourceType, r.accountingEvent, r.reference, r.description, accountingMoney(r.debit), accountingMoney(r.credit), accountingMoney(r.balance)])),
+    accountingCsvLine(['Totais', '', '', '', '', '', accountingMoney(report.totalDebit), accountingMoney(report.totalCredit), accountingMoney(report.closingBalance)]),
+  ];
+  const code = report.account?.code ?? 'conta';
+  return { filename: `contabilidade-razao-${code}-${report.filters.from}-${report.filters.to}.csv`, content: lines.join('\n') };
+}
+
+export async function exportTrialBalanceCsv(db: PrismaClient, ctx: RequestContext, filters: AccountingReportFilters = {}): Promise<{ filename: string; content: string }> {
+  requirePermission(ctx, 'reports.export');
+  const report = await getTrialBalanceReport(db, ctx, filters);
+  const lines = [
+    accountingCsvLine(['Balancete']),
+    accountingCsvLine(['Período', `${report.filters.from} a ${report.filters.to}`]),
+    accountingCsvLine(['Conta', 'Nome da conta', 'Tipo', 'Natureza', 'Saldo inicial', 'Débito', 'Crédito', 'Saldo devedor', 'Saldo credor']),
+    ...report.rows.map((r) => accountingCsvLine([r.code, r.name, r.accountType, r.normalBalance, accountingMoney(r.openingBalance), accountingMoney(r.debit), accountingMoney(r.credit), accountingMoney(r.closingDebit), accountingMoney(r.closingCredit)])),
+    accountingCsvLine(['Totais', '', '', '', '', accountingMoney(report.totalDebit), accountingMoney(report.totalCredit), accountingMoney(report.totalClosingDebit), accountingMoney(report.totalClosingCredit)]),
+    accountingCsvLine(['Validação', report.isBalanced ? 'Débito = crédito' : 'Débito diferente de crédito']),
+  ];
+  return { filename: `contabilidade-balancete-${report.filters.from}-${report.filters.to}.csv`, content: lines.join('\n') };
+}

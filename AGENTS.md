@@ -30,7 +30,8 @@ Stock, Vendas/Facturação, Compras, Tesouraria & Bancos, Hardening da
 Tesouraria, Contabilidade 8a, 8b, 8c.1, 8c.2a, 8c.2b, 8c.3,
 P0-03 completo (P0-03.0, P0-03a, P0-03b, P0-03c, P0-03d, P0-03e e P0-03f),
 P0-04, P0-05, P0-06, P0-07, P0-08, P0-09, P1-01 POS V1 limitado,
-P1-02 Relatórios V1 operacionais e P1-03 Impressão/PDF profissional.
+P1-02 Relatórios V1 operacionais, P1-03 Impressão/PDF profissional e P1-04
+Contabilidade V1 finalizada.
 
 Estado actual da Contabilidade: P0-03 completo. A base de
 reversões está activa; recebimentos de clientes podem ser anulados, facturas sem
@@ -59,8 +60,13 @@ avançados, salários, produção, BI e relatórios personalizados como futuro. 
 P1-03 implementou impressão/guardar PDF pelo navegador para factura, recibo,
 relatório diário de caixa e relatórios V1 com HTML/CSS print, mantendo PDF
 fiscal oficial, assinatura digital/fiscal, envio por email, impressão térmica
-avançada e layouts personalizáveis como futuro. O proximo passo deve ser
-decidido explicitamente dentro do backlog P1.
+avançada e layouts personalizáveis como futuro. A P1-04 finalizou a
+Contabilidade V1 com plano de contas, diário, razão/extracto por conta,
+balancete, filtros, CSV e impressão/guardar PDF pelo navegador, mantendo fecho
+anual, DRE oficial, balanço oficial, fiscal/AT, assinatura digital,
+reconciliação bancária avançada e centros de custo avançados como futuro. O
+proximo passo deve ser decidido explicitamente dentro do backlog P1; nao iniciar
+P1-05 automaticamente.
 
 ## Arquitectura Obrigatória
 
@@ -227,6 +233,7 @@ pnpm test:integration:accounting:c1
 pnpm test:integration:accounting:c2a
 pnpm test:integration:accounting:c2
 pnpm test:integration:accounting:c3
+pnpm test:integration:accounting:reports
 pnpm test:integration:accounting:reversal:customer-payment
 pnpm test:integration:accounting:reversal:invoice
 pnpm test:integration:accounting:reversal:supplier-payment
@@ -248,6 +255,7 @@ Testes de integração contabilísticos:
 - 8c.2a: `pnpm test:integration:accounting:c2a`
 - 8c.2b: `pnpm test:integration:accounting:c2`
 - 8c.3: `pnpm test:integration:accounting:c3`
+- P1-04: `pnpm test:integration:accounting:reports`
 - P0-03b: `pnpm test:integration:accounting:reversal:customer-payment`
 - P0-03a: `pnpm test:integration:accounting:reversal:invoice`
 - P0-03c: `pnpm test:integration:accounting:reversal:supplier-payment`
@@ -293,15 +301,17 @@ passwords não demonstrativas.
 - P1-01 POS V1 funcional limitado concluida.
 - P1-02 Relatórios V1 operacionais concluida.
 - P1-03 Impressão/PDF profissional concluida.
+- P1-04 Contabilidade V1 finalizada concluida.
 - V1 candidata a demo externa apos UAT interna em 2026-07-06, aprovada com
-  ressalvas e registada em `docs/UAT_INTERNAL_DEMO_REPORT.md`; nao marca
-  producao pronta, nao autoriza piloto real e nao inicia P1-04.
+  ressalvas e registada em `docs/UAT_INTERNAL_DEMO_REPORT.md`; P1-04 acrescenta
+  Contabilidade V1 pronta para UAT/demo com limites; nao marca producao pronta,
+  nao autoriza piloto real e nao inicia P1-05.
 - Ajustes UX pre-demo registados: titulo fixo da factura removido, modulos futuros
   neutralizados como futuro e logout a repetir em browser externo/limpo porque o
   browser integrado bloqueou a revalidacao visual limpa.
 - Commit base funcional antes da P0-03.0: `a1d608b`.
-- Proximo passo: concluir smoke final em browser externo/limpo antes da demo externa.
-- Nao iniciar P1-04 nem piloto real sem decisao explicita, backup, staging
+- Proximo passo: smoke manual final em browser externo/limpo antes da demo externa.
+- Nao iniciar P1-05 nem piloto real sem decisao explicita, backup, staging
   validado e checklist assinada.
 - `MODULE_STATUS.md` é a fonte principal para progresso e próximos passos.
 - `CLAUDE.md` deve ser preservado.

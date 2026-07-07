@@ -1,6 +1,6 @@
 # Matriz de funcionalidades V1 - ANTS ERP
 
-_Ultima actualizacao: 2026-07-06_
+_Ultima actualizacao: 2026-07-07_
 
 Estados usados:
 
@@ -24,7 +24,7 @@ Estados usados:
 | Compras | Ordem de compra e recepcao de mercadoria | pronto para UAT | `purchases.ts`, `/compras`, `/recepcao`, testes 8c.3 | Sem devolucao comercial ao fornecedor | Incluir |
 | Pagamentos | Pagamento a fornecedor com tesouraria e contabilidade | pronto para UAT | `createSupplierPayment`, `SUPPLIER_PAYMENT_POSTED`, testes 8c.3/P0-03 | Exige conta de tesouraria mapeada | Incluir |
 | Tesouraria | Contas, movimentos, transferencias e relatorio diario | pronto para UAT | `treasury.ts`, `/tesouraria`, `/tesouraria/fecho` | Conciliacao bancaria ainda futura | Incluir |
-| Contabilidade | Plano, periodos, mappings, lancamentos, razao e balancete no dominio | parcial | `accounting.ts`, suites 8b/8c, pagina `/contabilidade` | Ecras contabilisticos finais 8d ainda pendentes | Incluir como integracao/backoffice limitado |
+| Contabilidade | Plano de contas, diario de lancamentos, razao/extracto por conta, balancete, filtros, CSV e impressao/guardar PDF pelo navegador | pronto para UAT | `accounting.ts`, `/contabilidade`, `/contabilidade/exportar`, `pnpm test:integration:accounting:reports` | Sem fecho anual, DRE oficial, balanco oficial, fiscal/AT, assinatura digital, reconciliacao bancaria avancada e centros de custo avancados | Incluir com limites V1 |
 | Reversoes | P0-03 ponta a ponta para recebimentos, facturas, pagamentos, recepcoes e transferencias | pronto para UAT | `docs/reversals-uat.md`, `pnpm test:integration:accounting:reversal:all` | Sem estorno parcial/NC/ND | Incluir com limites V1 |
 | Relatorios | Relatorios V1 operacionais com filtros basicos, CSV e impressao/guardar PDF pelo navegador | pronto para UAT | `packages/domain/src/reports.ts`, `/relatorios`, `/relatorios/exportar`, `pnpm test:integration:reports` | PDF automatico/fiscal, Excel avancado, salarios, producao, BI e relatorio personalizado ficam futuros | Incluir com limites |
 | Backup/Restore | Backup manual, restore destrutivo e rollback documentado | pronto para UAT | `docs/BACKUP_RESTORE.md`, scripts `ops:staging:*` | Sem storage remoto/encriptacao automatica | Incluir como runbook manual |

@@ -28,6 +28,7 @@ ser classificado como bloqueante, restricao aceite ou backlog futuro.
 - [ ] Testes de integracao relevantes verdes.
 - [ ] `pnpm test:integration:pos` verde quando POS entrar no escopo do piloto.
 - [ ] `pnpm test:integration:reports` verde quando relatorios entrarem no escopo do piloto.
+- [ ] `pnpm test:integration:accounting:reports` verde quando Contabilidade V1 entrar no escopo do piloto.
 - [ ] Impressao/PDF comercial validado para factura, recibo, fecho de caixa e
       relatorio de vendas quando P1-03 entrar no escopo do piloto.
 - [ ] `pnpm build` verde.
@@ -99,6 +100,9 @@ ser classificado como bloqueante, restricao aceite ou backlog futuro.
 - [ ] Limites da impressao P1-03 aceites: sem assinatura digital/fiscal, sem
       integracao fiscal, sem envio automatico por email, sem impressao termica
       avancada e sem layouts personalizaveis.
+- [ ] Limites da Contabilidade V1 aceites: sem fecho anual, DRE oficial,
+      balanco oficial, fiscal/AT, assinatura digital, reconciliacao bancaria
+      avancada e centros de custo avancados.
 
 ## 6. Decisao
 

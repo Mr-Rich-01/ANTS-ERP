@@ -1,6 +1,6 @@
 # Roteiro comercial de testes UAT - ANTS ERP
 
-_Ultima actualizacao: 2026-07-06_
+_Ultima actualizacao: 2026-07-07_
 
 Executar este roteiro com dados ficticios e ambiente identificado. Registar o
 resultado de cada passo como `Aprovado`, `Reprovado`, `Bloqueado` ou `Nao
@@ -126,6 +126,37 @@ Limites aceites neste fluxo: CSV simples pronto; impressao/guardar PDF via
 navegador pronto; PDF fiscal/automatico, Excel avancado, salarios, producao,
 BI avancado, reconciliacao bancaria e relatorios personalizados ficam para
 fases futuras.
+
+## 3D. Fluxo Contabilidade V1
+
+Dados ficticios sugeridos:
+
+- Periodo com facturas, recibos, compras e pagamentos.
+- Conta `Caixa`, `Banco`, `Clientes c/c` ou `Fornecedores c/c`.
+
+Passos:
+
+1. Abrir `/contabilidade`.
+2. Confirmar que os KPIs usam debitos/creditos reais do periodo.
+3. Abrir `Diario` e confirmar lancamentos reais com data, numero, origem,
+   estado, conta, debito, credito e utilizador quando disponivel.
+4. Filtrar por periodo.
+5. Filtrar por conta.
+6. Filtrar por origem, por exemplo factura ou recibo.
+7. Pesquisar por referencia ou descricao.
+8. Exportar CSV do diario e confirmar que respeita os filtros.
+9. Abrir `Razao / Extracto`, escolher uma conta e confirmar saldo inicial,
+   movimentos, debitos, creditos e saldo acumulado.
+10. Exportar CSV do razao.
+11. Abrir `Balancete` e confirmar total debito = total credito.
+12. Confirmar estado vazio claro para periodo sem movimentos.
+13. Exportar CSV do balancete.
+14. Clicar `Imprimir / Guardar PDF` e confirmar layout limpo.
+15. Confirmar que nao ha mock, placeholder vendido como pronto ou botoes mortos.
+
+Limites aceites neste fluxo: sem fecho anual, DRE oficial, balanco oficial,
+fiscal/AT, assinatura digital, reconciliacao bancaria avancada, centros de
+custo avancados ou importacao SAF-T.
 
 ## 3C. Impressao/PDF comercial P1-03
 

@@ -5,10 +5,10 @@ _Última actualização: 2026-07-07_
 Estado vivo do projecto. O conhecimento permanente (arquitectura, regras, comandos) está
 em [`CLAUDE.md`](CLAUDE.md).
 
-**Último commit funcional:** pendente nesta branch (`feat(print): add professional document printing`)
-**Fase concluída:** `P1-03 — Impressao/PDF profissional`
-**UAT interna/demo:** V1 candidata a demo externa apos UAT interna, aprovada com ressalvas em 2026-07-06; ajustes UX pre-demo registados em `fix/demo-ux-before-client-demo`
-**Próximo passo:** concluir smoke final em browser externo/limpo antes da demo externa; nao iniciar P1-04
+**Último commit funcional:** pendente nesta branch (`feat(accounting): finalize V1 reports and ledgers`)
+**Fase concluída:** `P1-04 — Finalizar Contabilidade V1`
+**UAT interna/demo:** V1 candidata a demo externa apos UAT interna, aprovada com ressalvas em 2026-07-06; P1-04 acrescenta Contabilidade V1 pronta para UAT/demo com limites
+**Próximo passo:** smoke manual final em browser externo/limpo para demo externa; nao iniciar P1-05
 
 ---
 
@@ -46,15 +46,16 @@ em [`CLAUDE.md`](CLAUDE.md).
 | **P1-01** | **POS V1 funcional limitado** (checkout simples: produtos reais, Cliente final, factura + recibo, stock, tesouraria, contabilidade e auditoria) | ✅ |
 | **P1-02** | **Relatorios V1 operacionais** (vendas, clientes, antiguidade, compras, fornecedores, stock, fluxo de caixa e auditoria com filtros basicos + CSV) | ✅ |
 | **P1-03** | **Impressao/PDF profissional** (factura, recibo, fecho diario de caixa e relatorios V1 com HTML/CSS print e guardar PDF pelo navegador) | ✅ |
+| **P1-04** | **Contabilidade V1 finalizada** (plano de contas, diario, razao/extracto por conta, balancete, filtros, CSV e impressao/guardar PDF pelo navegador) | ✅ |
 | 9 | RH & Salários | 🗺️ futuro |
 | X | RLS forçado em toda a BD (fase transversal, pré-produção) | 🗺️ futuro |
 
 **Validações actuais:** typecheck 6/6 · lint 6/6 · **testes unitários 89** · **security hardening 16/16** · **auth company-selection 7/7** · **reversal all 44/44** · **integração de
-contabilidade 189/189** (8b 32 + 8c.1 30 + 8c.2a 18 + 8c.2b 34 + 8c.3 17 + P0-02 5 + P0-03.0 9 + P0-03b 10 + P0-03a 9 + P0-03c 7 + P0-03d 8 + P0-03e 6 + P0-03f 4;
-`pnpm test:integration:accounting`, sub: `…:c1`, `…:c2a`, `…:c2`, `…:c3`, `…:reversal:customer-payment`, `…:reversal:invoice`, `…:reversal:supplier-payment`, `…:reversal:purchase-receipt`, `…:reversal:treasury-transfer`, `…:reversal:uat`, `…:reversal:all`) · **POS 7/7** (`pnpm test:integration:pos`) · `prisma validate` OK · `prisma migrate status` OK · `pnpm build` OK
+contabilidade 199/199** (8b 32 + 8c.1 30 + 8c.2a 18 + 8c.2b 34 + 8c.3 17 + P1-04 10 + P0-02 5 + P0-03.0 9 + P0-03b 10 + P0-03a 9 + P0-03c 7 + P0-03d 8 + P0-03e 6 + P0-03f 4;
+`pnpm test:integration:accounting`, sub: `…:c1`, `…:c2a`, `…:c2`, `…:c3`, `…:reports`, `…:reversal:customer-payment`, `…:reversal:invoice`, `…:reversal:supplier-payment`, `…:reversal:purchase-receipt`, `…:reversal:treasury-transfer`, `…:reversal:uat`, `…:reversal:all`) · **POS 7/7** (`pnpm test:integration:pos`) · `prisma validate` OK · `prisma migrate status` OK · `pnpm build` OK
 em Windows nativo (30/30 páginas estaticas + `/api/health` dinamico) e Docker Linux com Node 20 + OpenSSL · imagens Docker de produção
 `web`, `worker` e target `migrate` OK · seed idempotente (2×) · login/contexto
-multiempresa 7/7 · **POS 12/12** (`pnpm test:integration:pos`) · **relatorios 10/10** (`pnpm test:integration:reports`) · `pnpm build` OK em Windows nativo (31/31 páginas, incluindo `/api/health`) ·
+multiempresa 7/7 · **POS 12/12** (`pnpm test:integration:pos`) · **relatorios 20/20** (`pnpm test:integration:reports`) · `pnpm build` OK em Windows nativo (31/31 páginas, incluindo `/api/health`, `/relatorios/exportar` e `/contabilidade/exportar`) ·
 staging Docker P0-08/P0-09 OK (`docker:staging:build`, migrations explicitas, web/worker/postgres/redis,
 health `/api/health`, smoke `/login`, `/seleccionar-empresa` e headers).
 
@@ -203,6 +204,18 @@ e os atalhos rapidos visiveis passaram a navegar para areas V1. Logout foi revis
 funcional; o browser integrado bloqueou a revalidacao visual apos o `POST /login 303`, por isso o
 smoke final de logout deve ser repetido em browser externo/limpo antes da demo externa. Nao marca
 producao pronta, nao autoriza piloto real e nao inicia P1-04.
+
+**P1-04 (2026-07-07):** finalizada a Contabilidade V1 sem schema, migrations ou dependencias novas.
+`/contabilidade` deixou de usar dados mockados de `apps/web/src/lib/data/finance.ts` e passou a
+chamar `packages/domain/src/accounting.ts` com `RequestContext`, `forCompany`, `accounting.view` e
+`reports.export` para CSV. Foram entregues plano de contas consultavel, diario de lancamentos reais,
+razao/extracto por conta com saldo inicial e saldo acumulado, balancete com validacao debito=credito,
+filtros por periodo, conta, diario, origem, tipo, estado e pesquisa, CSV para diario/razao/balancete
+via `/contabilidade/exportar` e impressao/guardar PDF pelo navegador. Criado
+`pnpm test:integration:accounting:reports` (10/10) e incluido no agregado
+`pnpm test:integration:accounting`. Limites V1: sem fecho anual, DRE oficial, balanco oficial,
+fiscal/AT, assinatura digital, reconciliacao bancaria avancada, centros de custo avancados,
+importacao SAF-T ou P1-05.
 
 **Hardening pré-produção P0-01 (2026-07-02):** seed demo bloqueado em `production`
 antes de criar o Prisma Client; credenciais demo removidas da interface de

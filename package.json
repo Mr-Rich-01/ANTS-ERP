@@ -23,6 +23,7 @@
     "test:integration:accounting:c2": "pnpm --filter @ants/domain test:integration:c2",
     "test:integration:accounting:c2a": "pnpm --filter @ants/domain test:integration:c2a",
     "test:integration:accounting:c3": "pnpm --filter @ants/domain test:integration:c3",
+    "test:integration:accounting:reports": "pnpm --filter @ants/domain test:integration:accounting-reports",
     "test:integration:accounting:reversal:customer-payment": "pnpm --filter @ants/domain test:integration:customer-payment-reversal",
     "test:integration:accounting:reversal:invoice": "pnpm --filter @ants/domain test:integration:invoice-cancellation",
     "test:integration:accounting:reversal:supplier-payment": "pnpm --filter @ants/domain test:integration:supplier-payment-reversal",
