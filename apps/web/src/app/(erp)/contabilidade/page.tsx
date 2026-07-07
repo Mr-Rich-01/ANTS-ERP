@@ -1,12 +1,18 @@
 import Link from 'next/link';
 import { forCompany } from '@ants/database';
 import {
+  accountingEventLabel,
+  accountingJournalTypeLabel,
+  accountingSourceTypeLabel,
   getAccountLedgerReport,
   getAccountingJournalReport,
   getAccountingReportOptions,
   getCompanyPrintProfile,
   getTrialBalanceReport,
   hasPermission,
+  journalEntryStatusLabel,
+  ledgerAccountTypeLabel,
+  normalBalanceLabel,
   type AccountingJournalType,
   type AccountingReportFilters,
   type AccountingReportStatusFilter,
@@ -111,25 +117,30 @@ function datePt(value: string | null | undefined): string {
 }
 
 function sourceLabel(value: string | null | undefined): string {
-  if (!value) return 'Manual';
-  const labels: Record<string, string> = {
-    INVOICE: 'Factura',
-    CUSTOMER_PAYMENT: 'Recibo',
-    PURCHASE_RECEIPT: 'Compra',
-    SUPPLIER_PAYMENT: 'Pagamento fornecedor',
-  };
-  return labels[value] ?? value;
+  return accountingSourceTypeLabel(value);
 }
 
 function statusLabel(status: JournalEntryStatus): string {
-  const labels: Record<JournalEntryStatus, string> = { DRAFT: 'Rascunho', POSTED: 'Confirmado', REVERSED: 'Estornado' };
-  return labels[status];
+  return journalEntryStatusLabel(status);
 }
 
-function balanceLabel(value: number, normalBalance?: NormalBalance): string {
-  if (value === 0) return fmtNoSymbol(0);
-  const side = normalBalance === 'CREDIT' ? (value >= 0 ? 'Cr' : 'Db') : value >= 0 ? 'Db' : 'Cr';
-  return `${fmtNoSymbol(Math.abs(value))} ${side}`;
+function balanceMoneyLabel(value: number): string {
+  return fmt(Math.abs(value));
+}
+
+function balanceNatureText(value: number, normalBalance?: NormalBalance): string {
+  if (value === 0) return 'Sem saldo';
+  const isCreditNature = normalBalance === 'CREDIT';
+  return isCreditNature ? (value >= 0 ? 'Credor' : 'Devedor') : value >= 0 ? 'Devedor' : 'Credor';
+}
+
+function balanceValue(value: number, normalBalance?: NormalBalance) {
+  return (
+    <>
+      <span>{balanceMoneyLabel(value)}</span>
+      {value !== 0 ? <><br /><span style={{ color: 'var(--text3)', fontSize: 11 }}>{balanceNatureText(value, normalBalance)}</span></> : null}
+    </>
+  );
 }
 
 function generatedAt(): string {
@@ -176,12 +187,28 @@ export default async function ContabilidadePage({ searchParams }: { searchParams
   const periodLabel = `${datePt(journal.filters.from)} a ${datePt(journal.filters.to)}`;
   const accountById = new Map(options.accounts.map((account) => [account.id, account]));
   const trialByAccountId = new Map(trial.rows.map((row) => [row.accountId, row]));
+  const journalTypeOptions: AccountingJournalType[] = ['GENERAL', 'SALES', 'PURCHASES', 'CASH', 'BANK', 'ADJUSTMENT', 'OPENING'];
+  const trialStatus = trial.isGlobalBalanceCheckAvailable
+    ? {
+        value: trial.isBalanced ? 'OK' : 'Erro',
+        label: trial.isBalanced ? 'Debito = credito' : 'Debito diferente de credito',
+        tone: trial.isBalanced ? ('green' as const) : ('amber' as const),
+        color: trial.isBalanced ? 'var(--ok)' : 'var(--bad)',
+        background: trial.isBalanced ? 'var(--ok-bg)' : 'var(--bad-bg)',
+      }
+    : {
+        value: 'Filtrado',
+        label: 'Validacao global indisponivel com filtro de conta',
+        tone: 'blue' as const,
+        color: 'var(--info)',
+        background: 'var(--info-bg)',
+      };
 
   const kpis = [
     { label: 'Debitos do periodo', valueStr: fmt(journal.totalDebit), sub: `${journal.lines.length} linhas no diario`, tone: 'petroleum' as const, icon: 'arrow-down-left' },
     { label: 'Creditos do periodo', valueStr: fmt(journal.totalCredit), sub: journal.isBalanced ? 'Diario balanceado' : 'Verificar inconsistencias', tone: journal.isBalanced ? ('green' as const) : ('amber' as const), icon: 'arrow-up-right' },
     { label: 'Contas movimentadas', valueStr: String(trial.rows.length), sub: trial.movementCount ? 'Com movimentos reais' : 'Sem movimentos no periodo', tone: 'blue' as const, icon: 'landmark' },
-    { label: 'Balancete', valueStr: trial.isBalanced ? 'OK' : 'Erro', sub: trial.isBalanced ? 'Debito = credito' : 'Debito diferente de credito', tone: trial.isBalanced ? ('green' as const) : ('amber' as const), icon: 'scale' },
+    { label: 'Balancete', valueStr: trialStatus.value, sub: trialStatus.label, tone: trialStatus.tone, icon: 'scale' },
   ];
 
   return (
@@ -255,7 +282,7 @@ export default async function ContabilidadePage({ searchParams }: { searchParams
             Tipo
             <select name="type" defaultValue={filters.journalType ?? ''} style={field}>
               <option value="">Todos</option>
-              {['GENERAL', 'SALES', 'PURCHASES', 'CASH', 'BANK', 'ADJUSTMENT', 'OPENING'].map((type) => <option key={type} value={type}>{type}</option>)}
+              {journalTypeOptions.map((type) => <option key={type} value={type}>{accountingJournalTypeLabel(type)}</option>)}
             </select>
           </label>
           <label style={labelStyle}>
@@ -315,11 +342,11 @@ export default async function ContabilidadePage({ searchParams }: { searchParams
                       <tr key={account.id} className="ants-row">
                         <td className="font-mono" style={{ ...td, color: 'var(--accent-fg)', fontWeight: 700, paddingLeft: 12 + Math.max(account.level - 1, 0) * 14 }}>{account.code}</td>
                         <td style={td}>{account.name}</td>
-                        <td style={td}>{account.accountType}</td>
-                        <td style={td}>{account.normalBalance === 'DEBIT' ? 'Devedora' : 'Credora'}</td>
+                        <td style={td}>{ledgerAccountTypeLabel(account.accountType)}</td>
+                        <td style={td}>{normalBalanceLabel(account.normalBalance)}</td>
                         <td style={td}>{account.isActive ? 'Activa' : 'Inactiva'} · {account.isPosting ? 'Movimento' : 'Agrupadora'}</td>
                         <td style={td}>{parent ? `${parent.code} - ${parent.name}` : '-'}</td>
-                        <td className="tnum" style={{ ...td, textAlign: 'right', fontWeight: trialRow ? 700 : 500 }}>{trialRow ? balanceLabel(signedBalance, account.normalBalance) : '-'}</td>
+                        <td className="tnum" style={{ ...td, textAlign: 'right', fontWeight: trialRow ? 700 : 500 }}>{trialRow ? balanceValue(signedBalance, account.normalBalance) : '-'}</td>
                       </tr>
                     );
                   })}
@@ -354,7 +381,7 @@ export default async function ContabilidadePage({ searchParams }: { searchParams
                       <td style={td}>{sourceLabel(line.sourceType)}</td>
                       <td style={td}>{statusLabel(line.status)}</td>
                       <td style={td}><span className="font-mono">{line.accountCode}</span><br /><span style={{ color: 'var(--text3)' }}>{line.accountName}</span></td>
-                      <td style={td}>{line.lineDescription ?? line.description}<br /><span style={{ color: 'var(--text3)' }}>{line.reference ?? line.accountingEvent ?? ''}</span></td>
+                      <td style={td}>{line.lineDescription ?? line.description}<br /><span style={{ color: 'var(--text3)' }}>{line.reference ?? accountingEventLabel(line.accountingEvent)}</span></td>
                       <td className="tnum" style={{ ...td, textAlign: 'right', color: line.debit ? 'var(--text)' : 'var(--text4)', fontWeight: 700 }}>{line.debit ? fmtNoSymbol(line.debit) : '-'}</td>
                       <td className="tnum" style={{ ...td, textAlign: 'right', color: line.credit ? 'var(--text)' : 'var(--text4)', fontWeight: 700 }}>{line.credit ? fmtNoSymbol(line.credit) : '-'}</td>
                       <td style={td}>{line.postedByName ?? line.postedById ?? '-'}</td>
@@ -386,7 +413,7 @@ export default async function ContabilidadePage({ searchParams }: { searchParams
                 <tbody>
                   <tr>
                     <td colSpan={7} style={{ ...td, fontWeight: 800, color: 'var(--text)' }}>Saldo inicial</td>
-                    <td className="tnum" style={{ ...td, textAlign: 'right', fontWeight: 800, color: 'var(--text)' }}>{ledger ? balanceLabel(ledger.openingBalance, ledger.account?.normalBalance) : '-'}</td>
+                    <td className="tnum" style={{ ...td, textAlign: 'right', fontWeight: 800, color: 'var(--text)' }}>{ledger ? balanceValue(ledger.openingBalance, ledger.account?.normalBalance) : '-'}</td>
                   </tr>
                   {!ledger || ledger.rows.length === 0 ? (
                     <EmptyRow colSpan={8} message="Sem movimentos para a conta e periodo seleccionados." />
@@ -395,18 +422,18 @@ export default async function ContabilidadePage({ searchParams }: { searchParams
                       <td style={td}>{datePt(row.date)}</td>
                       <td className="font-mono" style={{ ...td, color: 'var(--accent-fg)', fontWeight: 700 }}>{row.entryNumber}</td>
                       <td style={td}>{sourceLabel(row.sourceType)}</td>
-                      <td style={td}>{row.reference ?? row.accountingEvent ?? '-'}</td>
+                      <td style={td}>{row.reference ?? (accountingEventLabel(row.accountingEvent) || '-')}</td>
                       <td style={td}>{row.description}</td>
                       <td className="tnum" style={{ ...td, textAlign: 'right', fontWeight: 700 }}>{row.debit ? fmtNoSymbol(row.debit) : '-'}</td>
                       <td className="tnum" style={{ ...td, textAlign: 'right', fontWeight: 700 }}>{row.credit ? fmtNoSymbol(row.credit) : '-'}</td>
-                      <td className="tnum" style={{ ...td, textAlign: 'right', fontWeight: 800, color: 'var(--text)' }}>{balanceLabel(row.balance, ledger.account?.normalBalance)}</td>
+                      <td className="tnum" style={{ ...td, textAlign: 'right', fontWeight: 800, color: 'var(--text)' }}>{balanceValue(row.balance, ledger.account?.normalBalance)}</td>
                     </tr>
                   ))}
                   <tr>
                     <td colSpan={5} style={{ ...td, fontWeight: 800, color: 'var(--text)' }}>Totais</td>
                     <td className="tnum" style={{ ...td, textAlign: 'right', fontWeight: 800 }}>{ledger ? fmtNoSymbol(ledger.totalDebit) : '-'}</td>
                     <td className="tnum" style={{ ...td, textAlign: 'right', fontWeight: 800 }}>{ledger ? fmtNoSymbol(ledger.totalCredit) : '-'}</td>
-                    <td className="tnum" style={{ ...td, textAlign: 'right', fontWeight: 800 }}>{ledger ? balanceLabel(ledger.closingBalance, ledger.account?.normalBalance) : '-'}</td>
+                    <td className="tnum" style={{ ...td, textAlign: 'right', fontWeight: 800 }}>{ledger ? balanceValue(ledger.closingBalance, ledger.account?.normalBalance) : '-'}</td>
                   </tr>
                 </tbody>
               </table>
@@ -418,13 +445,18 @@ export default async function ContabilidadePage({ searchParams }: { searchParams
           <div style={panel}>
             <div style={{ padding: '13px 16px', borderBottom: '1px solid var(--bd-soft)', display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
               <strong style={{ fontSize: 14, color: 'var(--text)' }}>Balancete</strong>
-              <span style={{ fontSize: 11, fontWeight: 700, color: trial.isBalanced ? 'var(--ok)' : 'var(--bad)', background: trial.isBalanced ? 'var(--ok-bg)' : 'var(--bad-bg)', padding: '3px 8px', borderRadius: 7 }}>
-                {trial.isBalanced ? 'Debito = credito' : 'Debito diferente de credito'}
+              <span style={{ fontSize: 11, fontWeight: 700, color: trialStatus.color, background: trialStatus.background, padding: '3px 8px', borderRadius: 7 }}>
+                {trial.isGlobalBalanceCheckAvailable ? trialStatus.label : 'Balancete filtrado'}
               </span>
             </div>
             {trial.movementCount === 0 ? (
               <div style={{ padding: '11px 16px', borderBottom: '1px solid var(--bd-soft)', background: 'var(--card2)', color: 'var(--text3)', fontSize: 12.5 }}>
                 Sem movimentos no periodo seleccionado{trial.rows.length ? '; saldos iniciais apresentados quando existem.' : '.'}
+              </div>
+            ) : null}
+            {!trial.isGlobalBalanceCheckAvailable ? (
+              <div style={{ padding: '11px 16px', borderBottom: '1px solid var(--bd-soft)', background: 'var(--card2)', color: 'var(--text3)', fontSize: 12.5 }}>
+                Validacao global indisponivel com filtro de conta. Remova o filtro de conta para validar o equilibrio global.
               </div>
             ) : null}
             <div style={{ overflowX: 'auto' }}>
@@ -439,9 +471,9 @@ export default async function ContabilidadePage({ searchParams }: { searchParams
                     <tr key={row.accountId} className="ants-row">
                       <td className="font-mono" style={{ ...td, color: 'var(--accent-fg)', fontWeight: 700 }}>{row.code}</td>
                       <td style={td}>{row.name}</td>
-                      <td style={td}>{row.accountType}</td>
-                      <td style={td}>{row.normalBalance === 'DEBIT' ? 'Devedora' : 'Credora'}</td>
-                      <td className="tnum" style={{ ...td, textAlign: 'right' }}>{balanceLabel(row.openingBalance, row.normalBalance)}</td>
+                      <td style={td}>{ledgerAccountTypeLabel(row.accountType)}</td>
+                      <td style={td}>{normalBalanceLabel(row.normalBalance)}</td>
+                      <td className="tnum" style={{ ...td, textAlign: 'right' }}>{balanceValue(row.openingBalance, row.normalBalance)}</td>
                       <td className="tnum" style={{ ...td, textAlign: 'right', fontWeight: 700 }}>{fmtNoSymbol(row.debit)}</td>
                       <td className="tnum" style={{ ...td, textAlign: 'right', fontWeight: 700 }}>{fmtNoSymbol(row.credit)}</td>
                       <td className="tnum" style={{ ...td, textAlign: 'right', fontWeight: 700 }}>{row.closingDebit ? fmtNoSymbol(row.closingDebit) : '-'}</td>

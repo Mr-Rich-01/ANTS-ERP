@@ -62,9 +62,12 @@ relatório diário de caixa e relatórios V1 com HTML/CSS print, mantendo PDF
 fiscal oficial, assinatura digital/fiscal, envio por email, impressão térmica
 avançada e layouts personalizáveis como futuro. A P1-04 finalizou a
 Contabilidade V1 com plano de contas, diário, razão/extracto por conta,
-balancete, filtros, CSV e impressão/guardar PDF pelo navegador, mantendo fecho
-anual, DRE oficial, balanço oficial, fiscal/AT, assinatura digital,
-reconciliação bancária avançada e centros de custo avançados como futuro. O
+balancete, filtros, CSV e impressão/guardar PDF pelo navegador. O polimento
+pré-integração da P1-04 mantém balancete filtrado por conta como leitura neutra,
+não como validação global, mostra saldos acumulados em MT e labels humanos em
+português. Mantém lançamento manual, fecho anual, DRE oficial, balanço oficial,
+fiscal/AT, assinatura digital, reconciliação bancária avançada e centros de custo
+avançados como futuro. O
 proximo passo deve ser decidido explicitamente dentro do backlog P1; nao iniciar
 P1-05 automaticamente.
 
@@ -302,6 +305,9 @@ passwords não demonstrativas.
 - P1-02 Relatórios V1 operacionais concluida.
 - P1-03 Impressão/PDF profissional concluida.
 - P1-04 Contabilidade V1 finalizada concluida.
+- Ajuste P1-04 pre-integracao concluido: balancete filtrado por conta nao e
+  erro global, saldos em MT, labels tecnicos traduzidos e lancamento manual
+  permanece futuro.
 - V1 candidata a demo externa apos UAT interna em 2026-07-06, aprovada com
   ressalvas e registada em `docs/UAT_INTERNAL_DEMO_REPORT.md`; P1-04 acrescenta
   Contabilidade V1 pronta para UAT/demo com limites; nao marca producao pronta,

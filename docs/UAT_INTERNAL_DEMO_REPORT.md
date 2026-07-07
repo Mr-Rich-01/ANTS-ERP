@@ -98,6 +98,9 @@
 - P1-04 foi iniciada por decisao explicita posterior a esta UAT interna.
 - Contabilidade V1 passou a ter diario, razao/extracto por conta, balancete,
   CSV e impressao/guardar PDF via browser ligados a dados reais.
+- Ajuste pre-integracao: balancete filtrado por conta deixa de aparecer como
+  erro global, saldos acumulados aparecem em MT, labels tecnicos visiveis foram
+  traduzidos e lancamento manual contabilistico permanece futuro.
 - A validacao especifica da fase usa `pnpm test:integration:accounting:reports`.
 - Esta actualizacao nao altera a decisao historica da UAT de 2026-07-06, nao
   marca producao pronta, nao autoriza piloto real e nao inicia P1-05.

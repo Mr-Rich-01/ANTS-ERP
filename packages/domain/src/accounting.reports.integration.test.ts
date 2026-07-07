@@ -7,12 +7,14 @@ import { prisma } from '@ants/database';
 import type { RequestContext } from './context';
 import { ForbiddenError } from './errors';
 import {
+  accountingJournalTypeLabel,
   exportAccountLedgerCsv,
   exportAccountingJournalCsv,
   exportTrialBalanceCsv,
   getAccountLedgerReport,
   getAccountingJournalReport,
   getTrialBalanceReport,
+  ledgerAccountTypeLabel,
 } from './accounting';
 
 const CA = 'accounting-reports-a';
@@ -291,7 +293,39 @@ describe('P1-04 - Contabilidade V1 reports', () => {
     expect(trial.totalDebit).toBe(316);
     expect(trial.totalCredit).toBe(316);
     expect(trial.isBalanced).toBe(true);
+    expect(trial.isGlobalBalanceCheckAvailable).toBe(true);
     expect(trial.rows.some((row) => row.code === '111' && row.openingBalance === 100)).toBe(true);
+  });
+
+  it('balancete filtrado por conta nao e validacao global de equilibrio', async () => {
+    const trial = await getTrialBalanceReport(prisma, ctx(CA, viewPerms), { from: '2026-07-01', to: '2026-07-31', ledgerAccountId: ids.cash });
+    expect(trial.totalDebit).toBe(70);
+    expect(trial.totalCredit).toBe(20);
+    expect(trial.isBalanced).toBe(false);
+    expect(trial.isGlobalBalanceCheckAvailable).toBe(false);
+  });
+
+  it('balancete completo desequilibrado continua a sinalizar erro real', async () => {
+    const unbalanced = await createEntry({
+      companyId: CA,
+      fiscalYearId: ids.fy,
+      periodId: ids.periodJul,
+      journalId: ids.journal,
+      number: 'AJ 2026/9999',
+      date: '2026-07-20',
+      description: 'Lancamento desequilibrado para teste',
+      lines: [{ ledgerAccountId: ids.cash, debit: 7 }],
+    });
+    try {
+      const trial = await getTrialBalanceReport(prisma, ctx(CA, viewPerms), { from: '2026-07-01', to: '2026-07-31' });
+      expect(trial.isGlobalBalanceCheckAvailable).toBe(true);
+      expect(trial.isBalanced).toBe(false);
+      expect(trial.totalDebit).toBe(323);
+      expect(trial.totalCredit).toBe(316);
+    } finally {
+      await prisma.journalEntryLine.deleteMany({ where: { companyId: CA, journalEntryId: unbalanced.id } });
+      await prisma.journalEntry.delete({ where: { id: unbalanced.id } });
+    }
   });
 
   it('periodo sem movimentos retorna estado vazio correcto', async () => {
@@ -305,19 +339,52 @@ describe('P1-04 - Contabilidade V1 reports', () => {
     const exported = await exportAccountingJournalCsv(prisma, ctx(CA, exportPerms), { from: '2026-07-01', to: '2026-07-31', sourceType: 'CUSTOMER_PAYMENT' });
     expect(exported.filename).toBe('contabilidade-diario-2026-07-01-2026-07-31.csv');
     expect(exported.content).toContain('REC 2026/0001');
+    expect(exported.content).toContain('Recebimento de cliente');
+    expect(exported.content).toContain('Publicado');
     expect(exported.content).not.toContain('FT 2026/0001');
+    expect(exported.content).not.toContain('CUSTOMER_PAYMENT');
+    expect(exported.content).not.toContain('POSTED');
   });
 
   it('CSV do razao respeita companyId', async () => {
     const exported = await exportAccountLedgerCsv(prisma, ctx(CA, exportPerms), ids.cash, { from: '2026-07-01', to: '2026-07-31' });
     expect(exported.content).toContain('Caixa');
+    expect(exported.content).toContain('MT');
+    expect(exported.content).not.toMatch(/\d,\d{2}\s+(Bd|Db|Cr)\b/);
     expect(exported.content).not.toContain('Empresa B');
   });
 
   it('CSV do balancete nao inclui dados de outra empresa', async () => {
     const exported = await exportTrialBalanceCsv(prisma, ctx(CA, exportPerms), { from: '2026-07-01', to: '2026-07-31' });
     expect(exported.content).toContain('Clientes c/c');
+    expect(exported.content).toContain('Activo');
+    expect(exported.content).toContain('Devedora');
+    expect(exported.content).not.toContain('ASSET');
+    expect(exported.content).not.toContain('DEBIT');
+    expect(exported.content).not.toMatch(/\d,\d{2}\s+(Bd|Db|Cr)\b/);
     expect(exported.content).not.toContain('Vendas Empresa B');
+  });
+
+  it('CSV do balancete filtrado usa mensagem neutra de validacao global', async () => {
+    const exported = await exportTrialBalanceCsv(prisma, ctx(CA, exportPerms), { from: '2026-07-01', to: '2026-07-31', ledgerAccountId: ids.cash });
+    expect(exported.content).toContain('Balancete filtrado');
+    expect(exported.content).not.toContain('Debito diferente de credito');
+  });
+
+  it('labels visiveis dos tipos contabilisticos ficam em portugues', async () => {
+    expect(accountingJournalTypeLabel(undefined)).toBe('Todos');
+    expect(accountingJournalTypeLabel('GENERAL')).toBe('Geral');
+    expect(accountingJournalTypeLabel('SALES')).toBe('Vendas');
+    expect(accountingJournalTypeLabel('PURCHASES')).toBe('Compras');
+    expect(accountingJournalTypeLabel('CASH')).toBe('Caixa');
+    expect(accountingJournalTypeLabel('BANK')).toBe('Banco');
+    expect(accountingJournalTypeLabel('ADJUSTMENT')).toBe('Ajuste');
+    expect(accountingJournalTypeLabel('OPENING')).toBe('Abertura');
+    expect(ledgerAccountTypeLabel('ASSET')).toBe('Activo');
+    expect(ledgerAccountTypeLabel('LIABILITY')).toBe('Passivo');
+    expect(ledgerAccountTypeLabel('EQUITY')).toBe('Capital proprio');
+    expect(ledgerAccountTypeLabel('REVENUE')).toBe('Receita');
+    expect(ledgerAccountTypeLabel('EXPENSE')).toBe('Despesa');
   });
 
   it('utilizador sem permissao e bloqueado', async () => {

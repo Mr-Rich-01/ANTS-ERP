@@ -102,7 +102,9 @@ ser classificado como bloqueante, restricao aceite ou backlog futuro.
       avancada e sem layouts personalizaveis.
 - [ ] Limites da Contabilidade V1 aceites: sem fecho anual, DRE oficial,
       balanco oficial, fiscal/AT, assinatura digital, reconciliacao bancaria
-      avancada e centros de custo avancados.
+      avancada, centros de custo avancados e lancamentos manuais.
+- [ ] Balancete filtrado por conta aceite como leitura parcial, sem validacao
+      global de equilibrio ate remover o filtro de conta.
 
 ## 6. Decisao
 

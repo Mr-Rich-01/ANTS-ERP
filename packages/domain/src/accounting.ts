@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { Prisma, PrismaClient } from '@ants/database';
-import { round2 } from '@ants/shared';
+import { formatMZN, round2 } from '@ants/shared';
 import type { RequestContext } from './context';
 import { requireCompany } from './context';
 import { requirePermission, hasPermission } from './permissions';
@@ -16,6 +16,72 @@ export type NormalBalance = 'DEBIT' | 'CREDIT';
 export type AccountingJournalType = 'GENERAL' | 'SALES' | 'PURCHASES' | 'CASH' | 'BANK' | 'PAYROLL' | 'ADJUSTMENT' | 'OPENING';
 export type FiscalStatus = 'OPEN' | 'CLOSED' | 'LOCKED';
 export type JournalEntryStatus = 'DRAFT' | 'POSTED' | 'REVERSED';
+
+export function accountingJournalTypeLabel(type: AccountingJournalType | null | undefined): string {
+  const labels: Record<AccountingJournalType, string> = {
+    GENERAL: 'Geral',
+    SALES: 'Vendas',
+    PURCHASES: 'Compras',
+    CASH: 'Caixa',
+    BANK: 'Banco',
+    PAYROLL: 'Salarios',
+    ADJUSTMENT: 'Ajuste',
+    OPENING: 'Abertura',
+  };
+  return type ? labels[type] : 'Todos';
+}
+
+export function ledgerAccountTypeLabel(type: LedgerAccountType): string {
+  const labels: Record<LedgerAccountType, string> = {
+    ASSET: 'Activo',
+    LIABILITY: 'Passivo',
+    EQUITY: 'Capital proprio',
+    REVENUE: 'Receita',
+    EXPENSE: 'Despesa',
+  };
+  return labels[type];
+}
+
+export function normalBalanceLabel(value: NormalBalance): string {
+  return value === 'DEBIT' ? 'Devedora' : 'Credora';
+}
+
+export function journalEntryStatusLabel(status: JournalEntryStatus): string {
+  const labels: Record<JournalEntryStatus, string> = {
+    DRAFT: 'Rascunho',
+    POSTED: 'Publicado',
+    REVERSED: 'Revertido',
+  };
+  return labels[status];
+}
+
+export function accountingSourceTypeLabel(value: string | null | undefined): string {
+  if (!value) return 'Manual';
+  const labels: Record<string, string> = {
+    INVOICE: 'Factura',
+    CUSTOMER_PAYMENT: 'Recebimento de cliente',
+    PURCHASE_RECEIPT: 'Recepcao de compra',
+    SUPPLIER_PAYMENT: 'Pagamento a fornecedor',
+    REVERSAL: 'Estorno',
+  };
+  return labels[value] ?? value;
+}
+
+export function accountingEventLabel(value: string | null | undefined): string {
+  if (!value) return '';
+  const labels: Record<string, string> = {
+    SALE_ISSUED: 'Factura emitida',
+    RECEIPT_POSTED: 'Recebimento registado',
+    PURCHASE_RECEIVED: 'Recepcao de compra',
+    SUPPLIER_PAYMENT_POSTED: 'Pagamento a fornecedor registado',
+    REVERSAL_POSTED: 'Estorno registado',
+  };
+  return labels[value] ?? value;
+}
+
+export function accountingMoneyLabel(value: number): string {
+  return formatMZN(round2(value));
+}
 
 export interface LedgerAccountItem {
   id: string;
@@ -1149,6 +1215,7 @@ export interface TrialBalanceReport {
   totalClosingDebit: number;
   totalClosingCredit: number;
   isBalanced: boolean;
+  isGlobalBalanceCheckAvailable: boolean;
   movementCount: number;
 }
 
@@ -1454,6 +1521,7 @@ export async function getTrialBalanceReport(db: PrismaClient, ctx: RequestContex
     totalClosingDebit: round2(totalClosingDebit),
     totalClosingCredit: round2(totalClosingCredit),
     isBalanced: totalDebit === totalCredit,
+    isGlobalBalanceCheckAvailable: !filters.ledgerAccountId,
     movementCount,
   };
 }
@@ -1467,10 +1535,6 @@ function accountingCsvLine(values: Array<string | number | null | undefined>): s
   return values.map((v) => accountingCsvEscape(v === null || v === undefined ? '' : String(v))).join(';');
 }
 
-function accountingMoney(value: number): string {
-  return value.toFixed(2).replace('.', ',');
-}
-
 export async function exportAccountingJournalCsv(db: PrismaClient, ctx: RequestContext, filters: AccountingReportFilters = {}): Promise<{ filename: string; content: string }> {
   requirePermission(ctx, 'reports.export');
   const report = await getAccountingJournalReport(db, ctx, filters);
@@ -1482,19 +1546,19 @@ export async function exportAccountingJournalCsv(db: PrismaClient, ctx: RequestC
       l.postingDate ?? l.entryDate,
       l.entryNumber,
       l.journalCode,
-      l.status,
-      l.sourceType,
-      l.accountingEvent,
+      journalEntryStatusLabel(l.status),
+      accountingSourceTypeLabel(l.sourceType),
+      accountingEventLabel(l.accountingEvent),
       l.reference,
       l.description,
       l.accountCode,
       l.accountName,
       l.lineDescription,
-      accountingMoney(l.debit),
-      accountingMoney(l.credit),
+      accountingMoneyLabel(l.debit),
+      accountingMoneyLabel(l.credit),
       l.postedByName ?? l.postedById,
     ])),
-    accountingCsvLine(['Totais', '', '', '', '', '', '', '', '', '', '', accountingMoney(report.totalDebit), accountingMoney(report.totalCredit), report.isBalanced ? 'Balanceado' : 'Desequilibrado']),
+    accountingCsvLine(['Totais', '', '', '', '', '', '', '', '', '', '', accountingMoneyLabel(report.totalDebit), accountingMoneyLabel(report.totalCredit), report.isBalanced ? 'Balanceado' : 'Desequilibrado']),
   ];
   return { filename: `contabilidade-diario-${report.filters.from}-${report.filters.to}.csv`, content: lines.join('\n') };
 }
@@ -1506,10 +1570,10 @@ export async function exportAccountLedgerCsv(db: PrismaClient, ctx: RequestConte
     accountingCsvLine(['Razão / extracto por conta']),
     accountingCsvLine(['Conta', report.account ? `${report.account.code} - ${report.account.name}` : '']),
     accountingCsvLine(['Período', `${report.filters.from} a ${report.filters.to}`]),
-    accountingCsvLine(['Saldo inicial', accountingMoney(report.openingBalance)]),
+    accountingCsvLine(['Saldo inicial', accountingMoneyLabel(Math.abs(report.openingBalance))]),
     accountingCsvLine(['Data', 'Número', 'Origem', 'Evento', 'Referência', 'Descrição', 'Débito', 'Crédito', 'Saldo acumulado']),
-    ...report.rows.map((r) => accountingCsvLine([r.date, r.entryNumber, r.sourceType, r.accountingEvent, r.reference, r.description, accountingMoney(r.debit), accountingMoney(r.credit), accountingMoney(r.balance)])),
-    accountingCsvLine(['Totais', '', '', '', '', '', accountingMoney(report.totalDebit), accountingMoney(report.totalCredit), accountingMoney(report.closingBalance)]),
+    ...report.rows.map((r) => accountingCsvLine([r.date, r.entryNumber, accountingSourceTypeLabel(r.sourceType), accountingEventLabel(r.accountingEvent), r.reference, r.description, accountingMoneyLabel(r.debit), accountingMoneyLabel(r.credit), accountingMoneyLabel(Math.abs(r.balance))])),
+    accountingCsvLine(['Totais', '', '', '', '', '', accountingMoneyLabel(report.totalDebit), accountingMoneyLabel(report.totalCredit), accountingMoneyLabel(Math.abs(report.closingBalance))]),
   ];
   const code = report.account?.code ?? 'conta';
   return { filename: `contabilidade-razao-${code}-${report.filters.from}-${report.filters.to}.csv`, content: lines.join('\n') };
@@ -1522,9 +1586,14 @@ export async function exportTrialBalanceCsv(db: PrismaClient, ctx: RequestContex
     accountingCsvLine(['Balancete']),
     accountingCsvLine(['Período', `${report.filters.from} a ${report.filters.to}`]),
     accountingCsvLine(['Conta', 'Nome da conta', 'Tipo', 'Natureza', 'Saldo inicial', 'Débito', 'Crédito', 'Saldo devedor', 'Saldo credor']),
-    ...report.rows.map((r) => accountingCsvLine([r.code, r.name, r.accountType, r.normalBalance, accountingMoney(r.openingBalance), accountingMoney(r.debit), accountingMoney(r.credit), accountingMoney(r.closingDebit), accountingMoney(r.closingCredit)])),
-    accountingCsvLine(['Totais', '', '', '', '', accountingMoney(report.totalDebit), accountingMoney(report.totalCredit), accountingMoney(report.totalClosingDebit), accountingMoney(report.totalClosingCredit)]),
-    accountingCsvLine(['Validação', report.isBalanced ? 'Débito = crédito' : 'Débito diferente de crédito']),
+    ...report.rows.map((r) => accountingCsvLine([r.code, r.name, ledgerAccountTypeLabel(r.accountType), normalBalanceLabel(r.normalBalance), accountingMoneyLabel(Math.abs(r.openingBalance)), accountingMoneyLabel(r.debit), accountingMoneyLabel(r.credit), accountingMoneyLabel(r.closingDebit), accountingMoneyLabel(r.closingCredit)])),
+    accountingCsvLine(['Totais', '', '', '', '', accountingMoneyLabel(report.totalDebit), accountingMoneyLabel(report.totalCredit), accountingMoneyLabel(report.totalClosingDebit), accountingMoneyLabel(report.totalClosingCredit)]),
+    accountingCsvLine([
+      'Validacao',
+      report.isGlobalBalanceCheckAvailable
+        ? report.isBalanced ? 'Debito = credito' : 'Debito diferente de credito'
+        : 'Balancete filtrado; remova o filtro de conta para validar o equilibrio global',
+    ]),
   ];
   return { filename: `contabilidade-balancete-${report.filters.from}-${report.filters.to}.csv`, content: lines.join('\n') };
 }

@@ -146,17 +146,22 @@ Passos:
 7. Pesquisar por referencia ou descricao.
 8. Exportar CSV do diario e confirmar que respeita os filtros.
 9. Abrir `Razao / Extracto`, escolher uma conta e confirmar saldo inicial,
-   movimentos, debitos, creditos e saldo acumulado.
+   movimentos, debitos, creditos e saldo acumulado em MT, sem sufixos `Db`,
+   `Cr` ou `Bd` no valor monetario.
 10. Exportar CSV do razao.
-11. Abrir `Balancete` e confirmar total debito = total credito.
-12. Confirmar estado vazio claro para periodo sem movimentos.
-13. Exportar CSV do balancete.
-14. Clicar `Imprimir / Guardar PDF` e confirmar layout limpo.
-15. Confirmar que nao ha mock, placeholder vendido como pronto ou botoes mortos.
+11. Abrir `Balancete` sem filtro de conta e confirmar total debito = total
+   credito.
+12. Filtrar uma conta, por exemplo `111 - Caixa`, e confirmar mensagem neutra
+   de balancete filtrado em vez de erro global.
+13. Confirmar estado vazio claro para periodo sem movimentos.
+14. Exportar CSV do balancete e confirmar labels em portugues.
+15. Clicar `Imprimir / Guardar PDF` e confirmar layout limpo.
+16. Confirmar que nao ha mock, placeholder vendido como pronto, botao morto ou
+   botao activo de lancamento manual.
 
 Limites aceites neste fluxo: sem fecho anual, DRE oficial, balanco oficial,
 fiscal/AT, assinatura digital, reconciliacao bancaria avancada, centros de
-custo avancados ou importacao SAF-T.
+custo avancados, lancamento manual contabilistico ou importacao SAF-T.
 
 ## 3C. Impressao/PDF comercial P1-03
 
