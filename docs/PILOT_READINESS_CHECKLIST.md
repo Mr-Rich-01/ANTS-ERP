@@ -1,6 +1,6 @@
 # Checklist de prontidao de piloto - ANTS ERP
 
-_Ultima actualizacao: 2026-07-06_
+_Ultima actualizacao: 2026-07-07_
 
 Usar esta checklist antes de qualquer piloto controlado. Um item em aberto deve
 ser classificado como bloqueante, restricao aceite ou backlog futuro.
@@ -10,8 +10,11 @@ ser classificado como bloqueante, restricao aceite ou backlog futuro.
 - V1 candidata a demo externa apos UAT interna de 2026-07-06.
 - Resultado: aprovado com ressalvas, sem bloqueadores.
 - Evidencia: `docs/UAT_INTERNAL_DEMO_REPORT.md`.
-- Ressalvas antes da demo externa: revalidar logout em browser limpo e corrigir
-  o titulo visual fixo `Factura FT 2026/0337`.
+- Ajustes pre-demo em `fix/demo-ux-before-client-demo`: titulo visual fixo removido,
+  modulos futuros retirados da navegacao principal/neutralizados como "Futuro" e
+  logout revisto sem alteracao funcional; o browser integrado bloqueou a revalidacao
+  visual limpa apos `POST /login 303`, por isso o smoke final deve ser repetido em
+  browser externo/limpo antes da demo externa.
 - Esta decisao nao marca producao pronta e nao autoriza piloto real sem staging
   validado, backup pre-piloto e sign-off assinado.
 

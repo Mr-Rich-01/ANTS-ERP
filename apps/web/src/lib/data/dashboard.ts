@@ -98,8 +98,8 @@ export const alerts = (
     ['alert-triangle', 'var(--warn)', 'var(--warn-bg)', 'Stock baixo', '14 produtos abaixo do mínimo'],
     ['calendar-clock', 'var(--warn)', 'var(--warn-bg)', 'Produtos a expirar', '6 lotes vencem nos próximos 30 dias'],
     ['file-clock', 'var(--bad)', 'var(--bad-bg)', 'Facturas vencidas', '9 facturas · 187 200,00 MT em atraso'],
-    ['file-signature', 'var(--warn)', 'var(--warn-bg)', 'Contratos a renovar', '3 contratos vencem esta semana'],
-    ['banknote', 'var(--info)', 'var(--info-bg)', 'Salários por processar', 'Processamento de Junho pendente'],
+    ['receipt-text', 'var(--info)', 'var(--info-bg)', 'Facturas por cobrar', '5 facturas aguardam seguimento'],
+    ['bar-chart-3', 'var(--info)', 'var(--info-bg)', 'Relatorios V1', 'Exportacao CSV disponivel para a demo'],
     ['lock-open', 'var(--warn)', 'var(--warn-bg)', 'Caixas abertas', '2 caixas ainda não foram fechadas'],
   ] as const
 ).map(([icon, color, bg, title, desc]) => ({ icon, color, bg, title, desc }));

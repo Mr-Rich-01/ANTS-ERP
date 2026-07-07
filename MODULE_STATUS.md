@@ -1,14 +1,14 @@
 # MODULE_STATUS — ANTS ERP
 
-_Última actualização: 2026-07-06_
+_Última actualização: 2026-07-07_
 
 Estado vivo do projecto. O conhecimento permanente (arquitectura, regras, comandos) está
 em [`CLAUDE.md`](CLAUDE.md).
 
 **Último commit funcional:** pendente nesta branch (`feat(print): add professional document printing`)
 **Fase concluída:** `P1-03 — Impressao/PDF profissional`
-**UAT interna/demo:** V1 candidata a demo externa apos UAT interna, aprovada com ressalvas em 2026-07-06 (`docs/UAT_INTERNAL_DEMO_REPORT.md`)
-**Próximo passo:** decisao explicita sobre P1-04: fecho de caixa, impressao termica POS, restaurante/bar com mesas ou scanner/codigo de barras real
+**UAT interna/demo:** V1 candidata a demo externa apos UAT interna, aprovada com ressalvas em 2026-07-06; ajustes UX pre-demo registados em `fix/demo-ux-before-client-demo`
+**Próximo passo:** concluir smoke final em browser externo/limpo antes da demo externa; nao iniciar P1-04
 
 ---
 
@@ -194,6 +194,15 @@ verdes: `prisma validate`, `prisma migrate status`, `pnpm db:generate`, `pnpm ty
 externa: revalidar logout em browser limpo e corrigir titulo visual fixo
 `Factura FT 2026/0337` em `apps/web/src/lib/erp-nav.ts`. Esta UAT nao marca producao pronta,
 nao autoriza piloto real e nao inicia P1-04.
+
+**Fix pre-demo UX (2026-07-07):** em `fix/demo-ux-before-client-demo`, removido o titulo visual
+fixo `Factura FT 2026/0337` do shell da factura, retirados Producao/Contratos/RH da navegacao
+principal e substituidas as respectivas paginas por avisos "Futuro" sem botoes operacionais ou
+dados que parecam prontos. Dashboard deixou de anunciar Contratos/Salarios como pendencias reais
+e os atalhos rapidos visiveis passaram a navegar para areas V1. Logout foi revisto sem alteracao
+funcional; o browser integrado bloqueou a revalidacao visual apos o `POST /login 303`, por isso o
+smoke final de logout deve ser repetido em browser externo/limpo antes da demo externa. Nao marca
+producao pronta, nao autoriza piloto real e nao inicia P1-04.
 
 **Hardening pré-produção P0-01 (2026-07-02):** seed demo bloqueado em `production`
 antes de criar o Prisma Client; credenciais demo removidas da interface de

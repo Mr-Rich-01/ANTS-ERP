@@ -40,7 +40,7 @@ export const SCREENS: Record<ScreenId, ScreenMeta> = {
   pos: { id: 'pos', route: '/pos', title: 'Ponto de Venda', group: 'Principal', icon: 'scan-barcode' },
   invoices: { id: 'invoices', route: '/facturas', title: 'Facturas', group: 'Vendas & Facturação', icon: 'receipt-text' },
   invoiceNew: { id: 'invoiceNew', route: '/facturas/nova', title: 'Nova factura', group: 'Vendas & Facturação', icon: 'receipt-text' },
-  invoiceDoc: { id: 'invoiceDoc', route: '/facturas/documento', title: 'Factura FT 2026/0337', group: 'Vendas & Facturação', icon: 'receipt-text' },
+  invoiceDoc: { id: 'invoiceDoc', route: '/facturas/documento', title: 'Documento de factura', group: 'Vendas & Facturação', icon: 'receipt-text' },
   clients: { id: 'clients', route: '/clientes', title: 'Clientes', group: 'Vendas & Facturação', icon: 'user-round' },
   suppliers: { id: 'suppliers', route: '/fornecedores', title: 'Fornecedores', group: 'Compras', icon: 'building' },
   receiving: { id: 'receiving', route: '/recepcao', title: 'Recepção de mercadorias', group: 'Compras', icon: 'package-check' },
@@ -88,7 +88,7 @@ const NAV_PERMISSION: Partial<Record<ScreenId, string>> = {
   admin: 'users.manage',
 };
 
-// navDef exacto do design.
+// Navegacao da demo V1: modulos futuros ficam fora do menu principal.
 export const NAV_GROUPS: NavGroup[] = [
   { label: 'PRINCIPAL', items: ['dashboard', 'pos'].map(toNav) },
   {
@@ -99,11 +99,10 @@ export const NAV_GROUPS: NavGroup[] = [
       toNav('purchases'),
       toNav('suppliers'),
       toNav('products'),
-      toNav('production'),
     ],
   },
-  { label: 'FINANÇAS', items: ['cash', 'accounting', 'contracts'].map(toNav) },
-  { label: 'GESTÃO', items: ['hr', 'reports', 'admin'].map(toNav) },
+  { label: 'FINANÇAS', items: ['cash', 'accounting'].map(toNav) },
+  { label: 'GESTÃO', items: ['reports', 'admin'].map(toNav) },
 ];
 
 function toNav(id: string): NavItem {

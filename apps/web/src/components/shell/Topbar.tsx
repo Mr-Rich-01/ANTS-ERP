@@ -19,8 +19,8 @@ const QUICK_ITEMS: Array<{ icon: string; label: string; href?: string }> = [
   { icon: 'shopping-cart', label: 'Nova venda', href: '/pos' },
   { icon: 'receipt-text', label: 'Nova factura', href: '/facturas/nova' },
   { icon: 'banknote', label: 'Novo pagamento', href: '/tesouraria' },
-  { icon: 'user-plus', label: 'Novo cliente' },
-  { icon: 'building-2', label: 'Novo fornecedor' },
+  { icon: 'user-plus', label: 'Novo cliente', href: '/clientes' },
+  { icon: 'building-2', label: 'Novo fornecedor', href: '/fornecedores' },
   { icon: 'package-plus', label: 'Novo produto', href: '/produtos' },
 ];
 

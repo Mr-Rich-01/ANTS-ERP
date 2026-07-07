@@ -82,6 +82,17 @@
 | UAT-002 | Facturacao/Shell | `apps/web/src/lib/erp-nav.ts` ainda contem titulo fixo `Factura FT 2026/0337` para `/facturas/documento`. Afecta o titulo visual/shell, nao a regra financeira nem o conteudo do documento. | Medio | Confirmado | Corrigir antes da demo externa para evitar confusao visual. |
 | UAT-003 | Demo tooling | O browser integrado ficou preso numa pagina interna de erro apos tentativa de submissao programatica e bloqueou navegacao local subsequente. | Baixo | Limitacao de ferramenta | Usar browser externo/limpo para smoke manual final, sem alterar o produto. |
 
+## Ajustes pre-demo - 2026-07-07
+
+- UAT-001: fluxo de logout revisto sem alteracao funcional; a tentativa de revalidacao visual em
+  aba nova chegou a `POST /login 303`, mas o browser integrado bloqueou a continuacao da navegacao.
+  Repetir smoke em browser externo/limpo antes da demo externa.
+- UAT-002: corrigido. O shell da rota `/facturas/documento` deixou de usar o titulo fixo
+  `Factura FT 2026/0337` e passou a usar titulo generico.
+- UAT-003: mitigado para a demo. Modulos futuros foram removidos da navegacao principal ou marcados
+  claramente como "Futuro", sem botoes operacionais nem dados simulados como prontos.
+- Esta actualizacao nao marca producao pronta, nao autoriza piloto real e nao inicia P1-04.
+
 ## Limitacoes aceites para demo
 
 - PDF via navegador.
@@ -98,4 +109,4 @@
 
 Aprovado com ressalvas.
 
-Nao ha bloqueadores tecnicos nas suites nem no build. Antes da demo externa, recomenda-se revalidar logout num browser limpo e corrigir o titulo fixo da factura no shell. Esta UAT nao autoriza piloto real, producao real nem inicio automatico da P1-04.
+Nao ha bloqueadores tecnicos nas suites nem no build. Antes da demo externa, repetir o smoke de logout num browser externo/limpo por causa da limitacao do browser integrado. Esta UAT nao autoriza piloto real, producao real nem inicio automatico da P1-04.

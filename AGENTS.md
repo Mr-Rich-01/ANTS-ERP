@@ -296,9 +296,11 @@ passwords não demonstrativas.
 - V1 candidata a demo externa apos UAT interna em 2026-07-06, aprovada com
   ressalvas e registada em `docs/UAT_INTERNAL_DEMO_REPORT.md`; nao marca
   producao pronta, nao autoriza piloto real e nao inicia P1-04.
+- Ajustes UX pre-demo registados: titulo fixo da factura removido, modulos futuros
+  neutralizados como futuro e logout a repetir em browser externo/limpo porque o
+  browser integrado bloqueou a revalidacao visual limpa.
 - Commit base funcional antes da P0-03.0: `a1d608b`.
-- Proximo passo: decisao explicita sobre P1-04 (fecho de caixa, impressao
-  termica POS, restaurante/bar com mesas ou scanner/codigo de barras real).
+- Proximo passo: concluir smoke final em browser externo/limpo antes da demo externa.
 - Nao iniciar P1-04 nem piloto real sem decisao explicita, backup, staging
   validado e checklist assinada.
 - `MODULE_STATUS.md` é a fonte principal para progresso e próximos passos.
