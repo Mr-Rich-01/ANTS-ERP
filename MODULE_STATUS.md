@@ -1,14 +1,14 @@
 # MODULE_STATUS — ANTS ERP
 
-_Última actualização: 2026-07-07_
+_Última actualização: 2026-07-08_
 
 Estado vivo do projecto. O conhecimento permanente (arquitectura, regras, comandos) está
 em [`CLAUDE.md`](CLAUDE.md).
 
 **Último commit funcional:** pendente nesta branch (`fix(accounting): polish V1 ledger presentation`)
 **Fase concluída:** `P1-04 — Finalizar Contabilidade V1`
-**UAT interna/demo:** V1 candidata a demo externa apos UAT interna, aprovada com ressalvas em 2026-07-06; P1-04 acrescenta Contabilidade V1 pronta para UAT/demo com limites
-**Próximo passo:** smoke manual final em browser externo/limpo para demo externa; nao iniciar P1-05
+**UAT interna/demo:** V1 candidata a demo externa apos UAT interna, aprovada com ressalvas em 2026-07-06; P1-04 acrescenta Contabilidade V1 pronta para UAT/demo com limites; demo final check registado em `docs/DEMO_FINAL_CHECK.md` em 2026-07-08 como pronto com ressalvas menores
+**Próximo passo:** repetir manualmente em browser externo/limpo apenas logout visual e clique final POS antes da demo externa; nao iniciar P1-05
 
 ---
 
