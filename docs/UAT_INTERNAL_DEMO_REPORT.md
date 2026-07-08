@@ -105,6 +105,22 @@
 - Esta actualizacao nao altera a decisao historica da UAT de 2026-07-06, nao
   marca producao pronta, nao autoriza piloto real e nao inicia P1-05.
 
+## Actualizacao P1-05 - 2026-07-08
+
+- P1-05 foi iniciada por decisao explicita posterior a P1-04.
+- `/tesouraria/fecho` passou de relatorio diario simples para Fecho de Caixa V1
+  operacional: data, conta, caixa/utilizador, saldo inicial, entradas, saidas,
+  vendas POS, recebimentos, pagamentos, transferencias, saldo esperado, valor
+  contado, diferenca, status `Sem diferenca`/`Sobra`/`Falta`, observacoes,
+  CSV e impressao/guardar PDF pelo navegador.
+- Nao foi criado schema, migration ou modelo de sessao/fecho. O valor contado e
+  as observacoes nao sao persistidos; aparecem apenas no relatorio preparado e
+  imprimivel.
+- A validacao especifica da fase usa `pnpm test:integration:treasury:cash-closing`
+  (11/11).
+- Esta actualizacao nao altera a decisao historica da UAT de 2026-07-06, nao
+  marca producao pronta, nao autoriza piloto real e nao inicia P1-06.
+
 ## Limitacoes aceites para demo
 
 - PDF via navegador.
@@ -116,9 +132,11 @@
 - Sem offline.
 - Sem scanner real.
 - Sem salarios/producao avancados.
+- Sem abertura formal de turno, aprovacao obrigatoria, bloqueio apos fecho,
+  gaveta fisica, impressao termica ou fecho de caixa persistido formal.
 
 ## Decisao
 
 Aprovado com ressalvas.
 
-Nao ha bloqueadores tecnicos nas suites nem no build. Antes da demo externa, repetir o smoke de logout num browser externo/limpo por causa da limitacao do browser integrado. Esta UAT nao autoriza piloto real, producao real nem inicio automatico da P1-04.
+Nao ha bloqueadores tecnicos nas suites nem no build. Antes da demo externa, repetir o smoke de logout num browser externo/limpo por causa da limitacao do browser integrado. Esta UAT nao autoriza piloto real, producao real nem inicio automatico da proxima fase.

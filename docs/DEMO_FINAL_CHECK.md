@@ -63,6 +63,7 @@ Pronto com ressalvas menores.
 | Contabilidade | Balancete filtrado sem erro global | OK | Suite `accounting:reports` 14/14 cobre o comportamento |
 | Contabilidade | Novo lancamento activo | OK | Nao foi encontrado `Novo lancamento` activo/visivel |
 | Tesouraria | Abrir `/tesouraria` | OK | Pagina autenticada respondeu `200`, saldos e movimentos reais visiveis |
+| Tesouraria | Fecho de Caixa V1 | OK | `/tesouraria/fecho` prepara relatorio operacional com saldo esperado, valor contado, diferenca, status, CSV e impressao; `pnpm test:integration:treasury:cash-closing` 11/11 |
 | Stock | Abrir `/inventario` | OK | Pagina autenticada respondeu `200`, armazens e contagem visiveis |
 | Navegacao | Modulos futuros fora da navegacao principal | OK | Produccao, Contratos e RH nao aparecem como prontos no menu principal |
 | Modulos futuros | Paginas directas | OK | `/producao`, `/contratos` e `/rh` respondem `200` com aviso `Futuro` |
@@ -84,6 +85,8 @@ Pronto com ressalvas menores.
 - sem fecho anual;
 - sem DRE/balanco oficial;
 - sem fiscal/AT.
+- sem fecho de caixa persistido formal, turnos, aprovacao obrigatoria, bloqueio
+  apos fecho, gaveta fisica ou reconciliacao bancaria avancada.
 
 ## Decisao
 

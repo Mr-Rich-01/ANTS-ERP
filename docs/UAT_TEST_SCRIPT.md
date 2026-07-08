@@ -1,6 +1,6 @@
 # Roteiro comercial de testes UAT - ANTS ERP
 
-_Ultima actualizacao: 2026-07-07_
+_Ultima actualizacao: 2026-07-08_
 
 Executar este roteiro com dados ficticios e ambiente identificado. Registar o
 resultado de cada passo como `Aprovado`, `Reprovado`, `Bloqueado` ou `Nao
@@ -92,7 +92,7 @@ Passos:
 15. Tentar vender quantidade superior ao stock e confirmar erro claro.
 
 Limites aceites neste fluxo: sem mesas, cozinha, comandas, garcons, turnos,
-fecho de caixa, offline, devolucao POS, scanner real ou impressao termica
+fecho persistido, offline, devolucao POS, scanner real ou impressao termica
 avancada.
 
 ## 3B. Fluxo relatorios V1
@@ -126,6 +126,41 @@ Limites aceites neste fluxo: CSV simples pronto; impressao/guardar PDF via
 navegador pronto; PDF fiscal/automatico, Excel avancado, salarios, producao,
 BI avancado, reconciliacao bancaria e relatorios personalizados ficam para
 fases futuras.
+
+## 3C. Fecho de Caixa V1
+
+Dados ficticios sugeridos:
+
+- Conta: `Caixa UAT` ou `Caixa Principal`.
+- Periodo: data com movimentos de POS/recibos/pagamentos.
+
+Passos:
+
+1. Abrir `/tesouraria/fecho`.
+2. Seleccionar a data ficticia com movimentos.
+3. Seleccionar a conta de tesouraria.
+4. Confirmar saldo inicial, entradas, saidas e saldo esperado.
+5. Confirmar resumo de vendas POS, recebimentos, pagamentos e transferencias.
+6. Confirmar lista de movimentos com origem, metodo, entrada, saida, saldo,
+   referencia e utilizador quando disponivel.
+7. Informar valor contado igual ao esperado e confirmar `Sem diferenca`.
+8. Informar valor contado maior e confirmar `Sobra`.
+9. Informar valor contado menor e confirmar `Falta`.
+10. Adicionar observacoes ficticias.
+11. Clicar `Preparar relatorio de fecho` e confirmar que nao ha botao
+    definitivo de gravacao/fecho formal.
+12. Clicar `Imprimir / Guardar PDF` e confirmar cabecalho da empresa, conta,
+    caixa/utilizador, resumo, valor esperado, valor contado, diferenca,
+    observacoes e assinaturas de caixa/supervisor.
+13. Exportar CSV e confirmar data, conta, tipo, origem, entrada, saida, saldo,
+    metodo, referencia e utilizador.
+14. Confirmar que o calculo nao altera movimentos nem saldos originais.
+
+Limites aceites neste fluxo: Fecho de Caixa V1 e operacional, sem persistencia
+formal. Valor contado e observacoes nao sao gravados; aparecem apenas no
+relatorio preparado/imprimivel. Turnos, aprovacao obrigatoria, bloqueio apos
+fecho, gaveta fisica, impressao termica e reconciliacao bancaria avancada ficam
+futuros.
 
 ## 3D. Fluxo Contabilidade V1
 
@@ -163,7 +198,7 @@ Limites aceites neste fluxo: sem fecho anual, DRE oficial, balanco oficial,
 fiscal/AT, assinatura digital, reconciliacao bancaria avancada, centros de
 custo avancados, lancamento manual contabilistico ou importacao SAF-T.
 
-## 3C. Impressao/PDF comercial P1-03
+## 3E. Impressao/PDF comercial P1-03
 
 Dados ficticios obrigatorios. Nao usar dados reais em documentos, screenshots
 ou PDFs guardados durante UAT.
@@ -180,9 +215,11 @@ Passos:
 6. Confirmar numero, data, cliente, factura relacionada, metodo, conta de
    tesouraria, valor pago, caixa/emissor e observacoes/anulacao se existirem.
 7. Clicar `Imprimir / Guardar PDF` e confirmar layout limpo.
-8. Abrir `/tesouraria/fecho`, seleccionar conta e data ficticias e imprimir.
+8. Abrir `/tesouraria/fecho`, seleccionar conta e data ficticias, preparar o
+   relatorio de fecho e imprimir.
 9. Confirmar saldo inicial, entradas, saidas, recebimentos, pagamentos,
-   transferencias, saldo final, total do dia e assinaturas.
+   transferencias, saldo esperado, valor contado/diferenca quando informado,
+   observacoes e assinaturas.
 10. Abrir `/relatorios`, gerar `Relatorio de vendas` e imprimir/guardar PDF.
 11. Confirmar periodo, filtros aplicados, totais, tabelas e data/hora de
     geracao.

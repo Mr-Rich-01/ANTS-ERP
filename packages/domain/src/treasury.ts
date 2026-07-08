@@ -52,6 +52,61 @@ export interface TreasuryMovementItem {
   reversesId: string | null;
   reversalReason: string | null;
   reversalBlockedReason: string | null;
+  createdBy: string | null;
+}
+
+export type CashClosingDifferenceStatus = 'PENDING' | 'NONE' | 'SURPLUS' | 'SHORTAGE';
+export type CashClosingMethod = 'CASH' | 'MPESA' | 'EMOLA' | 'CARD_BANK' | 'TRANSFER' | 'OTHER';
+
+export interface CashClosingCountInput {
+  cash?: number;
+  mpesa?: number;
+  emola?: number;
+  cardBank?: number;
+  observations?: string;
+}
+
+export interface CashClosingCount {
+  cash: number;
+  mpesa: number;
+  emola: number;
+  cardBank: number;
+  total: number;
+  provided: boolean;
+  observations: string | null;
+}
+
+export interface CashClosingMethodTotal {
+  method: CashClosingMethod;
+  label: string;
+  expectedIn: number;
+  expectedOut: number;
+  counted: number;
+}
+
+export interface CashClosingMovementItem extends TreasuryMovementItem {
+  originLabel: string;
+  methodLabel: string;
+  entry: number;
+  exit: number;
+  userLabel: string;
+  reference: string;
+}
+
+export interface CashClosingReport {
+  daily: DailyReport;
+  expectedTotal: number;
+  counted: CashClosingCount;
+  difference: number;
+  differenceStatus: CashClosingDifferenceStatus;
+  differenceStatusLabel: string;
+  methodTotals: CashClosingMethodTotal[];
+  movements: CashClosingMovementItem[];
+  posSalesTotal: number;
+  receiptTotal: number;
+  supplierPaymentTotal: number;
+  transferTotal: number;
+  hasFormalPersistence: false;
 }
 
 export interface TreasuryTransferReversalResult {
@@ -75,6 +130,7 @@ export interface TreasuryKpis {
 export interface DailyReport {
   accountId: string;
   accountName: string;
+  accountType: TreasuryAccountType;
   date: string;
   openingBalance: number;
   totalIn: number;
@@ -107,6 +163,7 @@ function mapMovement(m: {
   status: string;
   reversesId: string | null;
   reversalReason: string | null;
+  createdBy: string | null;
 }): TreasuryMovementItem {
   const origin = {
     source: m.source,
@@ -135,7 +192,90 @@ function mapMovement(m: {
     reversesId: m.reversesId,
     reversalReason: m.reversalReason,
     reversalBlockedReason: getTreasuryMovementReversalBlockReason(origin),
+    createdBy: m.createdBy,
   };
+}
+
+const cashClosingCountInput = z.object({
+  cash: z.coerce.number().min(0, 'O valor contado em dinheiro nao pode ser negativo.').optional(),
+  mpesa: z.coerce.number().min(0, 'O valor contado em M-Pesa nao pode ser negativo.').optional(),
+  emola: z.coerce.number().min(0, 'O valor contado em e-Mola nao pode ser negativo.').optional(),
+  cardBank: z.coerce.number().min(0, 'O valor contado em cartao/banco nao pode ser negativo.').optional(),
+  observations: z.string().trim().max(500, 'As observacoes devem ter no maximo 500 caracteres.').optional(),
+});
+
+const METHOD_LABEL: Record<CashClosingMethod, string> = {
+  CASH: 'Dinheiro',
+  MPESA: 'M-Pesa',
+  EMOLA: 'e-Mola',
+  CARD_BANK: 'Cartao/Banco',
+  TRANSFER: 'Transferencia',
+  OTHER: 'Outro',
+};
+
+function normalizeCashClosingCount(input: CashClosingCountInput = {}): CashClosingCount {
+  const parsed = cashClosingCountInput.safeParse(input);
+  if (!parsed.success) throw new ValidationError(parsed.error.issues[0]?.message ?? 'Dados invalidos.');
+  const data = parsed.data;
+  const cash = round2(data.cash ?? 0);
+  const mpesa = round2(data.mpesa ?? 0);
+  const emola = round2(data.emola ?? 0);
+  const cardBank = round2(data.cardBank ?? 0);
+  return {
+    cash,
+    mpesa,
+    emola,
+    cardBank,
+    total: round2(cash + mpesa + emola + cardBank),
+    provided: data.cash !== undefined || data.mpesa !== undefined || data.emola !== undefined || data.cardBank !== undefined,
+    observations: data.observations?.trim() || null,
+  };
+}
+
+function classifyCashClosingDifference(difference: number, provided: boolean): { status: CashClosingDifferenceStatus; label: string } {
+  if (!provided) return { status: 'PENDING', label: 'Contagem por informar' };
+  if (difference === 0) return { status: 'NONE', label: 'Sem diferenca' };
+  if (difference > 0) return { status: 'SURPLUS', label: 'Sobra' };
+  return { status: 'SHORTAGE', label: 'Falta' };
+}
+
+function accountTypeMethod(type: TreasuryAccountType, accountName: string): CashClosingMethod {
+  const name = accountName.toLowerCase();
+  if (type === 'CASH') return 'CASH';
+  if (type === 'MOBILE' && name.includes('m-pesa')) return 'MPESA';
+  if (type === 'MOBILE' && name.includes('mpesa')) return 'MPESA';
+  if (type === 'MOBILE' && name.includes('e-mola')) return 'EMOLA';
+  if (type === 'MOBILE' && name.includes('emola')) return 'EMOLA';
+  if (type === 'MOBILE') return 'OTHER';
+  if (type === 'BANK') return 'CARD_BANK';
+  return 'OTHER';
+}
+
+function paymentMethodToClosingMethod(method: string | null | undefined, accountType: TreasuryAccountType, accountName: string): CashClosingMethod {
+  if (method === 'CASH') return 'CASH';
+  if (method === 'MPESA') return 'MPESA';
+  if (method === 'EMOLA') return 'EMOLA';
+  if (method === 'CARD') return 'CARD_BANK';
+  if (method === 'TRANSFER') return 'TRANSFER';
+  return accountTypeMethod(accountType, accountName);
+}
+
+function originLabel(movement: TreasuryMovementItem): string {
+  if (movement.description?.toLowerCase().includes('pos')) return 'Venda POS';
+  if (movement.movementPurpose === 'RECEIPT_IN' || movement.sourceType === 'RECEIPT' || movement.source === 'RECEIPT') return 'Recebimento de cliente';
+  if (movement.movementPurpose === 'SUPPLIER_PAYMENT_OUT' || movement.sourceType === 'SUPPLIER_PAYMENT' || movement.source === 'SUPPLIER_PAYMENT') return 'Pagamento a fornecedor';
+  if (movement.source === 'TRANSFER' || movement.transferId) return 'Transferencia';
+  if (movement.source === 'REVERSAL') return 'Estorno';
+  if (movement.source === 'MANUAL') return 'Movimento manual';
+  return movement.source || 'Movimento';
+}
+
+function countForMethod(counted: CashClosingCount, method: CashClosingMethod): number {
+  if (method === 'CASH') return counted.cash;
+  if (method === 'MPESA') return counted.mpesa;
+  if (method === 'EMOLA') return counted.emola;
+  if (method === 'CARD_BANK' || method === 'TRANSFER') return counted.cardBank;
+  return 0;
 }
 
 export function getTreasuryMovementReversalBlockReason(movement: TreasuryMovementOrigin): string | null {
@@ -254,6 +394,7 @@ export async function dailyReport(db: PrismaClient, ctx: RequestContext, account
   return {
     accountId: account.id,
     accountName: account.name,
+    accountType: account.type as TreasuryAccountType,
     date: `${String(dayStart.getDate()).padStart(2, '0')}/${String(dayStart.getMonth() + 1).padStart(2, '0')}/${dayStart.getFullYear()}`,
     openingBalance,
     totalIn: round2(totalIn),
@@ -265,6 +406,147 @@ export async function dailyReport(db: PrismaClient, ctx: RequestContext, account
 }
 
 // ─────────────────────────── Helper transaccional ───────────────────────────
+
+/** Prepara o Fecho de Caixa V1 como calculo operacional, sem gravar fecho formal. */
+export async function cashClosingReport(
+  db: PrismaClient,
+  ctx: RequestContext,
+  input: { accountId: string; dateISO?: string; counted?: CashClosingCountInput } | string,
+  dateISO?: string,
+  countedInput?: CashClosingCountInput,
+): Promise<CashClosingReport> {
+  const normalizedInput = typeof input === 'string' ? { accountId: input, dateISO, counted: countedInput } : input;
+  const daily = await dailyReport(db, ctx, normalizedInput.accountId, normalizedInput.dateISO);
+  const companyId = requireCompany(ctx);
+  const counted = normalizeCashClosingCount(normalizedInput.counted);
+  const activeMovements = daily.movements.filter((m) => m.status === 'ACTIVE');
+  const receiptIds = activeMovements.filter((m) => m.sourceType === 'RECEIPT' && m.sourceId).map((m) => m.sourceId!) as string[];
+  const supplierPaymentIds = activeMovements.filter((m) => m.sourceType === 'SUPPLIER_PAYMENT' && m.sourceId).map((m) => m.sourceId!) as string[];
+  const userIds = Array.from(new Set(activeMovements.map((m) => m.createdBy).filter(Boolean) as string[]));
+
+  const [payments, supplierPayments, users] = await Promise.all([
+    receiptIds.length
+      ? db.payment.findMany({ where: { companyId, id: { in: receiptIds } }, select: { id: true, method: true } })
+      : Promise.resolve([]),
+    supplierPaymentIds.length
+      ? db.supplierPayment.findMany({ where: { companyId, id: { in: supplierPaymentIds } }, select: { id: true, method: true } })
+      : Promise.resolve([]),
+    userIds.length
+      ? db.user.findMany({ where: { companyId, id: { in: userIds } }, select: { id: true, name: true, email: true } })
+      : Promise.resolve([]),
+  ]);
+
+  const paymentMethodById = new Map(payments.map((p) => [p.id, p.method]));
+  const supplierPaymentMethodById = new Map(supplierPayments.map((p) => [p.id, p.method]));
+  const userById = new Map(users.map((u) => [u.id, u.name || u.email || u.id]));
+  const methodTotals = new Map<CashClosingMethod, CashClosingMethodTotal>();
+  const ensureMethod = (method: CashClosingMethod): CashClosingMethodTotal => {
+    const existing = methodTotals.get(method);
+    if (existing) return existing;
+    const created = { method, label: METHOD_LABEL[method], expectedIn: 0, expectedOut: 0, counted: countForMethod(counted, method) };
+    methodTotals.set(method, created);
+    return created;
+  };
+  (['CASH', 'MPESA', 'EMOLA', 'CARD_BANK'] as CashClosingMethod[]).forEach(ensureMethod);
+
+  let posSalesTotal = 0;
+  let receiptTotal = 0;
+  let supplierPaymentTotal = 0;
+  let transferTotal = 0;
+  const movements = activeMovements.map<CashClosingMovementItem>((m) => {
+    const sourceMethod =
+      m.sourceType === 'RECEIPT' && m.sourceId
+        ? paymentMethodById.get(m.sourceId)
+        : m.sourceType === 'SUPPLIER_PAYMENT' && m.sourceId
+          ? supplierPaymentMethodById.get(m.sourceId)
+          : null;
+    const method = m.source === 'TRANSFER' || m.transferId ? 'TRANSFER' : paymentMethodToClosingMethod(sourceMethod, daily.accountType, daily.accountName);
+    const total = ensureMethod(method);
+    const entry = m.flow === 'IN' ? m.amount : 0;
+    const exit = m.flow === 'OUT' ? m.amount : 0;
+    total.expectedIn = round2(total.expectedIn + entry);
+    total.expectedOut = round2(total.expectedOut + exit);
+
+    const origin = originLabel(m);
+    if (origin === 'Venda POS') posSalesTotal = round2(posSalesTotal + entry);
+    if (origin === 'Recebimento de cliente' || origin === 'Venda POS') receiptTotal = round2(receiptTotal + entry);
+    if (origin === 'Pagamento a fornecedor') supplierPaymentTotal = round2(supplierPaymentTotal + exit);
+    if (origin === 'Transferencia') transferTotal = round2(transferTotal + m.amount);
+
+    return {
+      ...m,
+      originLabel: origin,
+      methodLabel: METHOD_LABEL[method],
+      entry,
+      exit,
+      userLabel: m.createdBy ? userById.get(m.createdBy) ?? m.createdBy : 'Sem utilizador',
+      reference: m.document ?? m.sourceId ?? m.transferId ?? m.id,
+    };
+  });
+
+  const expectedTotal = round2(daily.closingBalance);
+  const difference = counted.provided ? round2(counted.total - expectedTotal) : 0;
+  const classified = classifyCashClosingDifference(difference, counted.provided);
+  return {
+    daily,
+    expectedTotal,
+    counted,
+    difference,
+    differenceStatus: classified.status,
+    differenceStatusLabel: classified.label,
+    methodTotals: [...methodTotals.values()].map((m) => ({ ...m, expectedIn: round2(m.expectedIn), expectedOut: round2(m.expectedOut) })),
+    movements,
+    posSalesTotal,
+    receiptTotal,
+    supplierPaymentTotal,
+    transferTotal,
+    hasFormalPersistence: false,
+  };
+}
+
+function csvEscape(value: string): string {
+  if (/[",\n\r;]/.test(value)) return `"${value.replace(/"/g, '""')}"`;
+  return value;
+}
+
+function csvLine(values: Array<string | number>): string {
+  return values.map((value) => csvEscape(String(value))).join(';');
+}
+
+function csvMoney(value: number): string {
+  return round2(value).toFixed(2);
+}
+
+export async function exportCashClosingCsv(
+  db: PrismaClient,
+  ctx: RequestContext,
+  input: { accountId: string; dateISO?: string },
+): Promise<{ filename: string; content: string }> {
+  requirePermission(ctx, 'reports.export');
+  const report = await cashClosingReport(db, ctx, input);
+  const lines = [
+    csvLine(['Data', 'Conta', 'Tipo de movimento', 'Origem', 'Entrada', 'Saida', 'Saldo', 'Metodo', 'Referencia', 'Utilizador']),
+    ...report.movements.map((movement) =>
+      csvLine([
+        report.daily.date,
+        report.daily.accountName,
+        movement.flow === 'IN' ? 'Entrada' : 'Saida',
+        movement.originLabel,
+        csvMoney(movement.entry),
+        csvMoney(movement.exit),
+        csvMoney(movement.balanceAfter),
+        movement.methodLabel,
+        movement.reference,
+        movement.userLabel,
+      ]),
+    ),
+  ];
+  const safeDate = (input.dateISO ?? report.daily.date.split('/').reverse().join('-')).replace(/[^0-9-]/g, '');
+  return {
+    filename: `cash-closing-${safeDate}.csv`,
+    content: `${lines.join('\r\n')}\r\n`,
+  };
+}
 
 /**
  * Lança um movimento numa conta dentro de uma transacção. Aplica a regra de saldo

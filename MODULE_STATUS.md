@@ -5,10 +5,10 @@ _Última actualização: 2026-07-08_
 Estado vivo do projecto. O conhecimento permanente (arquitectura, regras, comandos) está
 em [`CLAUDE.md`](CLAUDE.md).
 
-**Último commit funcional:** pendente nesta branch (`fix(accounting): polish V1 ledger presentation`)
-**Fase concluída:** `P1-04 — Finalizar Contabilidade V1`
-**UAT interna/demo:** V1 candidata a demo externa apos UAT interna, aprovada com ressalvas em 2026-07-06; P1-04 acrescenta Contabilidade V1 pronta para UAT/demo com limites; demo final check registado em `docs/DEMO_FINAL_CHECK.md` em 2026-07-08 como pronto com ressalvas menores
-**Próximo passo:** repetir manualmente em browser externo/limpo apenas logout visual e clique final POS antes da demo externa; nao iniciar P1-05
+**Último commit funcional:** pendente nesta branch (`feat(treasury): add cash closing V1`)
+**Fase concluída:** `P1-05 — Fecho de Caixa V1`
+**UAT interna/demo:** V1 candidata a demo externa apos UAT interna, aprovada com ressalvas em 2026-07-06; P1-04 acrescenta Contabilidade V1 pronta para UAT/demo com limites; P1-05 acrescenta Fecho de Caixa V1 operacional sem persistencia formal; demo final check registado em `docs/DEMO_FINAL_CHECK.md` em 2026-07-08 como pronto com ressalvas menores
+**Próximo passo:** smoke manual final em browser externo/limpo para logout, clique final POS e Fecho de Caixa V1 antes da demo externa; nao iniciar P1-06
 
 ---
 
@@ -47,6 +47,7 @@ em [`CLAUDE.md`](CLAUDE.md).
 | **P1-02** | **Relatorios V1 operacionais** (vendas, clientes, antiguidade, compras, fornecedores, stock, fluxo de caixa e auditoria com filtros basicos + CSV) | ✅ |
 | **P1-03** | **Impressao/PDF profissional** (factura, recibo, fecho diario de caixa e relatorios V1 com HTML/CSS print e guardar PDF pelo navegador) | ✅ |
 | **P1-04** | **Contabilidade V1 finalizada** (plano de contas, diario, razao/extracto por conta, balancete, filtros, CSV e impressao/guardar PDF pelo navegador) | ✅ |
+| **P1-05** | **Fecho de Caixa V1** (movimentos do dia, entradas/saidas, saldo esperado, valor contado, diferenca, sem diferenca/sobra/falta, CSV e impressao/PDF via browser, sem persistencia formal) | ✅ |
 | 9 | RH & Salários | 🗺️ futuro |
 | X | RLS forçado em toda a BD (fase transversal, pré-produção) | 🗺️ futuro |
 
@@ -55,7 +56,7 @@ contabilidade 203/203** (8b 32 + 8c.1 30 + 8c.2a 18 + 8c.2b 34 + 8c.3 17 + P1-04
 `pnpm test:integration:accounting`, sub: `…:c1`, `…:c2a`, `…:c2`, `…:c3`, `…:reports`, `…:reversal:customer-payment`, `…:reversal:invoice`, `…:reversal:supplier-payment`, `…:reversal:purchase-receipt`, `…:reversal:treasury-transfer`, `…:reversal:uat`, `…:reversal:all`) · **POS 7/7** (`pnpm test:integration:pos`) · `prisma validate` OK · `prisma migrate status` OK · `pnpm build` OK
 em Windows nativo (30/30 páginas estaticas + `/api/health` dinamico) e Docker Linux com Node 20 + OpenSSL · imagens Docker de produção
 `web`, `worker` e target `migrate` OK · seed idempotente (2×) · login/contexto
-multiempresa 7/7 · **POS 12/12** (`pnpm test:integration:pos`) · **relatorios 24/24** (`pnpm test:integration:reports`) · `pnpm build` OK em Windows nativo (31/31 páginas, incluindo `/api/health`, `/relatorios/exportar` e `/contabilidade/exportar`) ·
+multiempresa 7/7 · **POS 12/12** (`pnpm test:integration:pos`) · **relatorios 24/24** (`pnpm test:integration:reports`) · **Fecho de Caixa V1 11/11** (`pnpm test:integration:treasury:cash-closing`) · `pnpm build` OK em Windows nativo (31/31 páginas, incluindo `/api/health`, `/relatorios/exportar`, `/contabilidade/exportar` e `/tesouraria/fecho/exportar`) ·
 staging Docker P0-08/P0-09 OK (`docker:staging:build`, migrations explicitas, web/worker/postgres/redis,
 health `/api/health`, smoke `/login`, `/seleccionar-empresa` e headers).
 
@@ -217,7 +218,23 @@ balancete filtrado por conta, traduziu labels tecnicos visiveis/CSV e confirmou 
 activo de lancamento manual. Criado `pnpm test:integration:accounting:reports` (14/14) e incluido
 no agregado `pnpm test:integration:accounting`. Limites V1: sem lancamentos manuais, fecho anual,
 DRE oficial, balanco oficial, fiscal/AT, assinatura digital, reconciliacao bancaria avancada,
-centros de custo avancados, importacao SAF-T ou P1-05.
+centros de custo avancados, importacao SAF-T ou P1-06.
+
+**P1-05 (2026-07-08):** implementado Fecho de Caixa V1 sem schema, migrations ou
+dependencias novas. `/tesouraria/fecho` passou a preparar um relatorio operacional
+com filtro por data e conta, movimentos reais do dia, origem/metodo/utilizador,
+entradas, saidas, vendas POS, recebimentos, pagamentos, transferencias, saldo
+inicial, saldo esperado, valores contados por dinheiro/M-Pesa/e-Mola/cartao-banco,
+diferenca e status `Sem diferenca`/`Sobra`/`Falta`, observacoes, CSV em
+`/tesouraria/fecho/exportar` e impressao/guardar PDF pelo navegador com assinaturas
+do caixa e supervisor. Como nao existe modelo de sessao/fecho, a fase e operacional:
+valor contado e observacoes nao sao persistidos e nao ha botao definitivo `Fechar
+caixa`. O fecho formal persistido, abertura/turnos, aprovacao obrigatoria,
+bloqueio apos fecho, ajuste automatico, gaveta fisica, impressao termica,
+reconciliacao bancaria avancada e P1-06 ficam futuros. Criado
+`pnpm test:integration:treasury:cash-closing` (11/11), cobrindo isolamento
+companyId, somas, metodos, diferenca zero/sobra/falta, permissao, CSV, periodo sem
+movimentos, ausencia de mutacao dos movimentos originais e observacoes no relatorio.
 
 **Hardening pré-produção P0-01 (2026-07-02):** seed demo bloqueado em `production`
 antes de criar o Prisma Client; credenciais demo removidas da interface de

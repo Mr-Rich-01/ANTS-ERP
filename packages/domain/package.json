@@ -26,6 +26,7 @@
     "test:integration:auth-company-selection": "vitest run --config vitest.integration.config.ts auth.company-selection.integration",
     "test:integration:pos": "vitest run --config vitest.integration.config.ts pos.integration",
     "test:integration:reports": "vitest run --config vitest.integration.config.ts reports.integration",
+    "test:integration:treasury-cash-closing": "vitest run --config vitest.integration.config.ts treasury.cash-closing.integration",
     "test:integration:reversal-all": "vitest run --config vitest.integration.config.ts accounting.customer-payment-reversal.integration accounting.invoice-cancellation.integration accounting.supplier-payment-reversal.integration accounting.purchase-receipt-reversal.integration accounting.treasury-transfer-reversal.integration accounting.reversals-uat.integration"
   },
   "dependencies": {

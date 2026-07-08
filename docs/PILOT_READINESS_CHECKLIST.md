@@ -1,6 +1,6 @@
 # Checklist de prontidao de piloto - ANTS ERP
 
-_Ultima actualizacao: 2026-07-07_
+_Ultima actualizacao: 2026-07-08_
 
 Usar esta checklist antes de qualquer piloto controlado. Um item em aberto deve
 ser classificado como bloqueante, restricao aceite ou backlog futuro.
@@ -29,6 +29,7 @@ ser classificado como bloqueante, restricao aceite ou backlog futuro.
 - [ ] `pnpm test:integration:pos` verde quando POS entrar no escopo do piloto.
 - [ ] `pnpm test:integration:reports` verde quando relatorios entrarem no escopo do piloto.
 - [ ] `pnpm test:integration:accounting:reports` verde quando Contabilidade V1 entrar no escopo do piloto.
+- [ ] `pnpm test:integration:treasury:cash-closing` verde quando Fecho de Caixa V1 entrar no escopo do piloto/demo.
 - [ ] Impressao/PDF comercial validado para factura, recibo, fecho de caixa e
       relatorio de vendas quando P1-03 entrar no escopo do piloto.
 - [ ] `pnpm build` verde.
@@ -93,7 +94,11 @@ ser classificado como bloqueante, restricao aceite ou backlog futuro.
 - [ ] Criterios de saida aceites.
 - [ ] Template de sign-off preparado.
 - [ ] Limites do POS V1 aceites: sem mesas, cozinha, offline, devolucao POS,
-      turnos/fecho de caixa, scanner real e impressao termica avancada.
+      turnos, fecho persistido, scanner real e impressao termica avancada.
+- [ ] Limites do Fecho de Caixa V1 aceites: calculo operacional sem gravacao
+      formal; valor contado e observacoes apenas no relatorio imprimivel; sem
+      abertura formal de turno, aprovacao obrigatoria, bloqueio apos fecho,
+      gaveta fisica, impressao termica ou reconciliacao bancaria avancada.
 - [ ] Limites dos relatorios V1 aceites: CSV simples e impressao/guardar PDF
       pelo navegador prontos; PDF fiscal/automatico, Excel avancado, salarios,
       producao, BI avancado e relatorios personalizados ficam futuros.

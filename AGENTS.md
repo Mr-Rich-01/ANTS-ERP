@@ -30,8 +30,8 @@ Stock, Vendas/Facturação, Compras, Tesouraria & Bancos, Hardening da
 Tesouraria, Contabilidade 8a, 8b, 8c.1, 8c.2a, 8c.2b, 8c.3,
 P0-03 completo (P0-03.0, P0-03a, P0-03b, P0-03c, P0-03d, P0-03e e P0-03f),
 P0-04, P0-05, P0-06, P0-07, P0-08, P0-09, P1-01 POS V1 limitado,
-P1-02 Relatórios V1 operacionais, P1-03 Impressão/PDF profissional e P1-04
-Contabilidade V1 finalizada.
+P1-02 Relatórios V1 operacionais, P1-03 Impressão/PDF profissional, P1-04
+Contabilidade V1 finalizada e P1-05 Fecho de Caixa V1 operacional.
 
 Estado actual da Contabilidade: P0-03 completo. A base de
 reversões está activa; recebimentos de clientes podem ser anulados, facturas sem
@@ -67,9 +67,16 @@ pré-integração da P1-04 mantém balancete filtrado por conta como leitura neu
 não como validação global, mostra saldos acumulados em MT e labels humanos em
 português. Mantém lançamento manual, fecho anual, DRE oficial, balanço oficial,
 fiscal/AT, assinatura digital, reconciliação bancária avançada e centros de custo
-avançados como futuro. O
-proximo passo deve ser decidido explicitamente dentro do backlog P1; nao iniciar
-P1-05 automaticamente.
+avançados como futuro. A P1-05 implementou o Fecho de Caixa V1 como cálculo
+operacional sem persistência formal: movimentos reais do dia por conta/data,
+entradas, saídas, vendas POS, recebimentos, pagamentos, transferências, saldo
+esperado, valor contado, diferença, status sem diferença/sobra/falta,
+observações, CSV e impressão/guardar PDF pelo navegador. Como não existe modelo
+de sessão/fecho, valor contado e observações não são gravados e não há botão
+definitivo de fecho formal; turnos, aprovação obrigatória, bloqueio após fecho,
+gaveta física, impressão térmica, reconciliação bancária avançada e fecho
+persistido formal ficam futuro. O proximo passo deve ser decidido explicitamente
+dentro do backlog P1; nao iniciar P1-06 automaticamente.
 
 ## Arquitectura Obrigatória
 
@@ -248,6 +255,7 @@ pnpm test:integration:auth:company-selection
 pnpm test:integration:security:production-hardening
 pnpm test:integration:pos
 pnpm test:integration:reports
+pnpm test:integration:treasury:cash-closing
 pnpm build
 ```
 
@@ -268,6 +276,7 @@ Testes de integração contabilísticos:
 - P0-03 agregado: `pnpm test:integration:accounting:reversal:all`
 - P0-05: `pnpm test:integration:auth:company-selection`
 - P1-01 POS: `pnpm test:integration:pos`
+- P1-05 Fecho de Caixa V1: `pnpm test:integration:treasury:cash-closing`
 
 ## Credenciais de Teste Versionadas
 
@@ -305,19 +314,21 @@ passwords não demonstrativas.
 - P1-02 Relatórios V1 operacionais concluida.
 - P1-03 Impressão/PDF profissional concluida.
 - P1-04 Contabilidade V1 finalizada concluida.
+- P1-05 Fecho de Caixa V1 operacional concluida sem persistencia formal.
 - Ajuste P1-04 pre-integracao concluido: balancete filtrado por conta nao e
   erro global, saldos em MT, labels tecnicos traduzidos e lancamento manual
   permanece futuro.
 - V1 candidata a demo externa apos UAT interna em 2026-07-06, aprovada com
   ressalvas e registada em `docs/UAT_INTERNAL_DEMO_REPORT.md`; P1-04 acrescenta
-  Contabilidade V1 pronta para UAT/demo com limites; nao marca producao pronta,
-  nao autoriza piloto real e nao inicia P1-05.
+  Contabilidade V1 pronta para UAT/demo com limites; P1-05 acrescenta Fecho de
+  Caixa V1 operacional com limites; nao marca producao pronta, nao autoriza
+  piloto real e nao inicia P1-06.
 - Ajustes UX pre-demo registados: titulo fixo da factura removido, modulos futuros
   neutralizados como futuro e logout a repetir em browser externo/limpo porque o
   browser integrado bloqueou a revalidacao visual limpa.
 - Commit base funcional antes da P0-03.0: `a1d608b`.
 - Proximo passo: smoke manual final em browser externo/limpo antes da demo externa.
-- Nao iniciar P1-05 nem piloto real sem decisao explicita, backup, staging
+- Nao iniciar P1-06 nem piloto real sem decisao explicita, backup, staging
   validado e checklist assinada.
 - `MODULE_STATUS.md` é a fonte principal para progresso e próximos passos.
 - `CLAUDE.md` deve ser preservado.
