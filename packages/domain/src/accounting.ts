@@ -1539,7 +1539,7 @@ export async function exportAccountingJournalCsv(db: PrismaClient, ctx: RequestC
   requirePermission(ctx, 'reports.export');
   const report = await getAccountingJournalReport(db, ctx, filters);
   const lines = [
-    accountingCsvLine(['Diário de lançamentos']),
+    accountingCsvLine(['Extrato Diário']),
     accountingCsvLine(['Período', `${report.filters.from} a ${report.filters.to}`]),
     accountingCsvLine(['Data', 'Número', 'Diário', 'Estado', 'Origem', 'Evento', 'Referência', 'Descrição', 'Conta', 'Nome da conta', 'Descrição da linha', 'Débito', 'Crédito', 'Utilizador']),
     ...report.lines.map((l) => accountingCsvLine([
@@ -1560,7 +1560,7 @@ export async function exportAccountingJournalCsv(db: PrismaClient, ctx: RequestC
     ])),
     accountingCsvLine(['Totais', '', '', '', '', '', '', '', '', '', '', accountingMoneyLabel(report.totalDebit), accountingMoneyLabel(report.totalCredit), report.isBalanced ? 'Balanceado' : 'Desequilibrado']),
   ];
-  return { filename: `contabilidade-diario-${report.filters.from}-${report.filters.to}.csv`, content: lines.join('\n') };
+  return { filename: `contabilidade-extrato-diario-${report.filters.from}-${report.filters.to}.csv`, content: lines.join('\n') };
 }
 
 export async function exportAccountLedgerCsv(db: PrismaClient, ctx: RequestContext, ledgerAccountId: string, filters: AccountingReportFilters = {}): Promise<{ filename: string; content: string }> {

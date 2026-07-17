@@ -335,9 +335,9 @@ describe('P1-04 - Contabilidade V1 reports', () => {
     expect(trial.totalCredit).toBe(0);
   });
 
-  it('CSV do diario respeita filtros', async () => {
+  it('CSV do extrato diario respeita filtros', async () => {
     const exported = await exportAccountingJournalCsv(prisma, ctx(CA, exportPerms), { from: '2026-07-01', to: '2026-07-31', sourceType: 'CUSTOMER_PAYMENT' });
-    expect(exported.filename).toBe('contabilidade-diario-2026-07-01-2026-07-31.csv');
+    expect(exported.filename).toBe('contabilidade-extrato-diario-2026-07-01-2026-07-31.csv');
     expect(exported.content).toContain('REC 2026/0001');
     expect(exported.content).toContain('Recebimento de cliente');
     expect(exported.content).toContain('Publicado');

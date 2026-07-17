@@ -205,8 +205,8 @@ export default async function ContabilidadePage({ searchParams }: { searchParams
       };
 
   const kpis = [
-    { label: 'Debitos do periodo', valueStr: fmt(journal.totalDebit), sub: `${journal.lines.length} linhas no diario`, tone: 'petroleum' as const, icon: 'arrow-down-left' },
-    { label: 'Creditos do periodo', valueStr: fmt(journal.totalCredit), sub: journal.isBalanced ? 'Diario balanceado' : 'Verificar inconsistencias', tone: journal.isBalanced ? ('green' as const) : ('amber' as const), icon: 'arrow-up-right' },
+    { label: 'Debitos do periodo', valueStr: fmt(journal.totalDebit), sub: `${journal.lines.length} linhas no extrato diario`, tone: 'petroleum' as const, icon: 'arrow-down-left' },
+    { label: 'Creditos do periodo', valueStr: fmt(journal.totalCredit), sub: journal.isBalanced ? 'Extrato diario balanceado' : 'Verificar inconsistencias', tone: journal.isBalanced ? ('green' as const) : ('amber' as const), icon: 'arrow-up-right' },
     { label: 'Contas movimentadas', valueStr: String(trial.rows.length), sub: trial.movementCount ? 'Com movimentos reais' : 'Sem movimentos no periodo', tone: 'blue' as const, icon: 'landmark' },
     { label: 'Balancete', valueStr: trialStatus.value, sub: trialStatus.label, tone: trialStatus.tone, icon: 'scale' },
   ];
@@ -220,7 +220,7 @@ export default async function ContabilidadePage({ searchParams }: { searchParams
           </span>
           <div style={{ flex: 1, minWidth: 220 }}>
             <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--text)' }}>Contabilidade V1</div>
-            <div style={{ fontSize: 12.5, color: 'var(--text3)', marginTop: 4 }}>Plano de contas, diario, razao e balancete com dados reais - {periodLabel}</div>
+            <div style={{ fontSize: 12.5, color: 'var(--text3)', marginTop: 4 }}>Plano de contas, extrato diario, razao e balancete com dados reais - {periodLabel}</div>
           </div>
           <PrintButton label="Imprimir / Guardar PDF" />
           {canExport && view !== 'chart' ? (
@@ -238,7 +238,7 @@ export default async function ContabilidadePage({ searchParams }: { searchParams
 
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <TabLink href={viewHref('chart', filters, selectedAccountId)} active={view === 'chart'} icon="landmark" label="Plano de contas" />
-          <TabLink href={viewHref('journal', filters, selectedAccountId)} active={view === 'journal'} icon="book-open" label="Diario" />
+          <TabLink href={viewHref('journal', filters, selectedAccountId)} active={view === 'journal'} icon="book-open" label="Extrato Diario" />
           <TabLink href={viewHref('ledger', filters, selectedAccountId)} active={view === 'ledger'} icon="list-tree" label="Razao / Extracto" />
           <TabLink href={viewHref('trial-balance', filters, selectedAccountId)} active={view === 'trial-balance'} icon="scale" label="Balancete" />
         </div>
@@ -314,7 +314,7 @@ export default async function ContabilidadePage({ searchParams }: { searchParams
         <div className="ants-print-only">
           <CompanyHeader
             company={company}
-            title={view === 'chart' ? 'Plano de contas' : view === 'ledger' ? 'Razao / Extracto por conta' : view === 'trial-balance' ? 'Balancete' : 'Diario de lancamentos'}
+            title={view === 'chart' ? 'Plano de contas' : view === 'ledger' ? 'Razao / Extracto por conta' : view === 'trial-balance' ? 'Balancete' : 'Extrato Diario'}
             documentNumber={periodLabel}
             meta={<div style={{ fontSize: 12, color: '#5f7378', lineHeight: 1.5 }}>Gerado em {generatedAt()}<br />Empresa activa: {company?.legalName ?? ctx.companyId}</div>}
           />
@@ -359,7 +359,7 @@ export default async function ContabilidadePage({ searchParams }: { searchParams
         {view === 'journal' ? (
           <div style={panel}>
             <div style={{ padding: '13px 16px', borderBottom: '1px solid var(--bd-soft)', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-              <strong style={{ fontSize: 14, color: 'var(--text)' }}>Diario de lancamentos</strong>
+              <strong style={{ fontSize: 14, color: 'var(--text)' }}>Extrato Diario</strong>
               <span style={{ fontSize: 11, fontWeight: 700, color: journal.isBalanced ? 'var(--ok)' : 'var(--bad)', background: journal.isBalanced ? 'var(--ok-bg)' : 'var(--bad-bg)', padding: '3px 8px', borderRadius: 7 }}>
                 {journal.isBalanced ? 'Balanceado' : 'Desequilibrado'}
               </span>

@@ -6,6 +6,12 @@
       "runtimeExecutable": "pnpm",
       "runtimeArgs": ["--filter", "@ants/web", "exec", "next", "start", "-p", "3210"],
       "port": 3210
+    },
+    {
+      "name": "web-dev",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["--filter", "@ants/web", "exec", "next", "dev", "-p", "3211"],
+      "port": 3211
     }
   ]
 }

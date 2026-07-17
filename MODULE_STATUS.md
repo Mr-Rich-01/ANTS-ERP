@@ -1,14 +1,14 @@
 # MODULE_STATUS — ANTS ERP
 
-_Última actualização: 2026-07-08_
+_Última actualização: 2026-07-18_
 
 Estado vivo do projecto. O conhecimento permanente (arquitectura, regras, comandos) está
 em [`CLAUDE.md`](CLAUDE.md).
 
-**Último commit funcional:** pendente nesta branch (`feat(treasury): add cash closing V1`)
-**Fase concluída:** `P1-05 — Fecho de Caixa V1`
+**Último commit funcional:** pendente na branch `s1-nomenclatura` (Sessão S1 do ROADMAP)
+**Fase concluída:** `S1 — Nomenclatura e Relatórios` (ROADMAP; fase anterior: `P1-05 — Fecho de Caixa V1`)
 **UAT interna/demo:** V1 candidata a demo externa apos UAT interna, aprovada com ressalvas em 2026-07-06; P1-04 acrescenta Contabilidade V1 pronta para UAT/demo com limites; P1-05 acrescenta Fecho de Caixa V1 operacional sem persistencia formal; demo final check registado em `docs/DEMO_FINAL_CHECK.md` em 2026-07-08 como pronto com ressalvas menores
-**Próximo passo:** smoke manual final em browser externo/limpo para logout, clique final POS e Fecho de Caixa V1 antes da demo externa; nao iniciar P1-06
+**Próximo passo:** `Sessão S2 — Dropdowns pesquisáveis` (ROADMAP) — não iniciar sem instrução explícita; mantém-se pendente o smoke manual final em browser externo/limpo (logout, clique final POS, Fecho de Caixa V1) antes da demo externa
 
 ---
 
@@ -48,6 +48,7 @@ em [`CLAUDE.md`](CLAUDE.md).
 | **P1-03** | **Impressao/PDF profissional** (factura, recibo, fecho diario de caixa e relatorios V1 com HTML/CSS print e guardar PDF pelo navegador) | ✅ |
 | **P1-04** | **Contabilidade V1 finalizada** (plano de contas, diario, razao/extracto por conta, balancete, filtros, CSV e impressao/guardar PDF pelo navegador) | ✅ |
 | **P1-05** | **Fecho de Caixa V1** (movimentos do dia, entradas/saidas, saldo esperado, valor contado, diferenca, sem diferenca/sobra/falta, CSV e impressao/PDF via browser, sem persistencia formal) | ✅ |
+| **S1** | **Nomenclatura e Relatórios** (Excedente/Déficit no fecho de caixa, «Diário» → «Extrato Diário» na Contabilidade, «Status» → «Estado»; apenas strings de UI/CSV) | ✅ |
 | 9 | RH & Salários | 🗺️ futuro |
 | X | RLS forçado em toda a BD (fase transversal, pré-produção) | 🗺️ futuro |
 
@@ -235,6 +236,20 @@ reconciliacao bancaria avancada e P1-06 ficam futuros. Criado
 `pnpm test:integration:treasury:cash-closing` (11/11), cobrindo isolamento
 companyId, somas, metodos, diferenca zero/sobra/falta, permissao, CSV, periodo sem
 movimentos, ausencia de mutacao dos movimentos originais e observacoes no relatorio.
+
+**S1 — Nomenclatura e Relatórios (2026-07-18):** primeira sessão do ROADMAP, na branch
+`s1-nomenclatura`, apenas com strings de UI/CSV — sem schema, migrations, dependências,
+auth/RBAC ou lógica contabilística. No Fecho de Caixa, as labels de diferença passaram de
+`Sobra`/`Falta` para `Excedente`/`Déficit` (`classifyCashClosingDifference` em
+`packages/domain/src/treasury.ts`; enums `SURPLUS`/`SHORTAGE` intactos) e o cartão `Status`
+passou a `Estado`. A vista de Contabilidade `Diário (de lançamentos)` foi renomeada para
+`Extrato Diário` (tab, títulos, KPIs, título do CSV e nome do ficheiro
+`contabilidade-extrato-diario-…`; query param interno `view=journal` mantido). Decisões: o
+filtro «Diário» e a coluna «Diário» do CSV referem-se aos livros contabilísticos (Diário
+Geral, de Vendas, …) e mantêm o nome, tal como o «Relatório diário de caixa» da Tesouraria.
+Grep confirma zero ocorrências dos termos antigos na UI. Validado: typecheck 6/6, lint 6/6,
+testes unitários 89/89, `test:integration:accounting:reports` 14/14,
+`test:integration:treasury:cash-closing` 11/11, build 31/31 páginas.
 
 **Hardening pré-produção P0-01 (2026-07-02):** seed demo bloqueado em `production`
 antes de criar o Prisma Client; credenciais demo removidas da interface de

@@ -235,8 +235,8 @@ function normalizeCashClosingCount(input: CashClosingCountInput = {}): CashClosi
 function classifyCashClosingDifference(difference: number, provided: boolean): { status: CashClosingDifferenceStatus; label: string } {
   if (!provided) return { status: 'PENDING', label: 'Contagem por informar' };
   if (difference === 0) return { status: 'NONE', label: 'Sem diferenca' };
-  if (difference > 0) return { status: 'SURPLUS', label: 'Sobra' };
-  return { status: 'SHORTAGE', label: 'Falta' };
+  if (difference > 0) return { status: 'SURPLUS', label: 'Excedente' };
+  return { status: 'SHORTAGE', label: 'Déficit' };
 }
 
 function accountTypeMethod(type: TreasuryAccountType, accountName: string): CashClosingMethod {

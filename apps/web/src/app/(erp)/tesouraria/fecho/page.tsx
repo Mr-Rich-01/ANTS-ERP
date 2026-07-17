@@ -96,7 +96,7 @@ export default async function FechoPage({ searchParams }: { searchParams: Search
     ['Saldo esperado', fmt(report.expectedTotal), 'var(--accent-fg)'],
     ['Valor contado', report.counted.provided ? fmt(report.counted.total) : 'Por informar', report.counted.provided ? 'var(--text)' : 'var(--text2)'],
     ['Diferenca', report.counted.provided ? fmt(report.difference) : 'Por calcular', statusColor(report.differenceStatus)],
-    ['Status', report.differenceStatusLabel, statusColor(report.differenceStatus)],
+    ['Estado', report.differenceStatusLabel, statusColor(report.differenceStatus)],
     ['Total do dia', fmt(dayNet), dayNet >= 0 ? 'var(--ok)' : 'var(--bad)'],
   ];
 
