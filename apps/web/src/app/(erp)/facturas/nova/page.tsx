@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation';
 import { forCompany } from '@ants/database';
-import { hasPermission, listCustomers, listProducts, listWarehouses } from '@ants/domain';
+import { hasPermission, listWarehouses, searchCustomerOptions, searchProductOptions } from '@ants/domain';
 import { getContext } from '@/lib/session';
 import { NovaFacturaClient, type CustomerOpt, type ProductOpt, type WarehouseOpt } from './NovaFacturaClient';
 
@@ -11,11 +11,14 @@ export default async function NovaFacturaPage() {
   if (!ctx.companyId || !hasPermission(ctx, 'sales.create')) redirect('/facturas');
 
   const db = forCompany(ctx.companyId);
-  const [customers, products, warehouses] = await Promise.all([listCustomers(db, ctx), listProducts(db, ctx), listWarehouses(db, ctx)]);
+  // Apenas as primeiras opções — o resto chega por pesquisa server-side (S2).
+  const [customers, products, warehouses] = await Promise.all([
+    searchCustomerOptions(db, ctx, { onlyActive: true }),
+    searchProductOptions(db, ctx),
+    listWarehouses(db, ctx),
+  ]);
 
-  const customerOpts: CustomerOpt[] = customers
-    .filter((c) => c.status === 'ACTIVE')
-    .map((c) => ({ id: c.id, name: c.name, nuit: c.nuit ?? '', phone: c.phone ?? '' }));
+  const customerOpts: CustomerOpt[] = customers.map((c) => ({ id: c.id, name: c.name, nuit: c.nuit, phone: c.phone }));
   const productOpts: ProductOpt[] = products.map((p) => ({ id: p.id, sku: p.sku, name: p.name, price: p.salePrice, stock: p.stock }));
   const warehouseOpts: WarehouseOpt[] = warehouses.map((w) => ({ id: w.id, label: `${w.name} (${w.code})` }));
 

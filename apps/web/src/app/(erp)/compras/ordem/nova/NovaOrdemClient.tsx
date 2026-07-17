@@ -3,6 +3,7 @@
 import { useMemo, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { Icon } from '@/components/Icon';
+import { SearchCombobox, type ComboOption } from '@/components/ui/SearchCombobox';
 import { fmt } from '@/lib/format';
 import { ACCENT } from '@/lib/erp-nav';
 import { createPurchaseOrderAction } from '@/app/(erp)/compras/actions';
@@ -46,20 +47,27 @@ export function NovaOrdemClient({ suppliers, products, warehouses }: { suppliers
   const [warehouseId, setWarehouseId] = useState(warehouses[0]?.id ?? '');
   const [notes, setNotes] = useState('');
   const [lines, setLines] = useState<Line[]>([]);
-  const [picker, setPicker] = useState('');
   const [error, setError] = useState<string | null>(null);
 
   const supplier = suppliers.find((s) => s.id === supplierId);
 
-  const addProduct = (productId: string) => {
-    setPicker('');
-    if (!productId) return;
-    const p = products.find((x) => x.id === productId);
-    if (!p) return;
+  const supplierOptions = useMemo<ComboOption[]>(
+    () => suppliers.map((s) => ({ value: s.id, label: s.name, sublabel: s.nuit ? `NUIT ${s.nuit}` : undefined })),
+    [suppliers],
+  );
+  const productDefaults = useMemo<ComboOption[]>(
+    () => products.map((p) => ({ value: p.id, label: p.name, sublabel: `${p.sku} · custo ${fmt(p.cost)}`, data: { sku: p.sku, name: p.name, cost: p.cost } })),
+    [products],
+  );
+  const warehouseOptions = useMemo<ComboOption[]>(() => warehouses.map((w) => ({ value: w.id, label: w.label })), [warehouses]);
+
+  const addProduct = (option: ComboOption | null) => {
+    if (!option) return;
+    const d = option.data ?? {};
     setLines((L) => {
-      const existing = L.find((l) => l.productId === productId);
-      if (existing) return L.map((l) => (l.productId === productId ? { ...l, qty: l.qty + 1 } : l));
-      return [...L, { productId: p.id, name: p.name, sku: p.sku, cost: p.cost, qty: 1 }];
+      const existing = L.find((l) => l.productId === option.value);
+      if (existing) return L.map((l) => (l.productId === option.value ? { ...l, qty: l.qty + 1 } : l));
+      return [...L, { productId: option.value, name: String(d.name ?? option.label), sku: String(d.sku ?? ''), cost: Number(d.cost ?? 0), qty: 1 }];
     });
   };
   const setQty = (id: string, d: number) => setLines((L) => L.map((l) => (l.productId === id ? { ...l, qty: Math.max(1, l.qty + d) } : l)));
@@ -96,14 +104,14 @@ export function NovaOrdemClient({ suppliers, products, warehouses }: { suppliers
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 13 }}>
             <div style={{ gridColumn: 'span 2' }}>
               <label style={label}>Fornecedor</label>
-              <select value={supplierId} onChange={(e) => setSupplierId(e.target.value)} style={selectStyle}>
-                {suppliers.length === 0 && <option value="">— Sem fornecedores —</option>}
-                {suppliers.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name}
-                  </option>
-                ))}
-              </select>
+              <SearchCombobox
+                options={supplierOptions}
+                value={supplierId}
+                onChange={(v) => setSupplierId(v)}
+                placeholder={suppliers.length === 0 ? '— Sem fornecedores —' : '— Seleccione o fornecedor —'}
+                searchPlaceholder="Pesquisar por nome ou NUIT…"
+                emptyText="Sem fornecedores para a pesquisa."
+              />
             </div>
             <div>
               <label style={label}>NUIT</label>
@@ -111,13 +119,14 @@ export function NovaOrdemClient({ suppliers, products, warehouses }: { suppliers
             </div>
             <div>
               <label style={label}>Armazém de destino</label>
-              <select value={warehouseId} onChange={(e) => setWarehouseId(e.target.value)} style={selectStyle}>
-                {warehouses.map((w) => (
-                  <option key={w.id} value={w.id}>
-                    {w.label}
-                  </option>
-                ))}
-              </select>
+              <SearchCombobox
+                options={warehouseOptions}
+                value={warehouseId}
+                onChange={(v) => setWarehouseId(v)}
+                placeholder="— Seleccione o armazém —"
+                searchPlaceholder="Pesquisar armazém…"
+                emptyText="Sem armazéns para a pesquisa."
+              />
             </div>
           </div>
         </div>
@@ -125,14 +134,18 @@ export function NovaOrdemClient({ suppliers, products, warehouses }: { suppliers
         <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 16, overflow: 'hidden' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px 13px', gap: 10, flexWrap: 'wrap' }}>
             <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)' }}>Linhas da encomenda</span>
-            <select value={picker} onChange={(e) => addProduct(e.target.value)} style={{ ...selectStyle, width: 260, maxWidth: '50vw', height: 38 }}>
-              <option value="">+ Adicionar produto…</option>
-              {products.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name} — custo {fmt(p.cost)}
-                </option>
-              ))}
-            </select>
+            <div style={{ width: 260, maxWidth: '50vw' }}>
+              <SearchCombobox
+                searchEndpoint="/api/search/products?detail=cost"
+                defaultOptions={productDefaults}
+                value=""
+                onChange={(_, option) => addProduct(option)}
+                placeholder="+ Adicionar produto…"
+                searchPlaceholder="Pesquisar por nome ou SKU…"
+                emptyText="Sem produtos para a pesquisa."
+                triggerStyle={{ height: 38 }}
+              />
+            </div>
           </div>
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 600 }}>

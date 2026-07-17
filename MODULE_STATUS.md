@@ -5,10 +5,10 @@ _Última actualização: 2026-07-18_
 Estado vivo do projecto. O conhecimento permanente (arquitectura, regras, comandos) está
 em [`CLAUDE.md`](CLAUDE.md).
 
-**Último commit funcional:** pendente na branch `s1-nomenclatura` (Sessão S1 do ROADMAP)
-**Fase concluída:** `S1 — Nomenclatura e Relatórios` (ROADMAP; fase anterior: `P1-05 — Fecho de Caixa V1`)
+**Último commit funcional:** pendente na branch `s2-dropdowns` (Sessão S2 do ROADMAP)
+**Fase concluída:** `S2 — Dropdowns pesquisáveis` (ROADMAP; fase anterior: `S1 — Nomenclatura e Relatórios`)
 **UAT interna/demo:** V1 candidata a demo externa apos UAT interna, aprovada com ressalvas em 2026-07-06; P1-04 acrescenta Contabilidade V1 pronta para UAT/demo com limites; P1-05 acrescenta Fecho de Caixa V1 operacional sem persistencia formal; demo final check registado em `docs/DEMO_FINAL_CHECK.md` em 2026-07-08 como pronto com ressalvas menores
-**Próximo passo:** `Sessão S2 — Dropdowns pesquisáveis` (ROADMAP) — não iniciar sem instrução explícita; mantém-se pendente o smoke manual final em browser externo/limpo (logout, clique final POS, Fecho de Caixa V1) antes da demo externa
+**Próximo passo:** `Sessão S3 — Lista de Produtos` (ROADMAP) — não iniciar sem instrução explícita; mantém-se pendente o smoke manual final em browser externo/limpo (logout, clique final POS, Fecho de Caixa V1) antes da demo externa
 
 ---
 
@@ -49,6 +49,7 @@ em [`CLAUDE.md`](CLAUDE.md).
 | **P1-04** | **Contabilidade V1 finalizada** (plano de contas, diario, razao/extracto por conta, balancete, filtros, CSV e impressao/guardar PDF pelo navegador) | ✅ |
 | **P1-05** | **Fecho de Caixa V1** (movimentos do dia, entradas/saidas, saldo esperado, valor contado, diferenca, sem diferenca/sobra/falta, CSV e impressao/PDF via browser, sem persistencia formal) | ✅ |
 | **S1** | **Nomenclatura e Relatórios** (Excedente/Déficit no fecho de caixa, «Diário» → «Extrato Diário» na Contabilidade, «Status» → «Estado»; apenas strings de UI/CSV) | ✅ |
+| **S2** | **Dropdowns pesquisáveis** (`SearchCombobox` único shadcn/cmdk; Produtos/Clientes com pesquisa server-side + debounce via `/api/search/*`; Fornecedores/Contas/Armazéns client-side; aplicado em formulários e filtros) | ✅ |
 | 9 | RH & Salários | 🗺️ futuro |
 | X | RLS forçado em toda a BD (fase transversal, pré-produção) | 🗺️ futuro |
 
@@ -250,6 +251,26 @@ Geral, de Vendas, …) e mantêm o nome, tal como o «Relatório diário de caix
 Grep confirma zero ocorrências dos termos antigos na UI. Validado: typecheck 6/6, lint 6/6,
 testes unitários 89/89, `test:integration:accounting:reports` 14/14,
 `test:integration:treasury:cash-closing` 11/11, build 31/31 páginas.
+
+**S2 — Dropdowns pesquisáveis (2026-07-18):** segunda sessão do ROADMAP, na branch
+`s2-dropdowns` — sem schema, migrations, auth/RBAC ou lógica contabilística. Dependências
+novas aprovadas explicitamente: `cmdk` + `@radix-ui/react-popover` em `packages/ui`
+(primitives `Popover`/`Command` shadcn). Criado o componente único
+`apps/web/src/components/ui/SearchCombobox.tsx` com dois modos: estático (pesquisa
+client-side — Fornecedores, Contas de tesouraria, Armazéns, plano de contas) e assíncrono
+(pesquisa server-side com debounce 300 ms — Produtos e Clientes, sem carregar a lista inteira
+para o cliente; as páginas passam só as primeiras 20 opções). Pesquisa server-side:
+`searchCustomerOptions`/`searchProductOptions` no domínio (`requirePermission` +
+cliente isolado) expostas por `GET /api/search/customers` e `GET /api/search/products` —
+`companyId` sempre da sessão, 401 sem sessão, 403 sem empresa/permissão. Aplicado em:
+Nova Factura (cliente, produto, armazém), Nova Ordem (fornecedor, produto, armazém), POS
+(cliente com «Cliente final» fixo, armazém), PaymentDialog e SupplierPaymentDialog (conta),
+Tesouraria (conta do movimento, origem/destino da transferência), Inventário (armazém) e
+filtros GET de Relatórios (cliente, fornecedor, produto, conta), Fecho de Caixa (conta) e
+Contabilidade (conta do plano) — nos filtros GET o combobox submete por input hidden com o
+mesmo `name`, preservando os filtros existentes. Selects de enums pequenos (tipo, método,
+fluxo, estado, perfil) mantêm-se nativos. Validado: typecheck 6/6, lint 6/6, testes
+unitários 89/89, build OK.
 
 **Hardening pré-produção P0-01 (2026-07-02):** seed demo bloqueado em `production`
 antes de criar o Prisma Client; credenciais demo removidas da interface de

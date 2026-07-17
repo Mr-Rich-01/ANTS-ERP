@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { Button, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger, Input, Label } from '@ants/ui';
 import { Icon } from '@/components/Icon';
 import { KpiCard, KpiGrid, type KpiCardData } from '@/components/ui/KpiCard';
+import { SearchCombobox, type ComboOption } from '@/components/ui/SearchCombobox';
 import { ACCENT } from '@/lib/erp-nav';
 import { createAccountAction, recordMovementAction, transferAction, reverseMovementAction, reverseTransferAction, setAccountStatusAction } from '@/app/(erp)/tesouraria/actions';
 
@@ -64,6 +65,12 @@ const selectStyle: React.CSSProperties = { height: 40, width: '100%', borderRadi
 const field: React.CSSProperties = { display: 'flex', flexDirection: 'column', gap: 6 };
 const toolBtn: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 6, height: 36, padding: '0 12px', borderRadius: 9, border: '1px solid var(--border)', background: 'var(--card)', fontSize: 12.5, fontWeight: 600, color: 'var(--text2)', cursor: 'pointer' };
 const accIcon: Record<string, string> = { CASH: 'wallet', BANK: 'landmark', MOBILE: 'smartphone', OTHER: 'circle-dollar-sign' };
+/** Alinha o botão do combobox com os campos destes diálogos. */
+const comboTriggerStyle: React.CSSProperties = { height: 40, borderRadius: 8, border: '1px solid var(--field-bd)', background: 'var(--field)', padding: '0 10px', fontSize: 14 };
+
+function accountComboOptions(accounts: AccountView[], withBalance = false): ComboOption[] {
+  return accounts.map((a) => ({ value: a.id, label: a.name, sublabel: withBalance ? `${a.typeLabel} · ${a.balanceStr}` : a.typeLabel }));
+}
 
 function ErrorBox({ msg }: { msg: string }) {
   return (
@@ -105,9 +112,17 @@ function MovementDialog({ accounts, trigger }: { accounts: AccountView[]; trigge
         <div style={{ display: 'flex', flexDirection: 'column', gap: 13 }}>
           <div style={field}>
             <Label htmlFor="mv-acc">Conta</Label>
-            <select id="mv-acc" value={accountId} onChange={(e) => setAccountId(e.target.value)} style={selectStyle}>
-              {accounts.map((a) => (<option key={a.id} value={a.id}>{a.name}</option>))}
-            </select>
+            <SearchCombobox
+              id="mv-acc"
+              modal
+              options={accountComboOptions(accounts)}
+              value={accountId}
+              onChange={(v) => setAccountId(v)}
+              placeholder="— Seleccione a conta —"
+              searchPlaceholder="Pesquisar conta…"
+              emptyText="Sem contas para a pesquisa."
+              triggerStyle={comboTriggerStyle}
+            />
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <div style={field}>
@@ -170,15 +185,31 @@ function TransferDialog({ accounts, trigger }: { accounts: AccountView[]; trigge
         <div style={{ display: 'flex', flexDirection: 'column', gap: 13 }}>
           <div style={field}>
             <Label htmlFor="tr-from">De</Label>
-            <select id="tr-from" value={fromAccountId} onChange={(e) => setFrom(e.target.value)} style={selectStyle}>
-              {accounts.map((a) => (<option key={a.id} value={a.id}>{a.name} · {a.balanceStr}</option>))}
-            </select>
+            <SearchCombobox
+              id="tr-from"
+              modal
+              options={accountComboOptions(accounts, true)}
+              value={fromAccountId}
+              onChange={(v) => setFrom(v)}
+              placeholder="— Seleccione a conta de origem —"
+              searchPlaceholder="Pesquisar conta…"
+              emptyText="Sem contas para a pesquisa."
+              triggerStyle={comboTriggerStyle}
+            />
           </div>
           <div style={field}>
             <Label htmlFor="tr-to">Para</Label>
-            <select id="tr-to" value={toAccountId} onChange={(e) => setTo(e.target.value)} style={selectStyle}>
-              {accounts.map((a) => (<option key={a.id} value={a.id}>{a.name}</option>))}
-            </select>
+            <SearchCombobox
+              id="tr-to"
+              modal
+              options={accountComboOptions(accounts)}
+              value={toAccountId}
+              onChange={(v) => setTo(v)}
+              placeholder="— Seleccione a conta de destino —"
+              searchPlaceholder="Pesquisar conta…"
+              emptyText="Sem contas para a pesquisa."
+              triggerStyle={comboTriggerStyle}
+            />
           </div>
           <div style={field}>
             <Label htmlFor="tr-amount">Valor (MT)</Label>

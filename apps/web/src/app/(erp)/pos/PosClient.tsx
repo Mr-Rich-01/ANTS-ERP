@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useMemo, useState, useTransition } from 'react';
 import { civilDateInTimeZone, computeDocumentTotals } from '@ants/shared';
 import { Icon } from '@/components/Icon';
+import { SearchCombobox, type ComboOption } from '@/components/ui/SearchCombobox';
 import { ACCENT } from '@/lib/erp-nav';
 import { fmt } from '@/lib/format';
 import { createPosSaleAction } from './actions';
@@ -74,8 +75,6 @@ const payOptions: Array<{ label: string; value: PaymentMethod; icon: string }> =
   { label: 'Cartão', value: 'CARD', icon: 'credit-card' },
 ];
 
-const selectStyle: React.CSSProperties = { width: '100%', height: 38, border: '1px solid var(--border)', borderRadius: 10, padding: '0 11px', fontSize: 12.5, background: 'var(--card)', color: 'var(--text)', outline: 'none' };
-
 export function PosClient({ customers, warehouses, products, canSelectCustomer }: { customers: PosCustomerOpt[]; warehouses: PosWarehouseOpt[]; products: PosProductOpt[]; canSelectCustomer: boolean }) {
   const [pending, startTransition] = useTransition();
   const [warehouseId, setWarehouseId] = useState(warehouses[0]?.id ?? '');
@@ -89,6 +88,12 @@ export function PosClient({ customers, warehouses, products, canSelectCustomer }
   const [success, setSuccess] = useState<{ invoiceId: string; invoiceNumber: string; paymentNumber: string } | null>(null);
 
   const categories = useMemo(() => ['Todos', ...Array.from(new Set(products.map((p) => p.category))).sort()], [products]);
+  const warehouseOptions = useMemo<ComboOption[]>(() => warehouses.map((w) => ({ value: w.id, label: w.label })), [warehouses]);
+  const customerDefaults = useMemo<ComboOption[]>(
+    () => customers.map((c) => ({ value: c.id, label: c.name, sublabel: c.nuit ? `NUIT ${c.nuit}` : undefined })),
+    [customers],
+  );
+  const finalCustomerOption = useMemo<ComboOption[]>(() => [{ value: FINAL_CUSTOMER_ID, label: 'Cliente final' }], []);
   const visibleProducts = useMemo(() => {
     const q = query.trim().toLowerCase();
     return products
@@ -175,12 +180,15 @@ export function PosClient({ customers, warehouses, products, canSelectCustomer }
             <Icon name="search" size={17} color="var(--text3)" />
             <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Pesquisar produto ou código" style={{ border: 'none', background: 'none', outline: 'none', fontSize: 13, width: '100%', color: 'var(--text)' }} />
           </div>
-          <select value={warehouseId} onChange={(e) => { setWarehouseId(e.target.value); setCart([]); setSuccess(null); }} style={selectStyle}>
-            {warehouses.length === 0 && <option value="">Sem armazéns activos</option>}
-            {warehouses.map((warehouse) => (
-              <option key={warehouse.id} value={warehouse.id}>{warehouse.label}</option>
-            ))}
-          </select>
+          <SearchCombobox
+            options={warehouseOptions}
+            value={warehouseId}
+            onChange={(v) => { setWarehouseId(v); setCart([]); setSuccess(null); }}
+            placeholder={warehouses.length === 0 ? 'Sem armazéns activos' : '— Seleccione o armazém —'}
+            searchPlaceholder="Pesquisar armazém…"
+            emptyText="Sem armazéns para a pesquisa."
+            triggerStyle={{ height: 38, borderRadius: 10, padding: '0 11px', fontSize: 12.5 }}
+          />
         </div>
 
         <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 2 }}>
@@ -230,12 +238,17 @@ export function PosClient({ customers, warehouses, products, canSelectCustomer }
         <div style={{ padding: 14, borderBottom: '1px solid var(--bd-soft)' }}>
           <div>
             <label style={{ display: 'block', fontSize: 11.5, fontWeight: 700, color: 'var(--text3)', marginBottom: 5 }}>Cliente</label>
-            <select value={customerId} onChange={(e) => setCustomerId(e.target.value)} style={selectStyle}>
-              <option value={FINAL_CUSTOMER_ID}>Cliente final</option>
-              {canSelectCustomer && customers.map((customer) => (
-                <option key={customer.id} value={customer.id}>{customer.name}</option>
-              ))}
-            </select>
+            <SearchCombobox
+              searchEndpoint={canSelectCustomer ? '/api/search/customers?active=1' : undefined}
+              defaultOptions={canSelectCustomer ? customerDefaults : []}
+              pinnedOptions={finalCustomerOption}
+              value={customerId}
+              onChange={(v) => setCustomerId(v || FINAL_CUSTOMER_ID)}
+              placeholder="Cliente final"
+              searchPlaceholder="Pesquisar por nome ou NUIT…"
+              emptyText="Sem clientes para a pesquisa."
+              triggerStyle={{ height: 38, borderRadius: 10, padding: '0 11px', fontSize: 12.5 }}
+            />
           </div>
         </div>
 

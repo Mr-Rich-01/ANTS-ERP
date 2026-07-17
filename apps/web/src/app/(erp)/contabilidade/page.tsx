@@ -24,6 +24,7 @@ import { NoPermission } from '@/components/NoPermission';
 import { PrintButton } from '@/components/PrintButton';
 import { CompanyHeader, DocumentFooter } from '@/components/print/PrintLayout';
 import { KpiCard, KpiGrid } from '@/components/ui/KpiCard';
+import { SearchCombobox } from '@/components/ui/SearchCombobox';
 import { ACCENT } from '@/lib/erp-nav';
 import { fmt, fmtNoSymbol } from '@/lib/format';
 import { getContext } from '@/lib/session';
@@ -255,12 +256,19 @@ export default async function ContabilidadePage({ searchParams }: { searchParams
           </label>
           <label style={labelStyle}>
             Conta
-            <select name="account" defaultValue={selectedAccountId ?? ''} style={field}>
-              <option value="">Todas</option>
-              {options.accounts.map((account) => (
-                <option key={account.id} value={account.id}>{account.code} - {account.name}{account.isActive ? '' : ' (inactiva)'}</option>
-              ))}
-            </select>
+            <SearchCombobox
+              name="account"
+              options={options.accounts.map((account) => ({
+                value: account.id,
+                label: `${account.code} - ${account.name}${account.isActive ? '' : ' (inactiva)'}`,
+              }))}
+              value={selectedAccountId ?? ''}
+              placeholder="Todas"
+              searchPlaceholder="Pesquisar por código ou nome…"
+              emptyText="Sem contas para a pesquisa."
+              clearable
+              triggerStyle={field}
+            />
           </label>
           <label style={labelStyle}>
             Diario

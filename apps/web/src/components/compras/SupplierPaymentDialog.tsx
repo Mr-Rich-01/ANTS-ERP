@@ -15,6 +15,7 @@ import {
   Label,
 } from '@ants/ui';
 import { Icon } from '@/components/Icon';
+import { SearchCombobox, type ComboOption } from '@/components/ui/SearchCombobox';
 import { createSupplierPaymentAction } from '@/app/(erp)/compras/actions';
 import { canSubmitSupplierPayment, supplierPaymentInitialAccountId } from '@ants/shared';
 
@@ -65,6 +66,7 @@ export function SupplierPaymentDialog({ supplierId, purchaseOrderId, suggested, 
   }, [open, suggested]);
 
   const canSubmit = canSubmitSupplierPayment({ amount, accountId, idempotencyKey, pending });
+  const accountOptions: ComboOption[] = accounts.map((a) => ({ value: a.id, label: a.label }));
 
   const submit = () => {
     setError(null);
@@ -108,14 +110,17 @@ export function SupplierPaymentDialog({ supplierId, purchaseOrderId, suggested, 
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             <Label htmlFor="sp-account">Conta de tesouraria</Label>
-            <select id="sp-account" value={accountId} onChange={(e) => setAccountId(e.target.value)} style={selectStyle}>
-              <option value="">— Seleccione a conta —</option>
-              {accounts.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.label}
-                </option>
-              ))}
-            </select>
+            <SearchCombobox
+              id="sp-account"
+              modal
+              options={accountOptions}
+              value={accountId}
+              onChange={(v) => setAccountId(v)}
+              placeholder="— Seleccione a conta —"
+              searchPlaceholder="Pesquisar conta…"
+              emptyText="Sem contas para a pesquisa."
+              triggerStyle={{ height: 40, borderRadius: 8, border: '1px solid var(--field-bd)', background: 'var(--field)', padding: '0 10px', fontSize: 14 }}
+            />
           </div>
 
           {error && (

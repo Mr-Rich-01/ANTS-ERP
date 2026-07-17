@@ -4,6 +4,7 @@ import { useMemo, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { canSubmitInvoiceForm, civilDateInTimeZone } from '@ants/shared';
 import { Icon } from '@/components/Icon';
+import { SearchCombobox, type ComboOption } from '@/components/ui/SearchCombobox';
 import { fmt } from '@/lib/format';
 import { ACCENT } from '@/lib/erp-nav';
 import { createInvoiceAction } from '@/app/(erp)/facturas/actions';
@@ -60,24 +61,35 @@ export function NovaFacturaClient({ customers, products, warehouses, canDiscount
   const [idempotencyKey] = useState(() => createIdempotencyKey());
   const [issueDate, setIssueDate] = useState(() => civilDateInTimeZone());
   const [customerId, setCustomerId] = useState(customers[0]?.id ?? '');
+  const [customer, setCustomer] = useState<CustomerOpt | null>(customers[0] ?? null);
   const [warehouseId, setWarehouseId] = useState(warehouses[0]?.id ?? '');
   const [pay, setPay] = useState<'CASH' | 'MPESA' | 'EMOLA' | 'CARD' | 'TRANSFER'>('TRANSFER');
   const [notes, setNotes] = useState('');
   const [lines, setLines] = useState<Line[]>([]);
-  const [picker, setPicker] = useState('');
   const [error, setError] = useState<string | null>(null);
 
-  const customer = customers.find((c) => c.id === customerId);
+  const customerDefaults = useMemo<ComboOption[]>(
+    () => customers.map((c) => ({ value: c.id, label: c.name, sublabel: c.nuit ? `NUIT ${c.nuit}` : undefined, data: { nuit: c.nuit, phone: c.phone } })),
+    [customers],
+  );
+  const productDefaults = useMemo<ComboOption[]>(
+    () => products.map((p) => ({ value: p.id, label: p.name, sublabel: `${p.sku} · ${fmt(p.price)} · stock ${p.stock}`, data: { sku: p.sku, name: p.name, price: p.price, stock: p.stock } })),
+    [products],
+  );
+  const warehouseOptions = useMemo<ComboOption[]>(() => warehouses.map((w) => ({ value: w.id, label: w.label })), [warehouses]);
 
-  const addProduct = (productId: string) => {
-    setPicker('');
-    if (!productId) return;
-    const p = products.find((x) => x.id === productId);
-    if (!p) return;
+  const pickCustomer = (value: string, option: ComboOption | null) => {
+    setCustomerId(value);
+    setCustomer(option ? { id: option.value, name: option.label, nuit: String(option.data?.nuit ?? ''), phone: String(option.data?.phone ?? '') } : null);
+  };
+
+  const addProduct = (option: ComboOption | null) => {
+    if (!option) return;
+    const d = option.data ?? {};
     setLines((L) => {
-      const existing = L.find((l) => l.productId === productId);
-      if (existing) return L.map((l) => (l.productId === productId ? { ...l, qty: l.qty + 1 } : l));
-      return [...L, { productId: p.id, name: p.name, sku: p.sku, price: p.price, stock: p.stock, qty: 1, disc: 0 }];
+      const existing = L.find((l) => l.productId === option.value);
+      if (existing) return L.map((l) => (l.productId === option.value ? { ...l, qty: l.qty + 1 } : l));
+      return [...L, { productId: option.value, name: String(d.name ?? option.label), sku: String(d.sku ?? ''), price: Number(d.price ?? 0), stock: Number(d.stock ?? 0), qty: 1, disc: 0 }];
     });
   };
   const setQty = (id: string, d: number) => setLines((L) => L.map((l) => (l.productId === id ? { ...l, qty: Math.max(1, l.qty + d) } : l)));
@@ -125,14 +137,15 @@ export function NovaFacturaClient({ customers, products, warehouses, canDiscount
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 13 }}>
             <div style={{ gridColumn: 'span 2' }}>
               <label style={label}>Cliente</label>
-              <select value={customerId} onChange={(e) => setCustomerId(e.target.value)} style={selectStyle}>
-                {customers.length === 0 && <option value="">— Sem clientes —</option>}
-                {customers.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
+              <SearchCombobox
+                searchEndpoint="/api/search/customers?active=1"
+                defaultOptions={customerDefaults}
+                value={customerId}
+                onChange={pickCustomer}
+                placeholder={customers.length === 0 ? '— Sem clientes —' : '— Seleccione o cliente —'}
+                searchPlaceholder="Pesquisar por nome ou NUIT…"
+                emptyText="Sem clientes para a pesquisa."
+              />
             </div>
             <div>
               <label style={label}>Data de emissão</label>
@@ -157,13 +170,14 @@ export function NovaFacturaClient({ customers, products, warehouses, canDiscount
             </div>
             <div>
               <label style={label}>Armazém (saída de stock)</label>
-              <select value={warehouseId} onChange={(e) => setWarehouseId(e.target.value)} style={selectStyle}>
-                {warehouses.map((w) => (
-                  <option key={w.id} value={w.id}>
-                    {w.label}
-                  </option>
-                ))}
-              </select>
+              <SearchCombobox
+                options={warehouseOptions}
+                value={warehouseId}
+                onChange={(v) => setWarehouseId(v)}
+                placeholder="— Seleccione o armazém —"
+                searchPlaceholder="Pesquisar armazém…"
+                emptyText="Sem armazéns para a pesquisa."
+              />
             </div>
           </div>
         </div>
@@ -172,14 +186,18 @@ export function NovaFacturaClient({ customers, products, warehouses, canDiscount
         <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 16, overflow: 'hidden' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px 13px', gap: 10, flexWrap: 'wrap' }}>
             <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)' }}>Produtos &amp; serviços</span>
-            <select value={picker} onChange={(e) => addProduct(e.target.value)} style={{ ...selectStyle, width: 260, maxWidth: '50vw', height: 38 }}>
-              <option value="">+ Adicionar produto…</option>
-              {products.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name} — {fmt(p.price)} (stock {p.stock})
-                </option>
-              ))}
-            </select>
+            <div style={{ width: 260, maxWidth: '50vw' }}>
+              <SearchCombobox
+                searchEndpoint="/api/search/products"
+                defaultOptions={productDefaults}
+                value=""
+                onChange={(_, option) => addProduct(option)}
+                placeholder="+ Adicionar produto…"
+                searchPlaceholder="Pesquisar por nome ou SKU…"
+                emptyText="Sem produtos para a pesquisa."
+                triggerStyle={{ height: 38 }}
+              />
+            </div>
           </div>
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 600 }}>

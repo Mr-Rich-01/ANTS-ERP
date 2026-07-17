@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation';
 import { forCompany } from '@ants/database';
-import { hasPermission, listProducts, listSuppliers, listWarehouses } from '@ants/domain';
+import { hasPermission, listSuppliers, listWarehouses, searchProductOptions } from '@ants/domain';
 import { getContext } from '@/lib/session';
 import { NovaOrdemClient, type SupplierOpt, type ProductOpt, type WarehouseOpt } from './NovaOrdemClient';
 
@@ -11,7 +11,8 @@ export default async function NovaOrdemPage() {
   if (!ctx.companyId || !hasPermission(ctx, 'purchases.create')) redirect('/compras');
 
   const db = forCompany(ctx.companyId);
-  const [suppliers, products, warehouses] = await Promise.all([listSuppliers(db, ctx), listProducts(db, ctx), listWarehouses(db, ctx)]);
+  // Produtos: apenas as primeiras opções — o resto chega por pesquisa server-side (S2).
+  const [suppliers, products, warehouses] = await Promise.all([listSuppliers(db, ctx), searchProductOptions(db, ctx), listWarehouses(db, ctx)]);
 
   const supplierOpts: SupplierOpt[] = suppliers
     .filter((s) => s.status === 'ACTIVE')

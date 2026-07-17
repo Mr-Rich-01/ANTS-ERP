@@ -99,6 +99,54 @@ export async function listProducts(db: PrismaClient, ctx: RequestContext): Promi
   return rows.map(toListItem);
 }
 
+export interface ProductSearchOption {
+  id: string;
+  sku: string;
+  name: string;
+  salePrice: number;
+  avgCost: number;
+  /** Stock agregado de todos os armazéns. */
+  stock: number;
+}
+
+/**
+ * Pesquisa leve de produtos por nome/SKU para dropdowns pesquisáveis (máx. `take`).
+ * `ids` resolve labels de valores já seleccionados.
+ */
+export async function searchProductOptions(
+  db: PrismaClient,
+  ctx: RequestContext,
+  params: { query?: string; ids?: string[]; take?: number } = {},
+): Promise<ProductSearchOption[]> {
+  requirePermission(ctx, 'stock.view');
+  requireCompany(ctx);
+  const take = Math.min(Math.max(params.take ?? 20, 1), 50);
+  const query = params.query?.trim();
+  const where: Prisma.ProductWhereInput = {};
+  if (params.ids?.length) {
+    where.id = { in: params.ids };
+  } else if (query) {
+    where.OR = [
+      { name: { contains: query, mode: 'insensitive' } },
+      { sku: { contains: query, mode: 'insensitive' } },
+    ];
+  }
+  const rows = await db.product.findMany({
+    where,
+    orderBy: { name: 'asc' },
+    take,
+    select: { id: true, sku: true, name: true, salePrice: true, avgCost: true, stockLevels: { select: { quantity: true } } },
+  });
+  return rows.map((p) => ({
+    id: p.id,
+    sku: p.sku,
+    name: p.name,
+    salePrice: Number(p.salePrice),
+    avgCost: Number(p.avgCost),
+    stock: p.stockLevels.reduce((a, l) => a + l.quantity, 0),
+  }));
+}
+
 /** Detalhe de um produto (por id ou SKU) com stock por armazém. */
 export async function getProduct(db: PrismaClient, ctx: RequestContext, idOrSku: string): Promise<ProductDetail> {
   requirePermission(ctx, 'stock.view');

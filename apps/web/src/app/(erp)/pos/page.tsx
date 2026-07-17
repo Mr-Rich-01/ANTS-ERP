@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation';
 import { forCompany } from '@ants/database';
-import { hasPermission, listCustomers, listWarehouses } from '@ants/domain';
+import { hasPermission, listWarehouses, searchCustomerOptions } from '@ants/domain';
 import { NoPermission } from '@/components/NoPermission';
 import { getContext } from '@/lib/session';
 import { PosClient, type PosCustomerOpt, type PosProductOpt, type PosWarehouseOpt } from './PosClient';
@@ -21,8 +21,9 @@ export default async function PosPage() {
 
   const db = forCompany(ctx.companyId);
   const canViewCustomers = hasPermission(ctx, 'clients.view');
+  // Clientes: apenas as primeiras opções — o resto chega por pesquisa server-side (S2).
   const [customers, warehouses, products] = await Promise.all([
-    canViewCustomers ? listCustomers(db, ctx) : Promise.resolve([]),
+    canViewCustomers ? searchCustomerOptions(db, ctx, { onlyActive: true }) : Promise.resolve([]),
     listWarehouses(db, ctx),
     db.product.findMany({
       where: { status: 'ACTIVE' },
@@ -31,9 +32,7 @@ export default async function PosPage() {
     }),
   ]);
 
-  const customerOpts: PosCustomerOpt[] = customers
-    .filter((c) => c.status === 'ACTIVE')
-    .map((c) => ({ id: c.id, name: c.name, nuit: c.nuit ?? '', phone: c.phone ?? '' }));
+  const customerOpts: PosCustomerOpt[] = customers.map((c) => ({ id: c.id, name: c.name, nuit: c.nuit, phone: c.phone }));
   const warehouseOpts: PosWarehouseOpt[] = warehouses.map((w) => ({ id: w.id, label: `${w.name} (${w.code})` }));
   const productOpts: PosProductOpt[] = products.map((p) => ({
     id: p.id,

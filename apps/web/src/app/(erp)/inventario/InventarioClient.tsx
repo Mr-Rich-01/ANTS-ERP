@@ -7,6 +7,7 @@ import { Icon } from '@/components/Icon';
 import { ACCENT } from '@/lib/erp-nav';
 import { fmt } from '@/lib/format';
 import { KpiCard, KpiGrid, type KpiCardData } from '@/components/ui/KpiCard';
+import { SearchCombobox, type ComboOption } from '@/components/ui/SearchCombobox';
 import { adjustInventoryAction } from '@/app/(erp)/produtos/actions';
 
 export interface WarehouseOption {
@@ -49,6 +50,7 @@ export function InventarioClient({
   const [pending, startTransition] = useTransition();
   const [counted, setCounted] = useState<Record<string, number>>(() => Object.fromEntries(lines.map((l) => [l.productId, l.systemQty])));
   const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
+  const warehouseComboOptions = useMemo<ComboOption[]>(() => warehouses.map((w) => ({ value: w.id, label: w.label })), [warehouses]);
 
   const stats = useMemo(() => {
     let conform = 0;
@@ -121,17 +123,17 @@ export function InventarioClient({
               <Icon name="warehouse" size={14} color="var(--text3)" />
               Armazém:
             </span>
-            <select
-              value={warehouseId}
-              onChange={(e) => router.push(`/inventario?warehouse=${e.target.value}`)}
-              style={{ height: 32, borderRadius: 8, border: '1px solid var(--field-bd)', background: 'var(--field)', padding: '0 10px', fontSize: 12.5, color: 'var(--text)', outline: 'none' }}
-            >
-              {warehouses.map((w) => (
-                <option key={w.id} value={w.id}>
-                  {w.label}
-                </option>
-              ))}
-            </select>
+            <div style={{ width: 240 }}>
+              <SearchCombobox
+                options={warehouseComboOptions}
+                value={warehouseId}
+                onChange={(v) => { if (v) router.push(`/inventario?warehouse=${v}`); }}
+                placeholder="— Seleccione o armazém —"
+                searchPlaceholder="Pesquisar armazém…"
+                emptyText="Sem armazéns para a pesquisa."
+                triggerStyle={{ height: 32, borderRadius: 8, border: '1px solid var(--field-bd)', background: 'var(--field)', padding: '0 10px', fontSize: 12.5 }}
+              />
+            </div>
           </div>
         </div>
         {canAdjust && (

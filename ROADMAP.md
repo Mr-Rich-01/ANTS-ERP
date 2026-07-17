@@ -53,9 +53,9 @@ Quick wins primeiro (validar o fluxo de trabalho), depois fundações (dados da 
 
 *(Prioridade 10)*
 
-- [ ] Criar/normalizar um componente único de dropdown com pesquisa (combobox shadcn/ui).
-- [ ] Aplicar em: Produtos, Clientes, Fornecedores, Contas, Armazéns.
-- [ ] Para listas grandes, pesquisa server-side com debounce (não carregar tudo para o cliente).
+- [x] Criar/normalizar um componente único de dropdown com pesquisa (combobox shadcn/ui).
+- [x] Aplicar em: Produtos, Clientes, Fornecedores, Contas, Armazéns.
+- [x] Para listas grandes, pesquisa server-side com debounce (não carregar tudo para o cliente).
 
 **Critério de conclusão:** todos os cinco dropdowns pesquisáveis; sem regressão nos formulários existentes.
 

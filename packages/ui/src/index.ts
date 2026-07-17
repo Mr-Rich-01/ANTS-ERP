@@ -11,3 +11,13 @@ export {
   DialogDescription,
   DialogFooter,
 } from './dialog';
+export { Popover, PopoverTrigger, PopoverAnchor, PopoverContent } from './popover';
+export {
+  Command,
+  CommandInput,
+  CommandList,
+  CommandEmpty,
+  CommandGroup,
+  CommandItem,
+  CommandLoading,
+} from './command';

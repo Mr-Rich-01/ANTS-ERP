@@ -5,6 +5,7 @@ import { cashClosingReport, getCompanyPrintProfile, hasPermission, listAccounts,
 import { getContext } from '@/lib/session';
 import { Icon } from '@/components/Icon';
 import { PrintButton } from '@/components/PrintButton';
+import { SearchCombobox } from '@/components/ui/SearchCombobox';
 import { CompanyHeader, DocumentFooter, PrintLayout, SignatureBlock } from '@/components/print/PrintLayout';
 import { fmt } from '@/lib/format';
 
@@ -121,13 +122,15 @@ export default async function FechoPage({ searchParams }: { searchParams: Search
       <form method="get" className="ants-noprint" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(160px,1fr))', gap: 10, alignItems: 'end', ...cardStyle }}>
         <label style={labelStyle}>
           Conta de tesouraria
-          <select name="account" defaultValue={accountId} style={field}>
-            {accounts.map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.name}
-              </option>
-            ))}
-          </select>
+          <SearchCombobox
+            name="account"
+            options={accounts.map((a) => ({ value: a.id, label: a.name }))}
+            value={accountId}
+            placeholder="— Seleccione a conta —"
+            searchPlaceholder="Pesquisar conta…"
+            emptyText="Sem contas para a pesquisa."
+            triggerStyle={field}
+          />
         </label>
         <label style={labelStyle}>
           Data

@@ -17,6 +17,7 @@ import {
 import { Icon } from '@/components/Icon';
 import { NoPermission } from '@/components/NoPermission';
 import { PrintButton } from '@/components/PrintButton';
+import { SearchCombobox } from '@/components/ui/SearchCombobox';
 import { CompanyHeader, DocumentFooter } from '@/components/print/PrintLayout';
 import { getContext } from '@/lib/session';
 import { fmt } from '@/lib/format';
@@ -244,37 +245,65 @@ export default async function RelatoriosPage({ searchParams }: { searchParams: S
           {options.customers.length ? (
             <label style={labelStyle}>
               Cliente
-              <select name="customerId" defaultValue={filters.customerId ?? ''} style={field}>
-                <option value="">Todos</option>
-                {options.customers.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
-              </select>
+              <SearchCombobox
+                name="customerId"
+                searchEndpoint="/api/search/customers"
+                defaultOptions={options.customers.slice(0, 20).map((o) => ({ value: o.id, label: o.name }))}
+                value={filters.customerId ?? ''}
+                selectedLabel={options.customers.find((o) => o.id === filters.customerId)?.name}
+                placeholder="Todos"
+                searchPlaceholder="Pesquisar por nome ou NUIT…"
+                emptyText="Sem clientes para a pesquisa."
+                clearable
+                triggerStyle={field}
+              />
             </label>
           ) : null}
           {options.suppliers.length ? (
             <label style={labelStyle}>
               Fornecedor
-              <select name="supplierId" defaultValue={filters.supplierId ?? ''} style={field}>
-                <option value="">Todos</option>
-                {options.suppliers.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
-              </select>
+              <SearchCombobox
+                name="supplierId"
+                options={options.suppliers.map((o) => ({ value: o.id, label: o.name }))}
+                value={filters.supplierId ?? ''}
+                placeholder="Todos"
+                searchPlaceholder="Pesquisar fornecedor…"
+                emptyText="Sem fornecedores para a pesquisa."
+                clearable
+                triggerStyle={field}
+              />
             </label>
           ) : null}
           {options.products.length ? (
             <label style={labelStyle}>
               Produto
-              <select name="productId" defaultValue={filters.productId ?? ''} style={field}>
-                <option value="">Todos</option>
-                {options.products.map((o) => <option key={o.id} value={o.id}>{o.sku} · {o.name}</option>)}
-              </select>
+              <SearchCombobox
+                name="productId"
+                searchEndpoint="/api/search/products"
+                defaultOptions={options.products.slice(0, 20).map((o) => ({ value: o.id, label: o.name, sublabel: o.sku }))}
+                value={filters.productId ?? ''}
+                selectedLabel={options.products.find((o) => o.id === filters.productId)?.name}
+                placeholder="Todos"
+                searchPlaceholder="Pesquisar por nome ou SKU…"
+                emptyText="Sem produtos para a pesquisa."
+                clearable
+                triggerStyle={field}
+              />
             </label>
           ) : null}
           {options.treasuryAccounts.length ? (
             <label style={labelStyle}>
               Conta
-              <select name="treasuryAccountId" defaultValue={filters.treasuryAccountId ?? ''} style={field}>
-                <option value="">Todas</option>
-                {options.treasuryAccounts.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
-              </select>
+              <SearchCombobox
+                name="treasuryAccountId"
+                options={options.treasuryAccounts.map((o) => ({ value: o.id, label: o.name }))}
+                value={filters.treasuryAccountId ?? ''}
+                placeholder="Todas"
+                searchPlaceholder="Pesquisar conta…"
+                emptyText="Sem contas para a pesquisa."
+                clearable
+                triggerStyle={field}
+              />
             </label>
           ) : null}
           <label style={labelStyle}>

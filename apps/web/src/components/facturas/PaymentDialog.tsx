@@ -15,6 +15,7 @@ import {
   Label,
 } from '@ants/ui';
 import { Icon } from '@/components/Icon';
+import { SearchCombobox, type ComboOption } from '@/components/ui/SearchCombobox';
 import { createPaymentAction } from '@/app/(erp)/facturas/actions';
 
 const selectStyle: React.CSSProperties = {
@@ -33,6 +34,16 @@ export interface AccountOption {
   id: string;
   label: string;
 }
+
+/** Alinha o botão do combobox com os campos deste diálogo. */
+const comboTriggerStyle: React.CSSProperties = {
+  height: 40,
+  borderRadius: 8,
+  border: '1px solid var(--field-bd)',
+  background: 'var(--field)',
+  padding: '0 10px',
+  fontSize: 14,
+};
 
 function createIdempotencyKey(): string {
   if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
@@ -53,6 +64,7 @@ export function PaymentDialog({ invoiceId, outstanding, accounts, trigger }: { i
   const [method, setMethod] = useState<'CASH' | 'MPESA' | 'EMOLA' | 'CARD' | 'TRANSFER'>('CASH');
   const [accountId, setAccountId] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const accountOptions: ComboOption[] = accounts.map((a) => ({ value: a.id, label: a.label }));
 
   useEffect(() => {
     if (open) {
@@ -105,14 +117,17 @@ export function PaymentDialog({ invoiceId, outstanding, accounts, trigger }: { i
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             <Label htmlFor="pay-account">Conta de tesouraria</Label>
-            <select id="pay-account" value={accountId} onChange={(e) => setAccountId(e.target.value)} style={selectStyle}>
-              <option value="">— Seleccione a conta —</option>
-              {accounts.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.label}
-                </option>
-              ))}
-            </select>
+            <SearchCombobox
+              id="pay-account"
+              modal
+              options={accountOptions}
+              value={accountId}
+              onChange={(v) => setAccountId(v)}
+              placeholder="— Seleccione a conta —"
+              searchPlaceholder="Pesquisar conta…"
+              emptyText="Sem contas para a pesquisa."
+              triggerStyle={comboTriggerStyle}
+            />
           </div>
 
           {error && (

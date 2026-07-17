@@ -88,6 +88,45 @@ export async function listCustomers(db: PrismaClient, ctx: RequestContext): Prom
   return rows.map(toListItem);
 }
 
+export interface CustomerSearchOption {
+  id: string;
+  name: string;
+  nuit: string;
+  phone: string;
+}
+
+/**
+ * Pesquisa leve de clientes por nome/NUIT para dropdowns pesquisáveis (máx. `take`).
+ * `ids` resolve labels de valores já seleccionados; `onlyActive` limita a clientes activos.
+ */
+export async function searchCustomerOptions(
+  db: PrismaClient,
+  ctx: RequestContext,
+  params: { query?: string; ids?: string[]; take?: number; onlyActive?: boolean } = {},
+): Promise<CustomerSearchOption[]> {
+  requirePermission(ctx, 'clients.view');
+  requireCompany(ctx);
+  const take = Math.min(Math.max(params.take ?? 20, 1), 50);
+  const query = params.query?.trim();
+  const where: Prisma.CustomerWhereInput = {};
+  if (params.onlyActive) where.status = 'ACTIVE';
+  if (params.ids?.length) {
+    where.id = { in: params.ids };
+  } else if (query) {
+    where.OR = [
+      { name: { contains: query, mode: 'insensitive' } },
+      { nuit: { contains: query, mode: 'insensitive' } },
+    ];
+  }
+  const rows = await db.customer.findMany({
+    where,
+    orderBy: { name: 'asc' },
+    take,
+    select: { id: true, name: true, nuit: true, phone: true },
+  });
+  return rows.map((c) => ({ id: c.id, name: c.name, nuit: c.nuit ?? '', phone: c.phone ?? '' }));
+}
+
 /** Detalhe de um cliente da empresa activa. */
 export async function getCustomer(db: PrismaClient, ctx: RequestContext, id: string): Promise<CustomerDetail> {
   requirePermission(ctx, 'clients.view');
