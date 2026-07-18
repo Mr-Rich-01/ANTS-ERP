@@ -131,7 +131,8 @@ Empresa demo: **ANTS Demo, Lda.** (`demo-company`), filiais Maputo e Matola.
 
 ## Convenções
 
-- Commits em português; terminar com a linha `Co-Authored-By: Claude Opus 4.8`.
+- Commits em português; terminar com a linha
+  `Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>`.
 - Ao portar/editar ecrãs, preservar a identidade visual do design (tokens, tipografia,
   espaçamento). Marcar dados ainda não ligados com `// TODO: ligar à API` e não
   apresentá-los como reais.
