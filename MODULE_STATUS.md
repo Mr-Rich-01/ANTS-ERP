@@ -5,10 +5,10 @@ _Última actualização: 2026-07-18_
 Estado vivo do projecto. O conhecimento permanente (arquitectura, regras, comandos) está
 em [`CLAUDE.md`](CLAUDE.md).
 
-**Último commit funcional:** pendente na branch `s8-produtos-stock-inicial` (Sessão S8 do ROADMAP)
-**Fase concluída:** `S8 — Produtos: criação com stock inicial` (ROADMAP; fase anterior: `S7 — Fluxo de Ordem de Compra`)
+**Último commit funcional:** pendente na branch `s9-inventario` (Sessão S9 do ROADMAP)
+**Fase concluída:** `S9 — Inventário em duas etapas` (ROADMAP; fase anterior: `S8 — Produtos: criação com stock inicial`)
 **UAT interna/demo:** V1 candidata a demo externa apos UAT interna, aprovada com ressalvas em 2026-07-06; P1-04 acrescenta Contabilidade V1 pronta para UAT/demo com limites; P1-05 acrescenta Fecho de Caixa V1 operacional sem persistencia formal; demo final check registado em `docs/DEMO_FINAL_CHECK.md` em 2026-07-08 como pronto com ressalvas menores
-**Próximo passo:** `Sessão S9 — Inventário em duas etapas` (ROADMAP) — não iniciar sem instrução explícita (tem ponto 🔒: plano completo antes de código — schema + lógica de ajuste; a validação gera movimentos de stock e lançamentos contabilísticos, com ligação à S10); mantém-se pendente o smoke manual final em browser externo/limpo (logout, clique final POS, Fecho de Caixa V1) antes da demo externa
+**Próximo passo:** `Sessão S10 — Contabilidade: lançamentos` (ROADMAP) — não iniciar sem instrução explícita (tem ponto 🔒: mapa débito/crédito de cada tipo de lançamento aprovado ANTES de qualquer código; inclui CMV na venda + par da devolução das NCs, conta «Outros proveitos» das ND, anulação de NC; o teste de coerência 131 vs. stock físico deve incluir `PRODUCT_OPENING_STOCK` (S8) e `STOCK_COUNT_VALIDATED` (S9)); mantém-se pendente o smoke manual final em browser externo/limpo (logout, clique final POS, Fecho de Caixa V1) antes da demo externa
 
 ---
 
@@ -56,6 +56,7 @@ em [`CLAUDE.md`](CLAUDE.md).
 | **S6** | **Melhorias na Fatura** (rascunhos série `RASC` sem efeitos + emissão que consome o FT só nesse instante, edição de rascunho, histórico de alterações no documento via `AuditLog`, descarte com motivo obrigatório, cancelamento com nome do responsável e hora; migração aditiva `s6_invoice_drafts`; filtro central `ACTIVE_INVOICE_STATUSES`; suite `test:integration:invoices:drafts` 13/13) | ✅ |
 | **S7** | **Fluxo de Ordem de Compra** (estados `PENDING_APPROVAL`→`APPROVED`/`REJECTED` antes da recepção; aprovação/rejeição com gate `purchases.approve` existente — zero alterações de RBAC; rejeição terminal com motivo ≥ 10 chars; recepção só de OCs aprovadas; observações da recepção na UI; indicação ao solicitante por chips/destaque; migrações aditivas `s7_purchase_order_approval` + backfill `SENT`→`APPROVED`; suite `test:integration:purchases:approval` 9/9) | ✅ |
 | **S8** | **Produtos: criação com stock inicial** (secção opcional «Stock inicial» no dialog de criação — quantidade + custo unitário + armazém; `StockMovement IN` normal que inicializa o avgCost = custo informado; lançamento de abertura D 131 / C 312 nova via mapping `OPENING_BALANCE_EQUITY` no diário `DAB`; scope de idempotência `PRODUCT_CREATE`; migração aditiva `s8_product_initial_stock`; suite `test:integration:products:initial-stock` 10/10) | ✅ |
+| **S9** | **Inventário em duas etapas** (contagem série `CI` em RASCUNHO com snapshot `systemQty` e zero efeitos → validação `stock.adjust` aplica o delta contado sobre o stock corrente sob `FOR UPDATE`; `StockMovement ADJUST` com `stockCountId` + lançamento único `AJ` no `DAJ`: Excedente D 131/C 421, Déficit D 551/C 131 ao avgCost corrente com avgCost intacto; edição com refresh de snapshots e descarte com motivo padrão S6; ajuste directo legado removido; migração aditiva `s9_stock_counts`; suite `test:integration:stock:counts` 14/14) | ✅ |
 | 9 | RH & Salários | 🗺️ futuro |
 | X | RLS forçado em toda a BD (fase transversal, pré-produção) | 🗺️ futuro |
 
@@ -495,6 +496,59 @@ no `AB`, arredondamento a 2 casas com cálculo único, idempotência + conflito 
 weighted-average com recepção posterior (10@10 + 10@20 → 15), permissões, mapping em falta com
 rollback total, isolamento A/B), regressões accounting 203/203 + reversal all 44/44 + POS 12/12 +
 purchases approval 9/9 + relatórios 24/24, build OK.
+
+**S9 — Inventário em duas etapas (2026-07-18):** nona sessão do ROADMAP, na branch
+`s9-inventario`, com migração aditiva aprovada `20260718230000_s9_stock_counts`: enum
+`StockCountStatus` (`DRAFT`/`VALIDATED`/`DISCARDED`), tabelas `stock_counts` (número série
+`CI`, snapshots de quem contou/validou/descartou, `journalEntryId`, motivo de descarte) e
+`stock_count_lines` (snapshot `systemQty` + `countedQty` + verdade histórica `appliedDiff`/
+`appliedUnitCost`/`appliedValue`; único por contagem+produto), coluna de rastreabilidade
+`stock_movements.stockCountId` (FK composta, padrão P0-03) e scopes `STOCK_COUNT_CREATE`/
+`STOCK_COUNT_VALIDATE`. **Plano completo aprovado (🔒) antes de código**, com quatro decisões
+explícitas: (1) permissões sem RBAC novo — contar/editar/descartar com `stock.view` (o Caixa
+pode contar; rascunho auditado e sem efeitos) e validar com `stock.adjust` (Gestor/Admin);
+(2) concorrência contagem→validação — **delta vs. snapshot**: `diff = contado −
+systemQty(snapshot da gravação/edição)` aplicado sobre o stock corrente sob `FOR UPDATE`
+(contagem + produtos + níveis em ordem determinística); se algum produto ficasse negativo
+(vendido abaixo do contado), a validação falha por inteiro com os produtos listados e
+resolve-se editando (refresca snapshots) ou recontando; UI avisa «mudou» por linha e no
+dialog; (3) mapa D/C — contas novas do seed canónico (padrão S8, sem fallback): Excedente
+**D 131 / C 421 «Excedentes de inventário»** (`INVENTORY_SURPLUS`, grupo novo 42 «Outros
+proveitos» que fica preparado para as ND na S10) e Déficit **D 551 «Déficits de inventário»
+(`INVENTORY_SHORTAGE`, grupo novo 55) / C 131** — nunca a 511 CMV (reservada à S10; sem
+dupla contagem futura porque as unidades em falta nunca terão CMV de venda), num único
+lançamento por contagem no **Diário de Ajustamentos `DAJ`/`AJ`** (primeira utilização),
+evento `sourceType 'STOCK_COUNT'`/`STOCK_COUNT_VALIDATED` naturalmente único; (4)
+valorização ao avgCost corrente da validação com **avgCost intacto** nos dois sentidos
+(entrada ao próprio custo médio não o altera; saídas nunca recalculam — o inventário corrige
+quantidades, não custos). Nomenclatura S1 aplicada (Excedente/Déficit) nas contas e na UI.
+Domínio novo `packages/domain/src/stock-counts.ts` (`createStockCount`/`updateStockCount`
+com refresh de snapshots/`discardStockCount` motivo ≥ 10 chars/`validateStockCount`/
+`getStockCount`/`listStockCounts`); contagem sem diferenças valida sem efeitos e valor 0
+(ex.: avgCost 0) gera movimento sem lançamento. **Ajuste directo legado removido** após
+levantamento aprovado dos chamadores (`adjustInventory` + `adjustInventoryAction` +
+`InventarioClient` — nenhum fluxo automático dependia): `/inventario` passou a folha de
+contagem que grava rascunho (só linhas tocadas entram), lista de contagens com estados, e
+página nova `/inventario/contagem` com Editar/Validar/Descartar (dialogs padrão S6) e aviso
+de divergência. Labels do Extrato Diário: `STOCK_COUNT` → «Contagem de inventário».
+Verificado ao vivo em browser: `CI 2026/0001` gravada (BD confirma zero efeitos: stock
+8/247 intacto, 104 movimentos e 61 lançamentos inalterados, `appliedDiff` NULL) → editada
+(SUG-2 244→245, auditoria `stock.count.update`) → venda POS real `FT 2026/0027` de 2 ×
+RICE-25 entre contagem e validação (stock 8→6; banner «mudou» na linha) → validada:
+delta +2 sobre 6 → **8** (físico: 10 contados − 2 vendidos ✓), SUG-2 247→245, movimentos
+`ADJUST` com `stockCountId`, lançamento `AJ 2026/0001` Publicado e balanceado (D 131
+3 816,00 / C 421 3 816,00 + D 551 274,00 / C 131 274,00 = 4 090,00), avgCost 1 908,00/137,00
+intactos, visível no Extrato Diário como «Contagem de inventário»; `CI 2026/0002` descartada
+com motivo, responsável e hora, zero efeitos. Testes de seed 8b `#25`/c1 `#17` actualizados
+(44 contas / 18 mappings) e tenant-scope com asserções `StockCount`/`StockCountLine`.
+Validado: `prisma validate`/`migrate status` OK, typecheck 6/6, lint 6/6, testes unitários
+99 verdes, nova suite `pnpm test:integration:stock:counts` 14/14 (rascunho zero efeitos,
+permissões contar/validar, edição com refresh, validação completa com lançamento balanceado,
+idempotência do replay + revalidação bloqueada, delta sobre stock corrente, negativo bloqueado
+com rollback e recuperação por edição, sem diferenças, custo 0, descarte, mapping em falta
+com rollback, isolamento A/B, numeração CI, idempotência da criação), regressões accounting
+203/203 + products initial-stock 10/10 + POS 12/12 + reversal all 44/44 + relatórios 24/24 +
+purchases approval 9/9, build OK (rotas novas `/inventario/contagem`).
 
 **Hardening pré-produção P0-01 (2026-07-02):** seed demo bloqueado em `production`
 antes de criar o Prisma Client; credenciais demo removidas da interface de

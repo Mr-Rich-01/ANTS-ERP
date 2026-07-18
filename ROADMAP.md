@@ -140,13 +140,13 @@ Quick wins primeiro (validar o fluxo de trabalho), depois fundações (dados da 
 
 *(Prioridade 8)*
 
-🔒 **Aprovação:** plano completo antes de código (schema + lógica de ajuste).
+🔒 **Aprovação:** plano completo antes de código (schema + lógica de ajuste). *(Cumprido: plano completo aprovado em 2026-07-18 — modelo `StockCount`/`StockCountLine`, permissões contar=`stock.view`/validar=`stock.adjust` sem RBAC novo, regra de concorrência, mapa D/C e valorização.)*
 
-- [ ] Estado **Rascunho**: contagem gravada sem efeito no stock.
-- [ ] Estado **Validado**: só aqui o stock é ajustado.
-- [ ] Ajustes na validação geram movimentos de stock e lançamentos contabilísticos (ligação à S10).
-- [ ] Concorrência: se o stock mudou entre a contagem e a validação, definir regra (recontagem vs. ajuste pela diferença) — decisão a aprovar.
-- [ ] Testes: validação idempotente (validar duas vezes não duplica ajustes).
+- [x] Estado **Rascunho**: contagem gravada sem efeito no stock. *(Série própria `CI` no `DocumentCounter`; snapshot `systemQty` por linha; zero efeitos em stock/custo médio/contabilidade; editável com refresh de snapshots; descartável com motivo ≥ 10 chars — padrão S6; nunca se apaga.)*
+- [x] Estado **Validado**: só aqui o stock é ajustado. *(Gate `stock.adjust`; lock `FOR UPDATE` na contagem + produtos + níveis de stock; terminal.)*
+- [x] Ajustes na validação geram movimentos de stock e lançamentos contabilísticos (ligação à S10). *(`StockMovement ADJUST` com `stockCountId` por linha com diferença; lançamento único no Diário de Ajustamentos `DAJ`/`AJ`: Excedente D 131/C 421 `INVENTORY_SURPLUS`, Déficit D 551 `INVENTORY_SHORTAGE`/C 131 — nunca a 511 CMV, reservada à S10; valorização ao avgCost corrente da validação; avgCost fica intacto nos dois sentidos; sem fallback de mapping.)*
+- [x] Concorrência: se o stock mudou entre a contagem e a validação, definir regra (recontagem vs. ajuste pela diferença) — decisão a aprovar. *(Aprovada: **delta vs. snapshot** — `diff = contado − systemQty(snapshot)` aplicado sobre o stock corrente sob lock; se ficasse negativo (produto vendido abaixo do contado), a validação falha por inteiro com os produtos listados — editar/recontar refresca o snapshot; UI avisa divergências antes de validar.)*
+- [x] Testes: validação idempotente (validar duas vezes não duplica ajustes). *(Scope próprio `STOCK_COUNT_VALIDATE` + evento `STOCK_COUNT_VALIDATED` naturalmente único; suite `test:integration:stock:counts` 14/14.)*
 
 ---
 
@@ -158,7 +158,7 @@ Quick wins primeiro (validar o fluxo de trabalho), depois fundações (dados da 
 
 - [ ] Finalizar lançamentos manuais (validação: balanceados, período aberto, contas válidas).
 - [ ] Lançamentos automáticos a partir de: Vendas, Compras, Recebimento de mercadorias, Pagamentos, Recebimentos, Produção, Inventário, Ajustes de stock.
-- [ ] Introduzir CMV na venda (D CMV / C Existências) **e** o par da devolução nas NCs com devolução de stock (D Existências / C CMV ao `unitCost` snapshot das linhas) — os dois lados na mesma sessão, com teste de coerência da conta 131 contra o stock físico. *(Decisão da S5: a NC lança só o espelho da venda 411/221/121 até esta sessão. Decisão da S8: o teste de coerência 131 vs. stock físico deve incluir também os movimentos de abertura de stock inicial — lançamentos `PRODUCT_OPENING_STOCK` do diário `DAB` —, não só as compras.)*
+- [ ] Introduzir CMV na venda (D CMV / C Existências) **e** o par da devolução nas NCs com devolução de stock (D Existências / C CMV ao `unitCost` snapshot das linhas) — os dois lados na mesma sessão, com teste de coerência da conta 131 contra o stock físico. *(Decisão da S5: a NC lança só o espelho da venda 411/221/121 até esta sessão. Decisão da S8: o teste de coerência 131 vs. stock físico deve incluir também os movimentos de abertura de stock inicial — lançamentos `PRODUCT_OPENING_STOCK` do diário `DAB` —, não só as compras. Decisão da S9: idem para os ajustes de inventário — lançamentos `STOCK_COUNT_VALIDATED` do diário `DAJ` (excedentes debitam e déficits creditam a 131).)*
 - [ ] Mapear conta de **Outros proveitos** para as ND (juros, portes) em vez de 411 Vendas — migrar ou reclassificar as ND já emitidas se necessário. *(Limitação declarada da S5: sem conta mapeada, a ND credita 411.)*
 - [ ] **Fluxo de anulação de Nota de Crédito** (estorno simétrico do `CREDIT_NOTE_ISSUED` + reversão da devolução de stock) — desbloqueia o cancelamento de faturas com NC, hoje impedido por guard conservador (`invoices.ts:1331`).
 - [ ] Cada fonte: idempotente (chave de origem única — reprocessar não duplica).

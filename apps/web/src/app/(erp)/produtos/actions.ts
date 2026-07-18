@@ -5,7 +5,6 @@ import { forContext } from '@ants/database';
 import {
   createProduct,
   updateProduct,
-  adjustInventory,
   DomainError,
   type CreateProductOptions,
   type ProductInput,
@@ -91,27 +90,5 @@ export async function updateProductAction(_prev: ProductFormState, formData: For
   }
 }
 
-export interface InventoryResult {
-  error?: string;
-  ok?: boolean;
-  adjusted?: number;
-}
-
-/** Aplica um ajuste de inventário a um armazém (contagem física). */
-export async function adjustInventoryAction(input: {
-  warehouseId: string;
-  items: Array<{ productId: string; countedQty: number }>;
-}): Promise<InventoryResult> {
-  const ctx = await getContext();
-  if (!ctx.companyId) return { error: 'Sem empresa activa.' };
-  try {
-    const { adjusted } = await adjustInventory(forContext(ctx), ctx, input.warehouseId, input.items);
-    revalidatePath('/inventario');
-    revalidatePath('/produtos');
-    revalidatePath('/produtos/ficha');
-    return { ok: true, adjusted };
-  } catch (e) {
-    if (e instanceof DomainError) return { error: e.message };
-    throw e;
-  }
-}
+// O ajuste directo de inventário foi removido na Sessão S9 — o fluxo passou a ser
+// em duas etapas (contagem em rascunho → validação) em `/inventario/actions.ts`.

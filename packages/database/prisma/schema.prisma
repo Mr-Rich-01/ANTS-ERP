@@ -73,6 +73,8 @@ model Company {
   bankAccounts         CompanyBankAccount[]
   mobileWallets        CompanyMobileWallet[]
   logo                 CompanyLogo?
+  stockCounts          StockCount[]
+  stockCountLines      StockCountLine[]
 
   @@index([status])
   @@map("companies")
@@ -423,6 +425,7 @@ model Product {
   purchaseReceiptItems PurchaseReceiptItem[]
   quotationLines       QuotationLine[]
   creditNoteLines      CreditNoteLine[]
+  stockCountLines      StockCountLine[]
 
   @@unique([companyId, sku])
   @@unique([companyId, id])
@@ -450,6 +453,7 @@ model Warehouse {
   purchaseOrders   PurchaseOrder[]
   purchaseReceipts PurchaseReceipt[]
   creditNotes      CreditNote[]
+  stockCounts      StockCount[]
 
   @@unique([companyId, code])
   @@unique([companyId, id])
@@ -486,6 +490,9 @@ model StockMovement {
   invoice           Invoice?          @relation(fields: [companyId, invoiceId], references: [companyId, id], onDelete: Restrict)
   purchaseReceiptId String?
   purchaseReceipt   PurchaseReceipt?  @relation(fields: [companyId, purchaseReceiptId], references: [companyId, id], onDelete: Restrict)
+  /// Contagem de inventário que originou o ajuste (S9 — rastreabilidade).
+  stockCountId      String?
+  stockCount        StockCount?       @relation(fields: [companyId, stockCountId], references: [companyId, id], onDelete: Restrict)
   reversesId        String?
   reverses          StockMovement?    @relation("StockMovementReversal", fields: [companyId, reversesId], references: [companyId, id], onDelete: Restrict)
   reversedBy        StockMovement?    @relation("StockMovementReversal")
@@ -505,7 +512,81 @@ model StockMovement {
   @@index([companyId, warehouseId])
   @@index([companyId, invoiceId])
   @@index([companyId, purchaseReceiptId])
+  @@index([companyId, stockCountId])
   @@map("stock_movements")
+}
+
+// ─────────────────────────────────────────────────────────────
+// Inventário em duas etapas (Sessão S9)
+// ─────────────────────────────────────────────────────────────
+
+/// Contagem de inventário: RASCUNHO sem qualquer efeito (stock, custo médio,
+/// contabilidade) → VALIDADA (só aqui aplica ajustes: delta contado vs. snapshot
+/// sobre o stock corrente) ou DESCARTADA (motivo obrigatório; nunca se apaga).
+model StockCount {
+  id              String           @id @default(cuid())
+  companyId       String
+  company         Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  warehouseId     String
+  warehouse       Warehouse        @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
+  /// Número da série CI (ex.: "CI 2026/0001") — interno, sem valor fiscal.
+  number          String
+  status          StockCountStatus @default(DRAFT)
+  notes           String?
+  countedById     String?
+  countedByName   String
+  /// Momento da contagem (última gravação/edição — data dos snapshots systemQty).
+  countedAt       DateTime
+  validatedById   String?
+  validatedByName String?
+  validatedAt     DateTime?
+  /// Lançamento contabilístico do ajuste (apenas quando a validação teve valor > 0).
+  journalEntryId  String?
+  discardedById   String?
+  discardedByName String?
+  discardedAt     DateTime?
+  discardReason   String?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  lines     StockCountLine[]
+  movements StockMovement[]
+
+  @@unique([companyId, number])
+  @@unique([companyId, id])
+  @@index([companyId, status])
+  @@index([companyId, warehouseId])
+  @@map("stock_counts")
+}
+
+model StockCountLine {
+  id              String     @id @default(cuid())
+  companyId       String
+  company         Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  stockCountId    String
+  stockCount      StockCount @relation(fields: [companyId, stockCountId], references: [companyId, id], onDelete: Cascade)
+  productId       String
+  product         Product    @relation(fields: [productId], references: [id], onDelete: Restrict)
+  productSku      String
+  productName     String
+  /// Snapshot do stock de sistema no momento da gravação/última edição do rascunho.
+  systemQty       Int
+  countedQty      Int
+  /// Verdade histórica do ajuste aplicado na validação (delta, custo médio e valor).
+  appliedDiff     Int?
+  appliedUnitCost Decimal?   @db.Decimal(14, 2)
+  appliedValue    Decimal?   @db.Decimal(14, 2)
+
+  @@unique([stockCountId, productId])
+  @@unique([companyId, id])
+  @@index([companyId])
+  @@map("stock_count_lines")
+}
+
+enum StockCountStatus {
+  DRAFT
+  VALIDATED
+  DISCARDED
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -1462,6 +1543,8 @@ enum OperationIdempotencyScope {
   INVOICE_DRAFT_CREATE
   INVOICE_DRAFT_ISSUE
   PRODUCT_CREATE
+  STOCK_COUNT_CREATE
+  STOCK_COUNT_VALIDATE
 }
 
 model OperationIdempotency {

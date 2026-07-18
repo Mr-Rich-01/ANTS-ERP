@@ -61,6 +61,10 @@ describe('scopeArgs — isolamento multiempresa', () => {
     expect(scopeArgs('StockMovement', 'create', { data: { productId: 'p1', quantity: 5 } }, C)).toEqual({
       data: { productId: 'p1', quantity: 5, companyId: C },
     });
+    expect(scopeArgs('StockCount', 'findMany', undefined, C)).toEqual({ where: { companyId: C } });
+    expect(scopeArgs('StockCountLine', 'create', { data: { productId: 'p1', countedQty: 3 } }, C)).toEqual({
+      data: { productId: 'p1', countedQty: 3, companyId: C },
+    });
   });
 
   it('Vendas (Invoice/Payment) estão no âmbito: injecta companyId', () => {

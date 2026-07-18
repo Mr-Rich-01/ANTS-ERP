@@ -41,6 +41,7 @@
     "test:integration:invoices:drafts": "pnpm --filter @ants/domain test:integration:invoice-drafts",
     "test:integration:purchases:approval": "pnpm --filter @ants/domain test:integration:purchases-approval",
     "test:integration:products:initial-stock": "pnpm --filter @ants/domain test:integration:products-initial-stock",
+    "test:integration:stock:counts": "pnpm --filter @ants/domain test:integration:stock-counts",
     "docker:dev": "docker compose up -d postgres redis",
     "docker:build:web": "docker build -f apps/web/Dockerfile -t ants-erp-web:local .",
     "docker:build:worker": "docker build -f apps/worker/Dockerfile -t ants-erp-worker:local .",

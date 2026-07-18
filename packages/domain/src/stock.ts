@@ -2,8 +2,7 @@ import type { PrismaClient } from '@ants/database';
 import type { RequestContext } from './context';
 import { requireCompany } from './context';
 import { requirePermission } from './permissions';
-import { NotFoundError, ValidationError } from './errors';
-import { writeAudit } from './audit';
+import { NotFoundError } from './errors';
 
 export type StockMovementType = 'IN' | 'OUT' | 'ADJUST';
 
@@ -94,67 +93,6 @@ export async function listInventory(db: PrismaClient, ctx: RequestContext, wareh
   }));
 }
 
-/**
- * Aplica um ajuste de inventário a um armazém: para cada linha com diferença,
- * actualiza o nível e regista um movimento ADJUST imutável + auditoria explícita.
- * Transaccional por produto. Devolve quantos produtos foram ajustados.
- */
-export async function adjustInventory(
-  db: PrismaClient,
-  ctx: RequestContext,
-  warehouseId: string,
-  items: Array<{ productId: string; countedQty: number }>,
-): Promise<{ adjusted: number }> {
-  requirePermission(ctx, 'stock.adjust');
-  const companyId = requireCompany(ctx);
-
-  const wh = await db.warehouse.findFirst({ where: { id: warehouseId } });
-  if (!wh) throw new NotFoundError('Armazém não encontrado.');
-
-  let adjusted = 0;
-  for (const it of items) {
-    if (!Number.isFinite(it.countedQty)) throw new ValidationError('Quantidade contada inválida.');
-    const counted = Math.trunc(it.countedQty);
-    if (counted < 0) throw new ValidationError('A quantidade contada não pode ser negativa.');
-
-    const done = await db.$transaction(async (tx) => {
-      const product = await tx.product.findFirst({ where: { id: it.productId, companyId } });
-      if (!product) throw new NotFoundError('Produto não encontrado.');
-      const level = await tx.stockLevel.findUnique({
-        where: { productId_warehouseId: { productId: it.productId, warehouseId } },
-      });
-      const current = level?.quantity ?? 0;
-      const diff = counted - current;
-      if (diff === 0) return false;
-
-      await tx.stockLevel.upsert({
-        where: { productId_warehouseId: { productId: it.productId, warehouseId } },
-        update: { quantity: counted },
-        create: { companyId, productId: it.productId, warehouseId, quantity: counted },
-      });
-      await tx.stockMovement.create({
-        data: {
-          companyId,
-          productId: it.productId,
-          warehouseId,
-          type: 'ADJUST',
-          quantity: diff,
-          balanceAfter: counted,
-          document: 'Inventário',
-          reason: 'Ajuste de inventário',
-          createdBy: ctx.userId,
-        },
-      });
-      await writeAudit(tx, ctx, {
-        action: 'stock.adjust',
-        entity: 'Product',
-        entityId: it.productId,
-        oldValues: { quantity: current, warehouseId },
-        newValues: { quantity: counted, warehouseId, diff },
-      });
-      return true;
-    });
-    if (done) adjusted += 1;
-  }
-  return { adjusted };
-}
+// O ajuste directo de inventário (`adjustInventory`) foi removido na Sessão S9:
+// os ajustes passam pelo fluxo de duas etapas em `stock-counts.ts` (contagem em
+// rascunho sem efeitos → validação com movimentos de stock + lançamento no DAJ).

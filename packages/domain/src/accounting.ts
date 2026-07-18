@@ -65,6 +65,7 @@ export function accountingSourceTypeLabel(value: string | null | undefined): str
     CREDIT_NOTE: 'Nota de credito',
     DEBIT_NOTE: 'Nota de debito',
     PRODUCT: 'Stock inicial de produto',
+    STOCK_COUNT: 'Contagem de inventário',
     REVERSAL: 'Estorno',
   };
   return labels[value] ?? value;
@@ -79,6 +80,7 @@ export function accountingEventLabel(value: string | null | undefined): string {
     SUPPLIER_PAYMENT_POSTED: 'Pagamento a fornecedor registado',
     CREDIT_NOTE_ISSUED: 'Nota de credito emitida',
     DEBIT_NOTE_ISSUED: 'Nota de debito emitida',
+    STOCK_COUNT_VALIDATED: 'Contagem de inventário validada',
     REVERSAL_POSTED: 'Estorno registado',
   };
   return labels[value] ?? value;

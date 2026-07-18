@@ -23,6 +23,8 @@ export const COMPANY_SCOPED = new Set<string>([
   'Warehouse',
   'StockLevel',
   'StockMovement',
+  'StockCount',
+  'StockCountLine',
   'Invoice',
   'InvoiceLine',
   'Payment',

@@ -514,10 +514,14 @@ async function seedDemo(prisma: PrismaClient) {
     { code: '31', name: 'Capital', type: 'EQUITY', normal: 'CREDIT', parent: '3', level: 2, posting: false },
     { code: '32', name: 'Resultados', type: 'EQUITY', normal: 'CREDIT', parent: '3', level: 2, posting: false },
     { code: '41', name: 'Vendas', type: 'REVENUE', normal: 'CREDIT', parent: '4', level: 2, posting: false },
+    // S9: grupo para excedentes de inventário (e futuros «Outros proveitos» das ND na S10).
+    { code: '42', name: 'Outros proveitos', type: 'REVENUE', normal: 'CREDIT', parent: '4', level: 2, posting: false },
     { code: '51', name: 'Custo das vendas', type: 'EXPENSE', normal: 'DEBIT', parent: '5', level: 2, posting: false },
     { code: '52', name: 'Compras', type: 'EXPENSE', normal: 'DEBIT', parent: '5', level: 2, posting: false },
     { code: '53', name: 'Fornecimentos e serviços', type: 'EXPENSE', normal: 'DEBIT', parent: '5', level: 2, posting: false },
     { code: '54', name: 'Custos com pessoal', type: 'EXPENSE', normal: 'DEBIT', parent: '5', level: 2, posting: false },
+    // S9: grupo para déficits (quebras) apurados em contagens de inventário.
+    { code: '55', name: 'Perdas de inventário', type: 'EXPENSE', normal: 'DEBIT', parent: '5', level: 2, posting: false },
     // Nível 3 — contas de movimento (posting)
     { code: '111', name: 'Caixa', type: 'ASSET', normal: 'DEBIT', parent: '11', level: 3, posting: true, provisioningKey: 'CASH_MAIN' },
     { code: '112', name: 'Bancos', type: 'ASSET', normal: 'DEBIT', parent: '11', level: 3, posting: true, provisioningKey: 'BANK_MAIN' },
@@ -534,11 +538,15 @@ async function seedDemo(prisma: PrismaClient) {
     { code: '321', name: 'Resultado do exercício', type: 'EQUITY', normal: 'CREDIT', parent: '32', level: 3, posting: true },
     { code: '322', name: 'Resultados transitados', type: 'EQUITY', normal: 'CREDIT', parent: '32', level: 3, posting: true },
     { code: '411', name: 'Vendas de mercadorias', type: 'REVENUE', normal: 'CREDIT', parent: '41', level: 3, posting: true, provisioningKey: 'SALES_REVENUE' },
+    // S9: contrapartida da entrada por excedente na validação de contagem de inventário.
+    { code: '421', name: 'Excedentes de inventário', type: 'REVENUE', normal: 'CREDIT', parent: '42', level: 3, posting: true, provisioningKey: 'INVENTORY_SURPLUS' },
     { code: '511', name: 'Custo das mercadorias vendidas', type: 'EXPENSE', normal: 'DEBIT', parent: '51', level: 3, posting: true, provisioningKey: 'COST_OF_GOODS_SOLD' },
     { code: '521', name: 'Compras de mercadorias', type: 'EXPENSE', normal: 'DEBIT', parent: '52', level: 3, posting: true, provisioningKey: 'PURCHASES_EXPENSE' },
     { code: '531', name: 'Despesas gerais', type: 'EXPENSE', normal: 'DEBIT', parent: '53', level: 3, posting: true, provisioningKey: 'GENERAL_EXPENSE' },
     { code: '532', name: 'Diferenças de caixa', type: 'EXPENSE', normal: 'DEBIT', parent: '53', level: 3, posting: true, provisioningKey: 'CASH_DIFFERENCE' },
     { code: '541', name: 'Salários', type: 'EXPENSE', normal: 'DEBIT', parent: '54', level: 3, posting: true, provisioningKey: 'SALARIES_EXPENSE' },
+    // S9: saída por déficit (quebra) na validação de contagem — nunca a 511 CMV (reservada à S10).
+    { code: '551', name: 'Déficits de inventário', type: 'EXPENSE', normal: 'DEBIT', parent: '55', level: 3, posting: true, provisioningKey: 'INVENTORY_SHORTAGE' },
   ];
   // Inserção por ordem de nível (pais primeiro). Não destrutivo: existente → mantém-se.
   const acctIdByCode = new Map<string, string>();
@@ -590,7 +598,7 @@ async function seedDemo(prisma: PrismaClient) {
     'CASH_MAIN', 'BANK_MAIN', 'MOBILE_MONEY', 'ACCOUNTS_RECEIVABLE', 'INVENTORY', 'VAT_INPUT',
     'ACCOUNTS_PAYABLE', 'VAT_OUTPUT', 'SALARIES_PAYABLE', 'SALES_REVENUE', 'COST_OF_GOODS_SOLD',
     'PURCHASES_EXPENSE', 'GENERAL_EXPENSE', 'CASH_DIFFERENCE', 'SALARIES_EXPENSE',
-    'OPENING_BALANCE_EQUITY',
+    'OPENING_BALANCE_EQUITY', 'INVENTORY_SURPLUS', 'INVENTORY_SHORTAGE',
   ];
   for (const key of systemKeys) {
     const acct = await prisma.ledgerAccount.findUnique({

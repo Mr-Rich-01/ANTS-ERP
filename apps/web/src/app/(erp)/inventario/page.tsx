@@ -1,10 +1,10 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { forCompany } from '@ants/database';
-import { hasPermission, listInventory, listWarehouses } from '@ants/domain';
+import { DomainError, getStockCount, hasPermission, listInventory, listStockCounts, listWarehouses } from '@ants/domain';
 import { getContext } from '@/lib/session';
 import { Icon } from '@/components/Icon';
-import { InventarioClient, type InventoryViewLine, type WarehouseOption } from './InventarioClient';
+import { InventarioClient, type CountListRow, type DraftPrefill, type InventoryViewLine, type WarehouseOption } from './InventarioClient';
 
 export const dynamic = 'force-dynamic';
 
@@ -23,7 +23,7 @@ const backBtn: React.CSSProperties = {
   width: 'max-content',
 };
 
-export default async function InventarioPage({ searchParams }: { searchParams: { warehouse?: string } }) {
+export default async function InventarioPage({ searchParams }: { searchParams: { warehouse?: string; contagem?: string } }) {
   const ctx = await getContext();
   if (!ctx.companyId || !hasPermission(ctx, 'stock.view')) redirect('/produtos');
 
@@ -41,8 +41,28 @@ export default async function InventarioPage({ searchParams }: { searchParams: {
     );
   }
 
-  const selectedId = warehouses.find((w) => w.id === searchParams.warehouse)?.id ?? warehouses[0]!.id;
-  const lines = await listInventory(db, ctx, selectedId);
+  // Modo edição: rascunho existente (linhas prefixadas; armazém fixo ao da contagem).
+  let draft: DraftPrefill | null = null;
+  if (searchParams.contagem) {
+    let detail;
+    try {
+      detail = await getStockCount(db, ctx, searchParams.contagem);
+    } catch (e) {
+      if (e instanceof DomainError) redirect('/inventario');
+      throw e;
+    }
+    if (detail.status !== 'DRAFT') redirect(`/inventario/contagem?id=${detail.id}`);
+    draft = {
+      id: detail.id,
+      number: detail.number,
+      warehouseId: detail.warehouseId,
+      notes: detail.notes ?? '',
+      lines: detail.lines.map((l) => ({ productId: l.productId, countedQty: l.countedQty })),
+    };
+  }
+
+  const selectedId = draft?.warehouseId ?? warehouses.find((w) => w.id === searchParams.warehouse)?.id ?? warehouses[0]!.id;
+  const [lines, counts] = await Promise.all([listInventory(db, ctx, selectedId), listStockCounts(db, ctx, 20)]);
 
   const viewLines: InventoryViewLine[] = lines.map((l) => ({
     productId: l.productId,
@@ -53,12 +73,23 @@ export default async function InventarioPage({ searchParams }: { searchParams: {
     avgCost: l.avgCost,
   }));
   const whOptions: WarehouseOption[] = warehouses.map((w) => ({ id: w.id, label: `${w.name} (${w.code})` }));
+  const countRows: CountListRow[] = counts.map((c) => ({
+    id: c.id,
+    number: c.number,
+    status: c.status,
+    warehouseLabel: `${c.warehouseName} (${c.warehouseCode})`,
+    countedByName: c.countedByName,
+    countedAt: c.countedAt.toISOString(),
+    lineCount: c.lineCount,
+  }));
 
   return (
     <InventarioClient
       warehouseId={selectedId}
       warehouses={whOptions}
       lines={viewLines}
+      counts={countRows}
+      draft={draft}
       canAdjust={hasPermission(ctx, 'stock.adjust')}
     />
   );

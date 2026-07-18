@@ -12,6 +12,7 @@ export * from './customers';
 export * from './suppliers';
 export * from './products';
 export * from './stock';
+export * from './stock-counts';
 export * from './invoices';
 export * from './commercial-documents';
 export * from './purchases';
