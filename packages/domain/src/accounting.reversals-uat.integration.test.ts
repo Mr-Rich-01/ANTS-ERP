@@ -8,7 +8,7 @@ import { prisma } from '@ants/database';
 import { civilDateInTimeZone, round2 } from '@ants/shared';
 import type { RequestContext } from './context';
 import { cancelInvoice, createInvoice, createPayment, reverseCustomerPayment } from './invoices';
-import { createPurchaseOrder, createSupplierPayment, receivePurchaseOrder, reversePurchaseReceipt, reverseSupplierPayment } from './purchases';
+import { approvePurchaseOrder, createPurchaseOrder, createSupplierPayment, receivePurchaseOrder, reversePurchaseReceipt, reverseSupplierPayment } from './purchases';
 import { reverseMovement, reverseTreasuryTransfer, transfer } from './treasury';
 import { ConflictError, ForbiddenError, NotFoundError } from './errors';
 
@@ -23,7 +23,7 @@ function ctx(companyId: string, permissions: string[]): RequestContext {
   return { companyId, userId: `${companyId}-user`, permissions: new Set(permissions), isPlatformAdmin: false };
 }
 
-const op = ctx(CA, ['sales.create', 'payments.receive', 'payments.cancel', 'invoices.cancel', 'purchases.create', 'supplierPayments.reverse', 'purchaseReceipts.reverse', 'treasury.transfer', 'treasury.reverseTransfer', 'treasury.reverseMovement']);
+const op = ctx(CA, ['sales.create', 'payments.receive', 'payments.cancel', 'invoices.cancel', 'purchases.create', 'purchases.approve', 'supplierPayments.reverse', 'purchaseReceipts.reverse', 'treasury.transfer', 'treasury.reverseTransfer', 'treasury.reverseMovement']);
 const noReverse = ctx(CA, ['sales.create', 'payments.receive', 'purchases.create', 'treasury.transfer']);
 const crossCompany = ctx(CB, ['payments.cancel', 'invoices.cancel', 'supplierPayments.reverse', 'purchaseReceipts.reverse', 'treasury.reverseTransfer', 'treasury.reverseMovement']);
 
@@ -230,6 +230,7 @@ describe('P0-03f - regressao integrada/UAT dos estornos', () => {
       warehouseId: ids.warehouse,
       lines: [{ productId: ids.purchaseProduct, quantity: 1, unitCost: 100 }],
     });
+    await approvePurchaseOrder(prisma, op, orderCreated.id);
     const orderWithLines = await prisma.purchaseOrder.findUniqueOrThrow({ where: { id: orderCreated.id }, include: { lines: true } });
     const receipt = await receivePurchaseOrder(prisma, op, orderWithLines.id, [{ lineId: orderWithLines.lines[0]!.id, quantity: 1 }], { idempotencyKey: randomUUID(), receiptDate: CURRENT_DATE });
     if (!receipt.id) throw new Error('Recepcao UAT sem id.');

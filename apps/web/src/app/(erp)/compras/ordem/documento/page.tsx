@@ -12,7 +12,10 @@ export const dynamic = 'force-dynamic';
 
 const STATUS: Record<PurchaseStatus, [string, string, string]> = {
   DRAFT: ['Rascunho', '#5f7378', '#eef2f2'],
-  SENT: ['Enviada', '#1f6fa3', '#eaf3fa'],
+  SENT: ['Enviada (legado)', '#1f6fa3', '#eaf3fa'],
+  PENDING_APPROVAL: ['Aguardando Aprovação', '#a3661f', '#fdf3e4'],
+  APPROVED: ['Aprovada', '#1f6fa3', '#eaf3fa'],
+  REJECTED: ['Rejeitada', '#8b3a32', '#fff5f3'],
   PARTIAL: ['Recepção parcial', '#a3661f', '#fdf3e4'],
   RECEIVED: ['Recebida', '#23835b', '#eaf7f0'],
   CANCELLED: ['Cancelada', '#8b3a32', '#fff5f3'],
@@ -89,6 +92,8 @@ export default async function OcDocumentoPage({ searchParams }: { searchParams: 
               ['Data da ordem', fmtDate(oc.orderDate)],
               ['Entrega prevista', fmtDate(oc.expectedDate)],
               ['Armazém de destino', oc.warehouseName],
+              ...(oc.approvedByName || oc.approvedAt ? [['Aprovada por', `${oc.approvedByName ?? '—'}${oc.approvedAt ? ` · ${fmtDate(oc.approvedAt)}` : ''}`] as [string, string]] : []),
+              ...(oc.status === 'REJECTED' ? [['Rejeitada por', `${oc.rejectedByName ?? '—'}${oc.rejectedAt ? ` · ${fmtDate(oc.rejectedAt)}` : ''}`] as [string, string]] : []),
             ]}
           />
         </div>

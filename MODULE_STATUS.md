@@ -5,10 +5,10 @@ _Última actualização: 2026-07-18_
 Estado vivo do projecto. O conhecimento permanente (arquitectura, regras, comandos) está
 em [`CLAUDE.md`](CLAUDE.md).
 
-**Último commit funcional:** pendente na branch `s6-melhorias-fatura` (Sessão S6 do ROADMAP)
-**Fase concluída:** `S6 — Melhorias na Fatura` (ROADMAP; fase anterior: `S5 — Documentos Comerciais`)
+**Último commit funcional:** pendente na branch `s7-ordem-compra` (Sessão S7 do ROADMAP)
+**Fase concluída:** `S7 — Fluxo de Ordem de Compra` (ROADMAP; fase anterior: `S6 — Melhorias na Fatura`)
 **UAT interna/demo:** V1 candidata a demo externa apos UAT interna, aprovada com ressalvas em 2026-07-06; P1-04 acrescenta Contabilidade V1 pronta para UAT/demo com limites; P1-05 acrescenta Fecho de Caixa V1 operacional sem persistencia formal; demo final check registado em `docs/DEMO_FINAL_CHECK.md` em 2026-07-08 como pronto com ressalvas menores
-**Próximo passo:** `Sessão S7 — Fluxo de Ordem de Compra` (ROADMAP) — não iniciar sem instrução explícita (tem ponto 🔒: verificação de papel RBAC na aprovação da OC — qualquer alteração a permissões é aprovada antes); mantém-se pendente o smoke manual final em browser externo/limpo (logout, clique final POS, Fecho de Caixa V1) antes da demo externa
+**Próximo passo:** `Sessão S8 — Produtos: criação com stock inicial` (ROADMAP) — não iniciar sem instrução explícita (tem ponto 🔒: o stock inicial gera movimento de stock e lançamento contabilístico de abertura — desenho aprovado antes de código); mantém-se pendente o smoke manual final em browser externo/limpo (logout, clique final POS, Fecho de Caixa V1) antes da demo externa
 
 ---
 
@@ -54,6 +54,7 @@ em [`CLAUDE.md`](CLAUDE.md).
 | **S4** | **Dados da Empresa** (endereço/website/logótipo por empresa, contas bancárias e carteiras móveis em tabelas próprias, ecrã `/admin/empresa` com gate `settings.manage`, upload PNG/JPG/WebP ≤ 1 MB na BD, `/api/company/logo` isolado por sessão com ETag/cache, `CompanyHeader` pronto para a S5, logótipo na sidebar/topbar) | ✅ |
 | **S5** | **Documentos Comerciais** (Cotação/NC/ND novos + OC imprimível; migração aditiva `s5_commercial_documents` — 6 tabelas + 3 enums; numeração atómica `COT`/`NC`/`ND` no `DocumentCounter`; NC contra factura com tecto por linha, devolução opcional com snapshot `unitCost` e lançamento espelho 411/221/121; ND com factura opcional D 121/C 411+221; extracto do cliente com NC/ND; suite `test:integration:documents` 12/12) | ✅ |
 | **S6** | **Melhorias na Fatura** (rascunhos série `RASC` sem efeitos + emissão que consome o FT só nesse instante, edição de rascunho, histórico de alterações no documento via `AuditLog`, descarte com motivo obrigatório, cancelamento com nome do responsável e hora; migração aditiva `s6_invoice_drafts`; filtro central `ACTIVE_INVOICE_STATUSES`; suite `test:integration:invoices:drafts` 13/13) | ✅ |
+| **S7** | **Fluxo de Ordem de Compra** (estados `PENDING_APPROVAL`→`APPROVED`/`REJECTED` antes da recepção; aprovação/rejeição com gate `purchases.approve` existente — zero alterações de RBAC; rejeição terminal com motivo ≥ 10 chars; recepção só de OCs aprovadas; observações da recepção na UI; indicação ao solicitante por chips/destaque; migrações aditivas `s7_purchase_order_approval` + backfill `SENT`→`APPROVED`; suite `test:integration:purchases:approval` 9/9) | ✅ |
 | 9 | RH & Salários | 🗺️ futuro |
 | X | RLS forçado em toda a BD (fase transversal, pré-produção) | 🗺️ futuro |
 
@@ -410,6 +411,47 @@ com motivo, bloqueios recibo/NC/cancelamento sobre rascunho, KPIs/extracto sem r
 cancelamento com recibo bloqueado, estorno idempotente, histórico completo, isolamento A/B e
 permissões), regressões invoice-cancellation 9/9 + documents 14/14 + POS 12/12 +
 relatórios 24/24 + reversal all 44/44, build OK.
+
+**S7 — Fluxo de Ordem de Compra (2026-07-18):** sétima sessão do ROADMAP, na branch
+`s7-ordem-compra`, com duas migrações aditivas aprovadas: `20260718150000_s7_purchase_order_approval`
+(enum `PurchaseStatus` + `PENDING_APPROVAL`/`APPROVED`/`REJECTED`; 7 colunas opcionais em
+`purchase_orders`: `approvedById/Name/At`, `rejectedById/Name/At`, `rejectionReason`) e
+`20260718150001_…_backfill` (separada porque o PG proíbe usar valores de enum novos na transacção
+do `ADD VALUE`): mapeamento aprovado Opção A — OCs legadas `SENT` → `APPROVED` com `approvedById`
+NULL = aprovação legada/implícita (continuam recepcionáveis; nenhuma linha apagada), e default da
+coluna passa a `PENDING_APPROVAL`. **RBAC: zero alterações** (🔒 cumprido por levantamento): a
+aprovação usa a permissão existente `purchases.approve` (constants + seed desde a Fase 1, nunca
+usada em código), já atribuída a Administrador e Gestor; «Gestor Financeiro» não existe no seed e
+fica como papel futuro a quem se dá esta permissão. Fluxo: `createPurchaseOrder` cria em
+`PENDING_APPROVAL` (a criação é a transição «Criada → Aguardando Aprovação», sem passo manual);
+`approvePurchaseOrder` (lock `FOR UPDATE`, só de `PENDING_APPROVAL`, snapshot nome+data do
+aprovador, `AuditLog purchase.approve`, **pré-transaccional: zero lançamentos/stock/tesouraria**);
+`rejectPurchaseOrder` aprovado como estado **terminal** com motivo obrigatório ≥ 10 chars
+(`AuditLog purchase.reject` com reason; OC nunca se apaga); a recepção passa a exigir
+`APPROVED`/`PARTIAL` (constante `RECEIVABLE_PURCHASE_STATUSES`) e `purchaseStatusFromLines` devolve
+`APPROVED` (não `SENT`) quando um estorno repõe tudo — estornar a única recepção devolve a OC a
+Aprovada. Observações da recepção: `purchase_receipts.notes` já existia no domínio (fingerprint de
+idempotência incluído) — a S7 acrescentou o textarea na UI da recepção e a exibição no histórico de
+recepções do detalhe da OC. Indicação ao solicitante sem sistema de notificações: chips na lista
+(«N ordens suas foram aprovadas — prontas a recepcionar» para o criador; «N aguardam a sua
+aprovação» para quem tem `purchases.approve`), destaque das linhas aprovadas do próprio, KPI
+«Aguardam aprovação», bloco «Aprovada por _nome_ em _data_»/motivo de rejeição no detalhe e no
+documento imprimível; labels novos também no relatório de compras (coluna «Estado» traduzida).
+Verificado ao vivo em browser: OC 2026/0007 criada (Aguardando Aprovação; sem botão de recepção;
+`/recepcao` directo bloqueia com aviso) → aprovada pelo admin (dialog; «Aprovada por Administrador
+Demo em 18/07/2026») → recepcionada com observações (GR 2026/0009, obs. visíveis no histórico,
+stock/conta a pagar só neste passo) → sessão da Maria (Caixa, sem permissões de compras) bloqueada
+em `/compras`; OCs legadas apareceram correctamente como Aprovadas pós-backfill. Validado:
+`prisma validate`/`migrate status` OK + diff BD↔schema vazio, typecheck 6/6, lint 6/6, testes
+unitários verdes, nova suite `pnpm test:integration:purchases:approval` 9/9 (sem efeitos na
+criação, aprovar sem permissão falha, aprovação com snapshot+auditoria e sem efeitos, replay
+limpo, recepcionar não-aprovada/rejeitada falha, motivo obrigatório, rejeição terminal, observações
+persistidas, isolamento A/B), regressões c3 17/17 + reversal all 44/44 + relatórios 24/24, build
+OK. Nota de ambiente resolvida: o agregado `test:integration:accounting` chegou a registar 202/203
+por uma falha pré-existente do `c1 #16` (uma 6.ª conta de tesouraria «ABSA» criada manualmente na
+demo num teste ao vivo de 2026-07-08); com autorização explícita, a conta foi removida numa
+transacção com verificação prévia (0 movimentos de tesouraria, 0 linhas de lançamento, sem razão
+ligada) e o agregado voltou a **203/203**.
 
 **Hardening pré-produção P0-01 (2026-07-02):** seed demo bloqueado em `production`
 antes de criar o Prisma Client; credenciais demo removidas da interface de

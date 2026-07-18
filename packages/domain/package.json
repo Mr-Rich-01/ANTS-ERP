@@ -30,6 +30,7 @@
     "test:integration:treasury-cash-closing": "vitest run --config vitest.integration.config.ts treasury.cash-closing.integration",
     "test:integration:documents": "vitest run --config vitest.integration.config.ts commercial-documents.integration",
     "test:integration:invoice-drafts": "vitest run --config vitest.integration.config.ts invoices.drafts.integration",
+    "test:integration:purchases-approval": "vitest run --config vitest.integration.config.ts purchases.approval.integration",
     "test:integration:reversal-all": "vitest run --config vitest.integration.config.ts accounting.customer-payment-reversal.integration accounting.invoice-cancellation.integration accounting.supplier-payment-reversal.integration accounting.purchase-receipt-reversal.integration accounting.treasury-transfer-reversal.integration accounting.reversals-uat.integration"
   },
   "dependencies": {

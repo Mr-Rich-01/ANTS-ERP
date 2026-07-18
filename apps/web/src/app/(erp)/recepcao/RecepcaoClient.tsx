@@ -38,6 +38,7 @@ export function RecepcaoClient({ orderId, orderNumber, supplierName, warehouseNa
   const [pending, startTransition] = useTransition();
   const [idempotencyKey, setIdempotencyKey] = useState(() => createIdempotencyKey());
   const [recv, setRecv] = useState<Record<string, number>>(() => Object.fromEntries(lines.map((l) => [l.lineId, l.remaining])));
+  const [notes, setNotes] = useState('');
   const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
 
   const setQty = (id: string, max: number, val: number) => setRecv((p) => ({ ...p, [id]: Math.max(0, Math.min(max, Math.trunc(val))) }));
@@ -68,7 +69,8 @@ export function RecepcaoClient({ orderId, orderNumber, supplierName, warehouseNa
       return;
     }
     startTransition(async () => {
-      const res = await receivePurchaseOrderAction(orderId, items, { idempotencyKey });
+      const trimmedNotes = notes.trim();
+      const res = await receivePurchaseOrderAction(orderId, items, { idempotencyKey, ...(trimmedNotes ? { notes: trimmedNotes } : {}) });
       if (res.error) setMsg({ kind: 'err', text: res.error });
       else {
         setMsg({ kind: 'ok', text: `Recepção ${res.number} registada. Stock e conta a pagar actualizados.` });
@@ -200,6 +202,22 @@ export function RecepcaoClient({ orderId, orderNumber, supplierName, warehouseNa
           </table>
         </div>
       </div>
+      <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 16, padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <label htmlFor="recepcao-observacoes" style={{ fontSize: 11.5, color: 'var(--text3)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.5px' }}>
+          Observações da recepção (opcional)
+        </label>
+        <textarea
+          id="recepcao-observacoes"
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+          maxLength={500}
+          rows={3}
+          placeholder="Ex.: caixa danificada, entrega parcial acordada com o fornecedor, nº da guia do transportador…"
+          style={{ width: '100%', borderRadius: 9, border: '1px solid var(--field-bd)', background: 'var(--field)', color: 'var(--text)', padding: '10px 11px', fontSize: 13, resize: 'vertical', outline: 'none' }}
+        />
+        <div style={{ fontSize: 11, color: 'var(--text3)', textAlign: 'right' }}>{notes.length}/500</div>
+      </div>
+
       <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 16, padding: '14px 18px', display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
         {[
           ['Líquido', totals.net],

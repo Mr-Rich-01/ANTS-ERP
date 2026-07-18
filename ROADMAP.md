@@ -118,10 +118,10 @@ Quick wins primeiro (validar o fluxo de trabalho), depois fundações (dados da 
 
 *(Prioridade 7)*
 
-- [ ] Estados: Criada → **Aguardando Aprovação** → Aprovada (por Gestor ou Gestor Financeiro) → devolvida ao solicitante → Receção de Mercadorias.
-- [ ] 🔒 Verificação de papel (RBAC) na aprovação — qualquer alteração a permissões é aprovada antes.
-- [ ] Campo **Observações** na Receção de Mercadorias.
-- [ ] Notificação/indicação visual ao solicitante quando aprovada.
+- [x] Estados: Criada → **Aguardando Aprovação** → Aprovada (por Gestor ou Gestor Financeiro) → devolvida ao solicitante → Receção de Mercadorias. *(Enum `PurchaseStatus` + `PENDING_APPROVAL`/`APPROVED`/`REJECTED`; a recepção exige `APPROVED`/`PARTIAL`; rejeição aprovada como estado terminal com motivo ≥ 10 chars; OCs legadas `SENT` → `APPROVED` por backfill aprovado.)*
+- [x] 🔒 Verificação de papel (RBAC) na aprovação — qualquer alteração a permissões é aprovada antes. *(Cumprido sem alterações de RBAC: usa a permissão existente `purchases.approve`, já atribuída a Administrador e Gestor no seed; «Gestor Financeiro» fica como papel futuro com esta permissão.)*
+- [x] Campo **Observações** na Receção de Mercadorias. *(`purchase_receipts.notes` já existia no domínio; adicionado o campo na UI da recepção e a exibição no histórico de recepções da OC.)*
+- [x] Notificação/indicação visual ao solicitante quando aprovada. *(Sem sistema novo: chip-contador «N ordens suas foram aprovadas — prontas a recepcionar» + destaque das linhas na lista; chip simétrico «N aguardam a sua aprovação» para quem tem `purchases.approve`; KPI «Aguardam aprovação».)*
 
 ---
 

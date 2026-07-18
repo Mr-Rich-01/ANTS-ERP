@@ -7,6 +7,7 @@ import { getContext } from '@/lib/session';
 import { Icon } from '@/components/Icon';
 import { ACCENT } from '@/lib/erp-nav';
 import { fmt } from '@/lib/format';
+import { PurchaseApprovalDialog } from '@/components/compras/PurchaseApprovalDialog';
 import { PurchaseReceiptReversalDialog } from '@/components/compras/PurchaseReceiptReversalDialog';
 import { SupplierPaymentDialog } from '@/components/compras/SupplierPaymentDialog';
 import { SupplierPaymentReversalDialog } from '@/components/compras/SupplierPaymentReversalDialog';
@@ -15,7 +16,10 @@ export const dynamic = 'force-dynamic';
 
 const STATUS: Record<PurchaseStatus, [string, string, string]> = {
   DRAFT: ['Rascunho', 'var(--text3)', 'var(--bd-soft)'],
-  SENT: ['Enviada', 'var(--info)', 'var(--info-bg)'],
+  SENT: ['Enviada (legado)', 'var(--info)', 'var(--info-bg)'],
+  PENDING_APPROVAL: ['Aguardando Aprovação', 'var(--warn)', 'var(--warn-bg)'],
+  APPROVED: ['Aprovada', 'var(--info)', 'var(--info-bg)'],
+  REJECTED: ['Rejeitada', 'var(--bad)', 'var(--bad-bg)'],
   PARTIAL: ['Recepção parcial', 'var(--warn)', 'var(--warn-bg)'],
   RECEIVED: ['Recebida', 'var(--ok)', 'var(--ok-bg)'],
   CANCELLED: ['Cancelada', 'var(--text3)', 'var(--bd-soft)'],
@@ -54,7 +58,8 @@ export default async function OcDetalhePage({ searchParams }: { searchParams: { 
   }
 
   const [statusLabel, statusColor, statusBg] = STATUS[oc.status];
-  const canReceive = (oc.status === 'SENT' || oc.status === 'PARTIAL') && hasPermission(ctx, 'purchases.create');
+  const canReceive = (oc.status === 'APPROVED' || oc.status === 'PARTIAL') && hasPermission(ctx, 'purchases.create');
+  const canApprove = oc.status === 'PENDING_APPROVAL' && hasPermission(ctx, 'purchases.approve');
   const canPay = oc.outstanding > 0 && hasPermission(ctx, 'purchases.create');
   const canReversePurchaseReceipt = hasPermission(ctx, 'purchaseReceipts.reverse');
   const canReverseSupplierPayment = hasPermission(ctx, 'supplierPayments.reverse');
@@ -73,6 +78,30 @@ export default async function OcDetalhePage({ searchParams }: { searchParams: { 
             <Icon name="printer" size={15} />
             Documento / Imprimir
           </Link>
+          {canApprove && (
+            <>
+              <PurchaseApprovalDialog
+                order={{ id: oc.id, number: oc.number, supplierName: oc.supplierName, totalStr: fmt(oc.total) }}
+                mode="reject"
+                trigger={
+                  <button style={{ display: 'flex', alignItems: 'center', gap: 7, height: 38, padding: '0 14px', borderRadius: 10, border: '1px solid #f0d0cc', background: '#fff5f3', color: '#8b3a32', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>
+                    <Icon name="x-circle" size={15} />
+                    Rejeitar
+                  </button>
+                }
+              />
+              <PurchaseApprovalDialog
+                order={{ id: oc.id, number: oc.number, supplierName: oc.supplierName, totalStr: fmt(oc.total) }}
+                mode="approve"
+                trigger={
+                  <button style={{ display: 'flex', alignItems: 'center', gap: 7, height: 38, padding: '0 15px', borderRadius: 10, border: 'none', background: ACCENT, color: '#fff', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>
+                    <Icon name="check-circle-2" size={15} />
+                    Aprovar ordem
+                  </button>
+                }
+              />
+            </>
+          )}
           {canPay && (
             <SupplierPaymentDialog
               supplierId={oc.supplierId}
@@ -112,6 +141,22 @@ export default async function OcDetalhePage({ searchParams }: { searchParams: { 
             <span>Data: <strong className="tnum" style={{ color: 'var(--text)' }}>{fmtDate(oc.orderDate)}</strong></span>
             <span>Entrega prevista: <strong className="tnum" style={{ color: 'var(--text)' }}>{fmtDate(oc.expectedDate)}</strong></span>
           </div>
+          {oc.status === 'PENDING_APPROVAL' && (
+            <div style={{ marginTop: 8, fontSize: 12.5, color: 'var(--warn)', fontWeight: 600 }}>
+              Aguarda aprovação de um Gestor antes da recepção de mercadorias.
+            </div>
+          )}
+          {(oc.approvedByName || oc.approvedAt) && (
+            <div style={{ marginTop: 8, fontSize: 12.5, color: 'var(--ok)', fontWeight: 600 }}>
+              Aprovada por {oc.approvedByName ?? '—'}{oc.approvedAt ? ` em ${fmtDate(oc.approvedAt)}` : ''}
+            </div>
+          )}
+          {oc.status === 'REJECTED' && (
+            <div style={{ marginTop: 8, fontSize: 12.5, color: '#8b3a32', fontWeight: 600 }}>
+              Rejeitada por {oc.rejectedByName ?? '—'}{oc.rejectedAt ? ` em ${fmtDate(oc.rejectedAt)}` : ''}
+              {oc.rejectionReason ? ` — ${oc.rejectionReason}` : ''}
+            </div>
+          )}
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,auto)', gap: '6px 22px', flex: 'none' }}>
           {[
@@ -226,6 +271,7 @@ export default async function OcDetalhePage({ searchParams }: { searchParams: { 
                             </span>
                           ))}
                         </div>
+                        {r.notes ? <div style={{ marginTop: 5, fontSize: 11.5, color: 'var(--text2)', fontWeight: 500, whiteSpace: 'normal', maxWidth: 320 }}>Obs.: {r.notes}</div> : null}
                         {reversed && r.reversalReason ? <div style={{ marginTop: 5, fontSize: 11.5, color: '#8b3a32', fontWeight: 600 }}>{r.reversalReason}</div> : null}
                       </td>
                       <td className="tnum" style={{ padding: '11px 14px', fontSize: 13, color: 'var(--text2)', whiteSpace: 'nowrap' }}>{fmtDate(r.receiptDate)}</td>

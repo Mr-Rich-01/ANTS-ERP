@@ -37,6 +37,10 @@ export default async function RecepcaoPage({ searchParams }: { searchParams: { o
 
   if (oc.status === 'RECEIVED') return notice(`A ordem ${oc.number} já foi totalmente recebida.`);
   if (oc.status === 'CANCELLED') return notice(`A ordem ${oc.number} está cancelada.`);
+  if (oc.status === 'REJECTED') return notice(`A ordem ${oc.number} foi rejeitada e não pode ser recepcionada.`);
+  if (oc.status !== 'APPROVED' && oc.status !== 'PARTIAL') {
+    return notice(`A ordem ${oc.number} aguarda aprovação de um Gestor e só pode ser recepcionada depois de aprovada.`);
+  }
 
   const lines: ReceiveLine[] = oc.lines
     .map((l) => ({ lineId: l.id, sku: l.sku ?? '—', name: l.description, ordered: l.quantity, alreadyReceived: l.receivedQty, remaining: l.quantity - l.receivedQty, unitCost: l.unitCost, taxRate: l.taxRate }))

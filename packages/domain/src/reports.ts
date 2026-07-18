@@ -432,6 +432,17 @@ async function receivablesAgingReport(db: PrismaClient, ctx: RequestContext, fil
   };
 }
 
+const PURCHASE_STATUS_REPORT_LABELS: Record<string, string> = {
+  DRAFT: 'Rascunho',
+  SENT: 'Enviada (legado)',
+  PENDING_APPROVAL: 'Aguardando aprovacao',
+  APPROVED: 'Aprovada',
+  REJECTED: 'Rejeitada',
+  PARTIAL: 'Recepcao parcial',
+  RECEIVED: 'Recebida',
+  CANCELLED: 'Cancelada',
+};
+
 async function purchasesReport(db: PrismaClient, ctx: RequestContext, filters: ReturnType<typeof normalizeFilters>): Promise<ReportPayload> {
   const companyId = requireCompany(ctx);
   const orders = await db.purchaseOrder.findMany({
@@ -446,7 +457,7 @@ async function purchasesReport(db: PrismaClient, ctx: RequestContext, filters: R
     total: Number(o.total),
     received: Number(o.receivedValue),
     paid: Number(o.amountPaid),
-    status: o.status,
+    status: PURCHASE_STATUS_REPORT_LABELS[o.status] ?? o.status,
   }));
   return {
     summary: [
@@ -464,7 +475,7 @@ async function purchasesReport(db: PrismaClient, ctx: RequestContext, filters: R
           { key: 'supplier', label: 'Fornecedor' },
           { key: 'total', label: 'Total', align: 'right', kind: 'money' },
           { key: 'received', label: 'Recepcao', align: 'right', kind: 'money' },
-          { key: 'status', label: 'Status' },
+          { key: 'status', label: 'Estado' },
         ],
         rows,
       },

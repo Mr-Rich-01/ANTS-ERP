@@ -27,6 +27,7 @@ export default async function ComprasPage() {
   const db = forCompany(ctx.companyId);
   const [orders, kpi] = await Promise.all([listPurchaseOrders(db, ctx), purchaseKpis(db, ctx)]);
 
+  const canApprove = hasPermission(ctx, 'purchases.approve');
   const rows: PoRow[] = orders.map((o) => ({
     id: o.id,
     number: o.number,
@@ -36,15 +37,29 @@ export default async function ComprasPage() {
     etaStr: fmtDate(o.expectedDate),
     totalStr: fmt(o.total),
     status: o.status,
+    mineApproved: o.status === 'APPROVED' && o.createdBy === ctx.userId,
+    approvedByName: o.approvedByName,
+    rejectionReason: o.rejectionReason,
   }));
   const totalStr = fmt(orders.reduce((a, o) => a + o.total, 0));
+  const myApprovedCount = rows.filter((r) => r.mineApproved).length;
 
   const kpis: KpiCardData[] = [
     { label: 'Contas a pagar', valueStr: fmt(kpi.payable), tone: 'red', icon: 'arrow-up-right', sub: 'saldo de fornecedores' },
-    { label: 'Ordens em aberto', valueStr: String(kpi.openOrders), tone: 'amber', icon: 'clock', sub: 'aguardam recepção' },
-    { label: 'Por receber', valueStr: String(kpi.toReceive), tone: 'blue', icon: 'package-check', sub: 'recepções pendentes' },
+    { label: 'Aguardam aprovação', valueStr: String(kpi.pendingApproval), tone: 'amber', icon: 'clock', sub: 'por aprovar (Gestor)' },
+    { label: 'Por receber', valueStr: String(kpi.toReceive), tone: 'blue', icon: 'package-check', sub: 'aprovadas, aguardam recepção' },
     { label: 'Total de ordens', valueStr: String(kpi.count), tone: 'petroleum', icon: 'file-text', sub: 'no total' },
   ];
 
-  return <ComprasClient kpis={kpis} rows={rows} totalStr={totalStr} canCreate={hasPermission(ctx, 'purchases.create')} />;
+  return (
+    <ComprasClient
+      kpis={kpis}
+      rows={rows}
+      totalStr={totalStr}
+      canCreate={hasPermission(ctx, 'purchases.create')}
+      canApprove={canApprove}
+      pendingApprovalCount={kpi.pendingApproval}
+      myApprovedCount={myApprovedCount}
+    />
+  );
 }

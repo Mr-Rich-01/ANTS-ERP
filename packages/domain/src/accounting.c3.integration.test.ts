@@ -6,7 +6,7 @@ import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { prisma } from '@ants/database';
 import type { RequestContext } from './context';
-import { createPurchaseOrder, createSupplierPayment, receivePurchaseOrder, type SupplierPaymentInput } from './purchases';
+import { approvePurchaseOrder, createPurchaseOrder, createSupplierPayment, receivePurchaseOrder, type SupplierPaymentInput } from './purchases';
 import { reverseMovement } from './treasury';
 import { ConflictError, ForbiddenError, ValidationError } from './errors';
 
@@ -19,6 +19,7 @@ function ctx(companyId: string, permissions: string[]): RequestContext {
 }
 
 const purchaseCtx = ctx(CA, ['purchases.create']);
+const approveCtx = ctx(CA, ['purchases.approve']);
 const treasuryReverseCtx = ctx(CA, ['treasury.reverseMovement']);
 
 interface Ids {
@@ -190,6 +191,7 @@ afterAll(async () => {
 
 async function order(lines = [{ productId: ids.taxableProduct, quantity: 2, unitCost: 100 }]) {
   const created = await createPurchaseOrder(prisma, purchaseCtx, { supplierId: ids.supplier, warehouseId: ids.warehouse, lines });
+  await approvePurchaseOrder(prisma, approveCtx, created.id);
   const po = await prisma.purchaseOrder.findUniqueOrThrow({ where: { id: created.id }, include: { lines: { orderBy: { id: 'asc' } } } });
   return po;
 }

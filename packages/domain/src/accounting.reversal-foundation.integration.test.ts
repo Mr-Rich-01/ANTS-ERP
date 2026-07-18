@@ -6,7 +6,7 @@ import type { RequestContext } from './context';
 import { formatAccountingDate } from './accounting';
 import { postAccountingEventTx, reverseAccountingEventTx } from './accounting-events';
 import { createInvoice, createPayment } from './invoices';
-import { createPurchaseOrder, createSupplierPayment, receivePurchaseOrder } from './purchases';
+import { approvePurchaseOrder, createPurchaseOrder, createSupplierPayment, receivePurchaseOrder } from './purchases';
 import { reverseMovement } from './treasury';
 import {
   FINGERPRINT_VERSION,
@@ -26,7 +26,7 @@ function ctx(companyId: string, permissions: string[]): RequestContext {
   return { companyId, userId: `${companyId}-user`, permissions: new Set(permissions), isPlatformAdmin: false };
 }
 
-const op = ctx(CA, ['sales.create', 'payments.receive', 'purchases.create', 'treasury.reverseMovement']);
+const op = ctx(CA, ['sales.create', 'payments.receive', 'purchases.create', 'purchases.approve', 'treasury.reverseMovement']);
 
 let ids!: {
   fy: string;
@@ -266,6 +266,7 @@ describe('P0-03.0 - fundacao tecnica de reversoes', () => {
 
   it('#36 pagamento a fornecedor continua funcional e bloqueio P0-02 permanece activo', async () => {
     const po = await createPurchaseOrder(prisma, op, { supplierId: ids.supplier, warehouseId: ids.warehouse, lines: [{ productId: ids.product, quantity: 1, unitCost: 10 }] });
+    await approvePurchaseOrder(prisma, op, po.id);
     const stored = await prisma.purchaseOrder.findUniqueOrThrow({ where: { id: po.id }, include: { lines: true } });
     await receivePurchaseOrder(prisma, op, po.id, [{ lineId: stored.lines[0]!.id, quantity: 1 }], { idempotencyKey: randomUUID(), receiptDate: D('2026-01-10') });
     const payment = await createSupplierPayment(prisma, op, { idempotencyKey: randomUUID(), supplierId: ids.supplier, purchaseOrderId: po.id, amount: 5, method: 'CASH', accountId: ids.treasuryAccount });

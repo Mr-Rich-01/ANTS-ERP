@@ -19,7 +19,10 @@ import {
 } from './operation-idempotency';
 import { validateOpenReversalDateTx, validateReversalReason } from './reversals';
 
-export type PurchaseStatus = 'DRAFT' | 'SENT' | 'PARTIAL' | 'RECEIVED' | 'CANCELLED';
+export type PurchaseStatus = 'DRAFT' | 'SENT' | 'PENDING_APPROVAL' | 'APPROVED' | 'REJECTED' | 'PARTIAL' | 'RECEIVED' | 'CANCELLED';
+
+/** Estados em que a OC pode entrar em recepção de mercadorias. */
+export const RECEIVABLE_PURCHASE_STATUSES: readonly PurchaseStatus[] = ['APPROVED', 'PARTIAL'];
 
 export interface PurchaseListItem {
   id: string;
@@ -30,6 +33,10 @@ export interface PurchaseListItem {
   expectedDate: Date | null;
   total: number;
   status: PurchaseStatus;
+  createdBy: string | null;
+  approvedByName: string | null;
+  approvedAt: Date | null;
+  rejectionReason: string | null;
 }
 
 export interface PurchaseLineItem {
@@ -86,6 +93,7 @@ export interface PurchaseReceiptHistoryItem {
   netAmount: number;
   taxAmount: number;
   totalAmount: number;
+  notes: string | null;
   items: PurchaseReceiptHistoryLine[];
 }
 
@@ -106,6 +114,13 @@ export interface PurchaseDetail {
   amountPaid: number;
   outstanding: number;
   notes: string | null;
+  createdBy: string | null;
+  approvedById: string | null;
+  approvedByName: string | null;
+  approvedAt: Date | null;
+  rejectedByName: string | null;
+  rejectedAt: Date | null;
+  rejectionReason: string | null;
   lines: PurchaseLineItem[];
   payments: SupplierPaymentItem[];
   receipts: PurchaseReceiptHistoryItem[];
@@ -115,6 +130,7 @@ export interface PurchaseKpis {
   payable: number;
   openOrders: number;
   toReceive: number;
+  pendingApproval: number;
   count: number;
 }
 
@@ -165,6 +181,10 @@ export async function listPurchaseOrders(db: PrismaClient, ctx: RequestContext):
     expectedDate: o.expectedDate,
     total: Number(o.total),
     status: o.status as PurchaseStatus,
+    createdBy: o.createdBy,
+    approvedByName: o.approvedByName,
+    approvedAt: o.approvedAt,
+    rejectionReason: o.rejectionReason,
   }));
 }
 
@@ -220,6 +240,13 @@ export async function getPurchaseOrder(db: PrismaClient, ctx: RequestContext, id
     amountPaid,
     outstanding: round2(Number(o.receivedValue) - amountPaid),
     notes: o.notes,
+    createdBy: o.createdBy,
+    approvedById: o.approvedById,
+    approvedByName: o.approvedByName,
+    approvedAt: o.approvedAt,
+    rejectedByName: o.rejectedByName,
+    rejectedAt: o.rejectedAt,
+    rejectionReason: o.rejectionReason,
     lines: o.lines.map((l) => ({
       id: l.id,
       sku: l.sku,
@@ -258,6 +285,7 @@ export async function getPurchaseOrder(db: PrismaClient, ctx: RequestContext, id
       netAmount: Number(r.netAmount),
       taxAmount: Number(r.taxAmount),
       totalAmount: Number(r.totalAmount),
+      notes: r.notes,
       items: r.items.map((item) => ({
         id: item.id,
         purchaseOrderLineId: item.purchaseOrderLineId,
@@ -318,8 +346,9 @@ export async function purchaseKpis(db: PrismaClient, ctx: RequestContext): Promi
     db.supplier.findMany({ where: { balance: { gt: 0 } }, select: { balance: true } }),
   ]);
   const payable = suppliers.reduce((a, s) => a + Number(s.balance), 0);
-  const openOrders = orders.filter((o) => o.status === 'SENT' || o.status === 'PARTIAL').length;
-  return { payable: round2(payable), openOrders, toReceive: openOrders, count: orders.length };
+  const pendingApproval = orders.filter((o) => o.status === 'PENDING_APPROVAL').length;
+  const toReceive = orders.filter((o) => RECEIVABLE_PURCHASE_STATUSES.includes(o.status as PurchaseStatus)).length;
+  return { payable: round2(payable), openOrders: pendingApproval + toReceive, toReceive, pendingApproval, count: orders.length };
 }
 
 /** Extracto de conta do fornecedor (saldo inicial + recepções a pagar/pagamentos). */
@@ -382,7 +411,7 @@ const purchaseInput = z.object({
 
 export type PurchaseInput = z.input<typeof purchaseInput>;
 
-/** Cria uma ordem de compra (estado SENT). Ainda não gera stock nem conta a pagar. */
+/** Cria uma ordem de compra (estado PENDING_APPROVAL). Ainda não gera stock nem conta a pagar. */
 export async function createPurchaseOrder(db: PrismaClient, ctx: RequestContext, input: PurchaseInput): Promise<{ id: string; number: string }> {
   requirePermission(ctx, 'purchases.create');
   const companyId = requireCompany(ctx);
@@ -422,7 +451,7 @@ export async function createPurchaseOrder(db: PrismaClient, ctx: RequestContext,
         warehouseId: warehouse.id,
         orderDate,
         expectedDate: data.expectedDate ?? null,
-        status: 'SENT',
+        status: 'PENDING_APPROVAL',
         subtotal: totals.subtotal,
         taxTotal: totals.tax,
         total: totals.total,
@@ -435,8 +464,85 @@ export async function createPurchaseOrder(db: PrismaClient, ctx: RequestContext,
         data: { companyId, orderId: order.id, productId: p.productId, sku: p.sku, description: p.description, unitCost: p.unitCost, quantity: p.quantity, taxRate: p.taxRate, total: p.total },
       });
     }
-    await writeAudit(tx, ctx, { action: 'purchase.order', entity: 'PurchaseOrder', entityId: order.id, newValues: { number, supplier: supplier.name, total: totals.total } });
+    await writeAudit(tx, ctx, { action: 'purchase.order', entity: 'PurchaseOrder', entityId: order.id, newValues: { number, supplier: supplier.name, total: totals.total, status: 'PENDING_APPROVAL' } });
     return { id: order.id, number };
+  });
+}
+
+export interface PurchaseApprovalResult {
+  id: string;
+  number: string;
+  status: PurchaseStatus;
+}
+
+/**
+ * Aprova uma OC em PENDING_APPROVAL (gate `purchases.approve`). Pré-transaccional:
+ * não gera lançamentos, stock nem tesouraria — apenas o estado + snapshot do aprovador.
+ */
+export async function approvePurchaseOrder(db: PrismaClient, ctx: RequestContext, orderId: string): Promise<PurchaseApprovalResult> {
+  requirePermission(ctx, 'purchases.approve');
+  const companyId = requireCompany(ctx);
+  return db.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT id FROM purchase_orders WHERE id = ${orderId} AND "companyId" = ${companyId} FOR UPDATE`;
+    const order = await tx.purchaseOrder.findFirst({ where: { id: orderId, companyId } });
+    if (!order) throw new NotFoundError('Ordem de compra não encontrada.');
+    if (order.status === 'APPROVED') throw new ConflictError('A ordem já está aprovada.');
+    if (order.status === 'REJECTED') throw new ConflictError('A ordem foi rejeitada e não pode ser aprovada.');
+    if (order.status === 'CANCELLED') throw new ConflictError('A ordem está cancelada.');
+    if (order.status === 'PARTIAL' || order.status === 'RECEIVED') throw new ConflictError('A ordem já entrou em recepção.');
+    if (order.status !== 'PENDING_APPROVAL') throw new ConflictError('A ordem não está a aguardar aprovação.');
+
+    const approver = await tx.user.findFirst({ where: { id: ctx.userId }, select: { name: true, email: true } });
+    const approvedByName = approver ? approver.name || approver.email : null;
+    const approvedAt = new Date();
+    await tx.purchaseOrder.update({
+      where: { id: order.id },
+      data: { status: 'APPROVED', approvedById: ctx.userId, approvedByName, approvedAt },
+    });
+    await writeAudit(tx, ctx, {
+      action: 'purchase.approve',
+      entity: 'PurchaseOrder',
+      entityId: order.id,
+      oldValues: { status: order.status },
+      newValues: { status: 'APPROVED', number: order.number, approvedById: ctx.userId, approvedByName, approvedAt: approvedAt.toISOString() },
+    });
+    return { id: order.id, number: order.number, status: 'APPROVED' as const };
+  });
+}
+
+/**
+ * Rejeita uma OC em PENDING_APPROVAL (gate `purchases.approve`). Estado terminal;
+ * motivo obrigatório (≥ 10 caracteres). A OC nunca é apagada.
+ */
+export async function rejectPurchaseOrder(db: PrismaClient, ctx: RequestContext, orderId: string, reason: string): Promise<PurchaseApprovalResult> {
+  requirePermission(ctx, 'purchases.approve');
+  const companyId = requireCompany(ctx);
+  const rejectionReason = (reason ?? '').trim();
+  if (rejectionReason.length < 10) throw new ValidationError('Indique o motivo da rejeição (mínimo 10 caracteres).');
+  if (rejectionReason.length > 500) throw new ValidationError('O motivo da rejeição excede 500 caracteres.');
+  return db.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT id FROM purchase_orders WHERE id = ${orderId} AND "companyId" = ${companyId} FOR UPDATE`;
+    const order = await tx.purchaseOrder.findFirst({ where: { id: orderId, companyId } });
+    if (!order) throw new NotFoundError('Ordem de compra não encontrada.');
+    if (order.status === 'REJECTED') throw new ConflictError('A ordem já foi rejeitada.');
+    if (order.status !== 'PENDING_APPROVAL') throw new ConflictError('Só é possível rejeitar ordens a aguardar aprovação.');
+
+    const rejecter = await tx.user.findFirst({ where: { id: ctx.userId }, select: { name: true, email: true } });
+    const rejectedByName = rejecter ? rejecter.name || rejecter.email : null;
+    const rejectedAt = new Date();
+    await tx.purchaseOrder.update({
+      where: { id: order.id },
+      data: { status: 'REJECTED', rejectedById: ctx.userId, rejectedByName, rejectedAt, rejectionReason },
+    });
+    await writeAudit(tx, ctx, {
+      action: 'purchase.reject',
+      entity: 'PurchaseOrder',
+      entityId: order.id,
+      oldValues: { status: order.status },
+      reason: rejectionReason,
+      newValues: { status: 'REJECTED', number: order.number, rejectedById: ctx.userId, rejectedByName, rejectedAt: rejectedAt.toISOString(), rejectionReason },
+    });
+    return { id: order.id, number: order.number, status: 'REJECTED' as const };
   });
 }
 
@@ -490,11 +596,12 @@ function journalTypeForTreasury(type: 'CASH' | 'BANK' | 'MOBILE' | 'OTHER'): Acc
  * ponderado, incrementa a conta a pagar do fornecedor e actualiza o estado da OC.
  */
 function purchaseStatusFromLines(lines: Array<{ quantity: number; receivedQty: number }>, fallback: PurchaseStatus): PurchaseStatus {
-  if (fallback === 'CANCELLED') return 'CANCELLED';
+  if (fallback === 'CANCELLED' || fallback === 'REJECTED') return fallback;
   if (lines.length === 0) return fallback;
   if (lines.every(lineStatusFully)) return 'RECEIVED';
   if (lines.some((l) => l.receivedQty > 0)) return 'PARTIAL';
-  return 'SENT';
+  // Sem nada recebido a OC volta a Aprovada (era 'SENT' antes do fluxo S7).
+  return 'APPROVED';
 }
 
 export async function receivePurchaseOrder(
@@ -534,6 +641,10 @@ export async function receivePurchaseOrder(
       if (!order) throw new NotFoundError('Ordem de compra não encontrada.');
       if (order.status === 'CANCELLED') throw new ConflictError('A ordem está cancelada.');
       if (order.status === 'RECEIVED') throw new ConflictError('A ordem já foi totalmente recebida.');
+      if (order.status === 'REJECTED') throw new ConflictError('A ordem foi rejeitada e não pode ser recepcionada.');
+      if (!RECEIVABLE_PURCHASE_STATUSES.includes(order.status as PurchaseStatus)) {
+        throw new ConflictError('A ordem aguarda aprovação e só pode ser recepcionada depois de aprovada.');
+      }
 
       const receiptNumber = await nextDocNumber(tx, companyId, 'GR', receiptDate.getFullYear());
       const prepared = [] as Array<{

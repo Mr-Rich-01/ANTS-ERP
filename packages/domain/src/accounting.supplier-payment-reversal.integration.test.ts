@@ -3,7 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { prisma } from '@ants/database';
 import { civilDateInTimeZone } from '@ants/shared';
 import type { RequestContext } from './context';
-import { createPurchaseOrder, createSupplierPayment, receivePurchaseOrder, reverseSupplierPayment, type SupplierPaymentInput } from './purchases';
+import { approvePurchaseOrder, createPurchaseOrder, createSupplierPayment, receivePurchaseOrder, reverseSupplierPayment, type SupplierPaymentInput } from './purchases';
 import { reverseMovement } from './treasury';
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from './errors';
 
@@ -16,7 +16,7 @@ function ctx(companyId: string, permissions: string[]): RequestContext {
   return { companyId, userId: `${companyId}-user`, permissions: new Set(permissions), isPlatformAdmin: false };
 }
 
-const op = ctx(CA, ['purchases.create', 'supplierPayments.reverse']);
+const op = ctx(CA, ['purchases.create', 'purchases.approve', 'supplierPayments.reverse']);
 const noReverse = ctx(CA, ['purchases.create']);
 const treasuryReverseCtx = ctx(CA, ['treasury.reverseMovement']);
 
@@ -127,6 +127,7 @@ afterAll(async () => {
 
 async function order(quantity = 2, unitCost = 100) {
   const created = await createPurchaseOrder(prisma, op, { supplierId: ids.supplier, warehouseId: ids.warehouse, lines: [{ productId: ids.product, quantity, unitCost }] });
+  await approvePurchaseOrder(prisma, op, created.id);
   const po = await prisma.purchaseOrder.findUniqueOrThrow({ where: { id: created.id }, include: { lines: { orderBy: { id: 'asc' } } } });
   return po;
 }

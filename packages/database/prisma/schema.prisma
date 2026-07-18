@@ -837,7 +837,7 @@ model PurchaseOrder {
   warehouse     Warehouse      @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
   orderDate     DateTime       @default(now())
   expectedDate  DateTime?
-  status        PurchaseStatus @default(SENT)
+  status        PurchaseStatus @default(PENDING_APPROVAL)
   subtotal      Decimal        @db.Decimal(14, 2)
   taxTotal      Decimal        @db.Decimal(14, 2)
   total         Decimal        @db.Decimal(14, 2)
@@ -846,6 +846,14 @@ model PurchaseOrder {
   amountPaid    Decimal        @default(0) @db.Decimal(14, 2)
   notes         String?
   createdBy     String?
+  /// Aprovação (S7). NULL em OCs aprovadas antes do fluxo (backfill SENT→APPROVED).
+  approvedById    String?
+  approvedByName  String?
+  approvedAt      DateTime?
+  rejectedById    String?
+  rejectedByName  String?
+  rejectedAt      DateTime?
+  rejectionReason String?
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
 
@@ -1146,7 +1154,14 @@ enum DebitNoteStatus {
 
 enum PurchaseStatus {
   DRAFT
+  /// Legado (pré-S7): deixou de ser produzido; o backfill converteu SENT → APPROVED.
   SENT
+  /// Criada — aguarda aprovação (`purchases.approve`).
+  PENDING_APPROVAL
+  /// Aprovada — pronta para recepção de mercadorias.
+  APPROVED
+  /// Rejeitada na aprovação (terminal; motivo obrigatório).
+  REJECTED
   PARTIAL
   RECEIVED
   CANCELLED

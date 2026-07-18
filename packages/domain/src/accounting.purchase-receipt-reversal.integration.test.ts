@@ -3,7 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { prisma } from '@ants/database';
 import { civilDateInTimeZone } from '@ants/shared';
 import type { RequestContext } from './context';
-import { createPurchaseOrder, createSupplierPayment, receivePurchaseOrder, reversePurchaseReceipt, reverseSupplierPayment, type SupplierPaymentInput } from './purchases';
+import { approvePurchaseOrder, createPurchaseOrder, createSupplierPayment, receivePurchaseOrder, reversePurchaseReceipt, reverseSupplierPayment, type SupplierPaymentInput } from './purchases';
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from './errors';
 
 const CA = 'smoke-purchase-receipt-reversal';
@@ -15,7 +15,7 @@ function ctx(companyId: string, permissions: string[]): RequestContext {
   return { companyId, userId: `${companyId}-user`, permissions: new Set(permissions), isPlatformAdmin: false };
 }
 
-const op = ctx(CA, ['purchases.create', 'purchaseReceipts.reverse', 'supplierPayments.reverse']);
+const op = ctx(CA, ['purchases.create', 'purchases.approve', 'purchaseReceipts.reverse', 'supplierPayments.reverse']);
 const noReverse = ctx(CA, ['purchases.create']);
 
 interface Ids {
@@ -135,6 +135,7 @@ async function order(overrides: { productId?: string; quantity?: number; unitCos
     warehouseId: ids.warehouse,
     lines: [{ productId: overrides.productId ?? ids.product, quantity: overrides.quantity ?? 2, unitCost: overrides.unitCost ?? 100 }],
   });
+  await approvePurchaseOrder(prisma, op, created.id);
   return prisma.purchaseOrder.findUniqueOrThrow({ where: { id: created.id }, include: { lines: { orderBy: { id: 'asc' } } } });
 }
 
@@ -200,7 +201,8 @@ describe('P0-03d - estorno integral de recepcao de compra', () => {
     expect(reversalMovement.purchaseReceiptId).toBe(receiptBefore.id);
     expect(levelAfter.quantity).toBe(levelBefore.quantity - originalMovement.quantity);
     expect(Number(orderAfter.receivedValue)).toBe(0);
-    expect(orderAfter.status).toBe('SENT');
+    // S7: sem nada recebido a OC regressa a Aprovada (era 'SENT' antes do fluxo de aprovação).
+    expect(orderAfter.status).toBe('APPROVED');
     expect(orderAfter.lines[0]!.receivedQty).toBe(0);
     expect(Number(supplierAfter.balance)).toBe(Number(supplierBefore.balance) - Number(receiptBefore.totalAmount));
     expect(Number(productAfter.avgCost)).toBe(10);

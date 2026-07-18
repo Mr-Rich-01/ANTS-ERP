@@ -3,8 +3,10 @@
 import { revalidatePath } from 'next/cache';
 import { forContext } from '@ants/database';
 import {
+  approvePurchaseOrder,
   createPurchaseOrder,
   receivePurchaseOrder,
+  rejectPurchaseOrder,
   createSupplierPayment,
   reversePurchaseReceipt,
   reverseSupplierPayment,
@@ -30,6 +32,34 @@ export async function createPurchaseOrderAction(input: PurchaseInput): Promise<P
   try {
     const { id, number } = await createPurchaseOrder(forContext(ctx), ctx, input);
     revalidatePath('/compras');
+    return { ok: true, id, number };
+  } catch (e) {
+    if (e instanceof DomainError) return { error: e.message };
+    throw e;
+  }
+}
+
+export async function approvePurchaseOrderAction(orderId: string): Promise<PurchaseActionResult> {
+  const ctx = await getContext();
+  if (!ctx.companyId) return { error: 'Sem empresa activa.' };
+  try {
+    const { id, number } = await approvePurchaseOrder(forContext(ctx), ctx, orderId);
+    revalidatePath('/compras');
+    revalidatePath('/compras/ordem');
+    return { ok: true, id, number };
+  } catch (e) {
+    if (e instanceof DomainError) return { error: e.message };
+    throw e;
+  }
+}
+
+export async function rejectPurchaseOrderAction(orderId: string, reason: string): Promise<PurchaseActionResult> {
+  const ctx = await getContext();
+  if (!ctx.companyId) return { error: 'Sem empresa activa.' };
+  try {
+    const { id, number } = await rejectPurchaseOrder(forContext(ctx), ctx, orderId, reason);
+    revalidatePath('/compras');
+    revalidatePath('/compras/ordem');
     return { ok: true, id, number };
   } catch (e) {
     if (e instanceof DomainError) return { error: e.message };

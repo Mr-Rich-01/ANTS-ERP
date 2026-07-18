@@ -7,7 +7,7 @@ import { KpiCard, KpiGrid, type KpiCardData } from '@/components/ui/KpiCard';
 import { ACCENT } from '@/lib/erp-nav';
 import { purchaseOrdersEmptyMessage } from '@ants/shared';
 
-export type PoStatus = 'DRAFT' | 'SENT' | 'PARTIAL' | 'RECEIVED' | 'CANCELLED';
+export type PoStatus = 'DRAFT' | 'SENT' | 'PENDING_APPROVAL' | 'APPROVED' | 'REJECTED' | 'PARTIAL' | 'RECEIVED' | 'CANCELLED';
 
 export interface PoRow {
   id: string;
@@ -18,11 +18,18 @@ export interface PoRow {
   etaStr: string;
   totalStr: string;
   status: PoStatus;
+  /** OC criada pelo utilizador da sessão e já aprovada — destaque «devolvida ao solicitante». */
+  mineApproved: boolean;
+  approvedByName: string | null;
+  rejectionReason: string | null;
 }
 
 const STATUS: Record<PoStatus, [string, string, string]> = {
   DRAFT: ['Rascunho', 'var(--text3)', 'var(--bd-soft)'],
-  SENT: ['Enviada', 'var(--info)', 'var(--info-bg)'],
+  SENT: ['Enviada (legado)', 'var(--info)', 'var(--info-bg)'],
+  PENDING_APPROVAL: ['Aguardando Aprovação', 'var(--warn)', 'var(--warn-bg)'],
+  APPROVED: ['Aprovada', 'var(--info)', 'var(--info-bg)'],
+  REJECTED: ['Rejeitada', 'var(--bad)', 'var(--bad-bg)'],
   PARTIAL: ['Recepção parcial', 'var(--warn)', 'var(--warn-bg)'],
   RECEIVED: ['Recebida', 'var(--ok)', 'var(--ok-bg)'],
   CANCELLED: ['Cancelada', 'var(--text3)', 'var(--bd-soft)'],
@@ -39,7 +46,23 @@ const th: React.CSSProperties = {
   borderBottom: '1px solid var(--bd-soft)',
 };
 
-export function ComprasClient({ kpis, rows, totalStr, canCreate }: { kpis: KpiCardData[]; rows: PoRow[]; totalStr: string; canCreate: boolean }) {
+export function ComprasClient({
+  kpis,
+  rows,
+  totalStr,
+  canCreate,
+  canApprove,
+  pendingApprovalCount,
+  myApprovedCount,
+}: {
+  kpis: KpiCardData[];
+  rows: PoRow[];
+  totalStr: string;
+  canCreate: boolean;
+  canApprove: boolean;
+  pendingApprovalCount: number;
+  myApprovedCount: number;
+}) {
   const router = useRouter();
   const [q, setQ] = useState('');
 
@@ -57,6 +80,23 @@ export function ComprasClient({ kpis, rows, totalStr, canCreate }: { kpis: KpiCa
           <KpiCard key={k.label} {...k} />
         ))}
       </KpiGrid>
+
+      {(myApprovedCount > 0 || (canApprove && pendingApprovalCount > 0)) && (
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          {myApprovedCount > 0 && (
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 12.5, fontWeight: 600, color: 'var(--ok)', background: 'var(--ok-bg)', border: '1px solid var(--ok)', padding: '7px 13px', borderRadius: 20 }}>
+              <Icon name="check-circle-2" size={15} />
+              {myApprovedCount === 1 ? '1 ordem sua foi aprovada — pronta a recepcionar' : `${myApprovedCount} ordens suas foram aprovadas — prontas a recepcionar`}
+            </span>
+          )}
+          {canApprove && pendingApprovalCount > 0 && (
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 12.5, fontWeight: 600, color: 'var(--warn)', background: 'var(--warn-bg)', border: '1px solid var(--warn)', padding: '7px 13px', borderRadius: 20 }}>
+              <Icon name="clock" size={15} />
+              {pendingApprovalCount === 1 ? '1 ordem aguarda a sua aprovação' : `${pendingApprovalCount} ordens aguardam a sua aprovação`}
+            </span>
+          )}
+        </div>
+      )}
 
       <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 16, overflow: 'hidden' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 16px', borderBottom: '1px solid var(--bd-soft)', flexWrap: 'wrap' }}>
@@ -99,11 +139,26 @@ export function ComprasClient({ kpis, rows, totalStr, canCreate }: { kpis: KpiCa
               ) : (
                 filtered.map((o) => {
                   const [label, color, bg] = STATUS[o.status];
-                  const canReceive = o.status === 'SENT' || o.status === 'PARTIAL';
+                  const canReceive = o.status === 'APPROVED' || o.status === 'PARTIAL';
                   return (
-                    <tr key={o.id} className="ants-row" style={{ borderBottom: '1px solid var(--bd-soft2)', cursor: 'pointer' }} onClick={() => router.push(`/compras/ordem?id=${o.id}`)}>
+                    <tr
+                      key={o.id}
+                      className="ants-row"
+                      style={{ borderBottom: '1px solid var(--bd-soft2)', cursor: 'pointer', background: o.mineApproved ? 'var(--ok-bg)' : undefined }}
+                      onClick={() => router.push(`/compras/ordem?id=${o.id}`)}
+                    >
                       <td className="font-mono" style={{ padding: '12px 14px', fontSize: 12.5, fontWeight: 600, color: 'var(--accent-fg)', whiteSpace: 'nowrap' }}>
                         {o.number}
+                        {o.mineApproved && (
+                          <div style={{ fontSize: 10.5, fontWeight: 600, color: 'var(--ok)', fontFamily: 'var(--font-sans, inherit)' }}>
+                            Aprovada{o.approvedByName ? ` por ${o.approvedByName}` : ''} — pronta a recepcionar
+                          </div>
+                        )}
+                        {o.status === 'REJECTED' && o.rejectionReason && (
+                          <div style={{ fontSize: 10.5, fontWeight: 600, color: 'var(--bad)', fontFamily: 'var(--font-sans, inherit)', maxWidth: 260, whiteSpace: 'normal' }}>
+                            {o.rejectionReason}
+                          </div>
+                        )}
                       </td>
                       <td style={{ padding: '12px 14px', fontSize: 13, fontWeight: 500, color: 'var(--text)', whiteSpace: 'nowrap' }}>
                         {o.supplierName}

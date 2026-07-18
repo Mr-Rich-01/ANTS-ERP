@@ -261,7 +261,7 @@ export function NovaOrdemClient({ suppliers, products, warehouses }: { suppliers
             <Icon name="info" size={16} />
           </span>
           <span style={{ fontSize: 12, color: 'var(--text2)', lineHeight: 1.5 }}>
-            A ordem é criada como <strong>Enviada</strong>. O stock e a conta a pagar só são gerados na recepção.
+            A ordem é criada como <strong>Aguardando Aprovação</strong> e precisa de aprovação de um Gestor antes da recepção. O stock e a conta a pagar só são gerados na recepção.
           </span>
         </div>
       </div>
