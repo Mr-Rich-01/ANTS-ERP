@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { Icon } from '@/components/Icon';
 import { ACCENT } from '@/lib/erp-nav';
 
-export type DisplayStatus = 'pago' | 'parcial' | 'pendente' | 'vencido' | 'cancelado';
+export type DisplayStatus = 'rascunho' | 'pago' | 'parcial' | 'pendente' | 'vencido' | 'cancelado';
 
 export interface InvoiceRow {
   id: string;
@@ -25,6 +25,7 @@ export interface StatCard {
 }
 
 const STATUS: Record<DisplayStatus, [string, string, string]> = {
+  rascunho: ['Rascunho', 'var(--warn)', 'var(--warn-bg)'],
   pago: ['Pago', 'var(--ok)', 'var(--ok-bg)'],
   parcial: ['Parcial', 'var(--info)', 'var(--info-bg)'],
   pendente: ['Pendente', 'var(--warn)', 'var(--warn-bg)'],
@@ -32,7 +33,7 @@ const STATUS: Record<DisplayStatus, [string, string, string]> = {
   cancelado: ['Cancelado', 'var(--text3)', 'var(--bd-soft)'],
 };
 
-const FILTERS = ['Todas', 'Pendentes', 'Pagas', 'Vencidas'] as const;
+const FILTERS = ['Todas', 'Rascunhos', 'Pendentes', 'Pagas', 'Vencidas'] as const;
 
 const th: React.CSSProperties = {
   padding: '11px 14px',
@@ -53,6 +54,7 @@ export function FacturasClient({ stats, rows, totalStr, canCreate }: { stats: St
   const filtered = useMemo(() => {
     const term = q.trim().toLowerCase();
     return rows.filter((r) => {
+      if (filter === 'Rascunhos' && r.status !== 'rascunho') return false;
       if (filter === 'Pendentes' && !(r.status === 'pendente' || r.status === 'parcial' || r.status === 'vencido')) return false;
       if (filter === 'Pagas' && r.status !== 'pago') return false;
       if (filter === 'Vencidas' && r.status !== 'vencido') return false;

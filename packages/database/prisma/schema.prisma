@@ -529,6 +529,8 @@ model Invoice {
   issueDate          DateTime       @default(now())
   dueDate            DateTime
   status             InvoiceStatus  @default(ISSUED)
+  /// Número da série RASC enquanto rascunho, preservado após a emissão (S6).
+  draftNumber        String?
   cancelledAt        DateTime?
   cancelledById      String?
   cancellationReason String?
@@ -1087,7 +1089,9 @@ enum StockMovementType {
   ADJUST
 }
 
+/// DRAFT (S6): rascunho sem efeitos — sem stock, sem contabilidade, sem número FT.
 enum InvoiceStatus {
+  DRAFT
   ISSUED
   PARTIAL
   PAID
@@ -1440,6 +1444,8 @@ enum OperationIdempotencyScope {
   QUOTATION_CREATE
   CREDIT_NOTE_CREATE
   DEBIT_NOTE_CREATE
+  INVOICE_DRAFT_CREATE
+  INVOICE_DRAFT_ISSUE
 }
 
 model OperationIdempotency {

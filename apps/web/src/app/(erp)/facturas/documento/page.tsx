@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { forCompany } from '@ants/database';
 import { civilDateInTimeZone } from '@ants/shared';
-import { getCompanyPrintProfile, getInvoice, hasPermission, listAccounts, DomainError, type InvoiceDisplayStatus, type PaymentMethod } from '@ants/domain';
+import { getCompanyPrintProfile, getInvoice, getInvoiceHistory, hasPermission, listAccounts, DomainError, type InvoiceDisplayStatus, type InvoiceHistoryEntry, type PaymentMethod } from '@ants/domain';
 import { getContext } from '@/lib/session';
 import { Icon } from '@/components/Icon';
 import { PrintButton } from '@/components/PrintButton';
@@ -11,10 +11,13 @@ import { fmt } from '@/lib/format';
 import { PaymentDialog } from '@/components/facturas/PaymentDialog';
 import { PaymentReversalDialog } from '@/components/facturas/PaymentReversalDialog';
 import { InvoiceCancellationDialog } from '@/components/facturas/InvoiceCancellationDialog';
+import { DraftIssueDialog } from '@/components/facturas/DraftIssueDialog';
+import { DraftDiscardDialog } from '@/components/facturas/DraftDiscardDialog';
 
 export const dynamic = 'force-dynamic';
 
 const STATUS: Record<InvoiceDisplayStatus, [string, string, string]> = {
+  rascunho: ['Rascunho', 'var(--warn)', 'var(--warn-bg)'],
   pago: ['Pago', 'var(--ok)', 'var(--ok-bg)'],
   parcial: ['Parcial', 'var(--info)', 'var(--info-bg)'],
   pendente: ['Pendente', 'var(--warn)', 'var(--warn-bg)'],
@@ -39,6 +42,10 @@ const topBtn: React.CSSProperties = {
 
 function fmtDate(d: Date): string {
   return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
+}
+
+function fmtDateTime(d: Date): string {
+  return `${fmtDate(d)} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
 
 export default async function DocumentoPage({ searchParams }: { searchParams: { id?: string } }) {
@@ -66,14 +73,22 @@ export default async function DocumentoPage({ searchParams }: { searchParams: { 
   }
   const company = await getCompanyPrintProfile(db, ctx);
   const accounts = hasPermission(ctx, 'treasury.view') ? (await listAccounts(db, ctx)).filter((a) => a.status === 'ACTIVE').map((a) => ({ id: a.id, label: a.name })) : [];
+  let history: InvoiceHistoryEntry[] = [];
+  try {
+    history = await getInvoiceHistory(db, ctx, inv.id);
+  } catch {
+    history = [];
+  }
 
   const [statusLabel, statusColor, statusBg] = STATUS[inv.displayStatus];
-  const canReceive = hasPermission(ctx, 'payments.receive') && inv.outstanding > 0 && inv.status !== 'CANCELLED';
+  const isDraft = inv.status === 'DRAFT';
+  const canCreate = hasPermission(ctx, 'sales.create');
+  const canReceive = hasPermission(ctx, 'payments.receive') && inv.outstanding > 0 && inv.status !== 'CANCELLED' && !isDraft;
   const canCancelPayment = hasPermission(ctx, 'payments.cancel');
   const canCancelInvoicePermission = hasPermission(ctx, 'invoices.cancel');
   const activePaymentCount = inv.payments.filter((p) => p.status === 'ACTIVE').length;
-  const canCancelInvoice = canCancelInvoicePermission && inv.status !== 'CANCELLED' && activePaymentCount === 0;
-  const canIssueNotes = hasPermission(ctx, 'sales.create') && inv.status !== 'CANCELLED';
+  const canCancelInvoice = canCancelInvoicePermission && inv.status !== 'CANCELLED' && !isDraft && activePaymentCount === 0;
+  const canIssueNotes = canCreate && inv.status !== 'CANCELLED' && !isDraft;
   const disabledCancelMessage = activePaymentCount > 0 ? 'Anule primeiro os recibos activos desta factura.' : null;
   const reversalDate = civilDateInTimeZone();
   const cancellationDate = reversalDate;
@@ -81,7 +96,8 @@ export default async function DocumentoPage({ searchParams }: { searchParams: { 
   const documentMeta: Array<[string, string, boolean]> = [
     ['Data de emissão', fmtDate(inv.issueDate), true],
     ['Vencimento', fmtDate(inv.dueDate), true],
-    ...(inv.cancelledAt ? [['Cancelamento', fmtDate(inv.cancelledAt), true] as [string, string, boolean]] : []),
+    ...(inv.cancelledAt ? [['Cancelamento', fmtDateTime(inv.cancelledAt), true] as [string, string, boolean]] : []),
+    ...(!isDraft && inv.draftNumber ? [['Origem', inv.draftNumber, true] as [string, string, boolean]] : []),
     ['Pagamento', inv.paymentMethod ? METHOD_LABEL[inv.paymentMethod] : '—', false],
   ];
 
@@ -93,6 +109,33 @@ export default async function DocumentoPage({ searchParams }: { searchParams: { 
           Voltar às facturas
         </Link>
         <div style={{ display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap' }}>
+          {isDraft && canCreate && (
+            <>
+              <Link href={`/facturas/nova?rascunho=${inv.id}`} style={topBtn}>
+                <Icon name="pencil" size={16} />
+                Editar rascunho
+              </Link>
+              <DraftDiscardDialog
+                draft={{ id: inv.id, number: inv.number, customerName: inv.customerName, total: inv.total }}
+                trigger={
+                  <button style={{ ...topBtn, borderColor: '#f0d0cc', background: '#fff5f3', color: '#8b3a32', cursor: 'pointer' }}>
+                    <Icon name="trash-2" size={16} />
+                    Descartar rascunho
+                  </button>
+                }
+              />
+              <DraftIssueDialog
+                issueDate={reversalDate}
+                draft={{ id: inv.id, number: inv.number, customerName: inv.customerName, total: inv.total, itemCount: inv.lines.length }}
+                trigger={
+                  <button style={{ ...topBtn, border: 'none', background: 'var(--accent-fg)', color: '#fff', cursor: 'pointer' }}>
+                    <Icon name="file-check-2" size={16} />
+                    Emitir factura
+                  </button>
+                }
+              />
+            </>
+          )}
           {canIssueNotes && (
             <>
               <Link href={`/facturas/nota-credito/nova?invoiceId=${inv.id}`} style={topBtn}>
@@ -157,6 +200,11 @@ export default async function DocumentoPage({ searchParams }: { searchParams: { 
                   CANCELADA
                 </div>
               )}
+              {isDraft && (
+                <div style={{ marginTop: 8, fontSize: 11, color: '#8a6d1f', fontWeight: 700, letterSpacing: '.5px' }}>
+                  RASCUNHO — SEM VALIDADE FISCAL
+                </div>
+              )}
               </>
             }
           />
@@ -182,10 +230,16 @@ export default async function DocumentoPage({ searchParams }: { searchParams: { 
               {inv.cancellationReason && (
                 <div style={{ marginTop: 8, padding: '8px 9px', borderRadius: 6, background: '#fff5f3', color: '#8b3a32', fontSize: 11.5, lineHeight: 1.45 }}>
                   <strong>Motivo:</strong> {inv.cancellationReason}
-                  {inv.cancelledById ? (
+                  {inv.cancelledByName || inv.cancelledById ? (
                     <>
                       <br />
-                      <strong>Responsável:</strong> {inv.cancelledById}
+                      <strong>Responsável:</strong> {inv.cancelledByName ?? inv.cancelledById}
+                    </>
+                  ) : null}
+                  {inv.cancelledAt ? (
+                    <>
+                      <br />
+                      <strong>Data/hora:</strong> {fmtDateTime(inv.cancelledAt)}
                     </>
                   ) : null}
                 </div>
@@ -308,6 +362,32 @@ export default async function DocumentoPage({ searchParams }: { searchParams: { 
 
           <DocumentFooter company={company} />
       </PrintLayout>
+
+      {/* Histórico de alterações (S6) — só no ecrã, não imprime */}
+      {history.length > 0 && (
+        <div className="ants-noprint" style={{ margin: '18px 26px 30px', maxWidth: 820 }}>
+          <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 16, padding: '16px 20px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, fontWeight: 700, color: 'var(--text)', marginBottom: 12 }}>
+              <Icon name="history" size={16} />
+              Histórico de alterações
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column' }}>
+              {history.map((h, idx) => (
+                <div key={h.id} style={{ display: 'flex', gap: 12, padding: '9px 0', borderTop: idx > 0 ? '1px solid var(--bd-soft2)' : undefined }}>
+                  <div className="tnum" style={{ flex: 'none', width: 118, fontSize: 12, color: 'var(--text3)' }}>{fmtDateTime(h.createdAt)}</div>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text)' }}>
+                      {h.label}
+                      {h.userName ? <span style={{ fontWeight: 500, color: 'var(--text2)' }}> · {h.userName}</span> : null}
+                    </div>
+                    {h.details && <div style={{ fontSize: 12, color: 'var(--text2)', marginTop: 2, overflowWrap: 'anywhere' }}>{h.details}</div>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

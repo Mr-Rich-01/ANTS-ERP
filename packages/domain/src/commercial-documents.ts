@@ -433,6 +433,7 @@ export async function getCreditableLines(db: PrismaClient, ctx: RequestContext, 
   requireCompany(ctx);
   const invoice = await db.invoice.findFirst({ where: { id: invoiceId }, include: { lines: true } });
   if (!invoice) throw new NotFoundError('Factura não encontrada.');
+  if (invoice.status === 'DRAFT') throw new ConflictError('A factura é um rascunho — emita-a antes de emitir notas de crédito.');
   const issued = await db.creditNote.findMany({ where: { invoiceId, status: 'ISSUED' }, include: { lines: true } });
   const creditedByLine = new Map<string, number>();
   for (const note of issued) {
@@ -527,6 +528,7 @@ export async function createCreditNote(db: PrismaClient, ctx: RequestContext, in
         const invoice = await tx.invoice.findFirst({ where: { id: data.invoiceId, companyId }, include: { lines: true } });
         if (!invoice) throw new NotFoundError('Factura não encontrada.');
         if (invoice.status === 'CANCELLED') throw new ConflictError('Não é possível emitir nota de crédito sobre uma factura cancelada.');
+        if (invoice.status === 'DRAFT') throw new ConflictError('Não é possível emitir nota de crédito sobre um rascunho de factura.');
 
         const customer = await tx.customer.findFirst({ where: { id: invoice.customerId, companyId } });
         if (!customer) throw new NotFoundError('Cliente da factura não encontrado.');
@@ -830,6 +832,7 @@ export async function createDebitNote(db: PrismaClient, ctx: RequestContext, inp
           if (!found) throw new NotFoundError('Factura não encontrada.');
           if (found.customerId !== customer.id) throw new ValidationError('A factura indicada pertence a outro cliente.');
           if (found.status === 'CANCELLED') throw new ConflictError('Não é possível referenciar uma factura cancelada.');
+          if (found.status === 'DRAFT') throw new ConflictError('Não é possível referenciar um rascunho de factura.');
           invoice = { id: found.id, number: found.number };
         }
 

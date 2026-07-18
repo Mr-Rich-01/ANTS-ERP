@@ -19,9 +19,16 @@ import {
 } from './operation-idempotency';
 import { validateOpenReversalDateTx, validateReversalReason } from './reversals';
 
-export type InvoiceStatus = 'ISSUED' | 'PARTIAL' | 'PAID' | 'CANCELLED';
+export type InvoiceStatus = 'DRAFT' | 'ISSUED' | 'PARTIAL' | 'PAID' | 'CANCELLED';
 /** Estado apresentado (inclui "vencido", derivado da data). */
-export type InvoiceDisplayStatus = 'pago' | 'parcial' | 'pendente' | 'vencido' | 'cancelado';
+export type InvoiceDisplayStatus = 'rascunho' | 'pago' | 'parcial' | 'pendente' | 'vencido' | 'cancelado';
+
+/**
+ * Estados de factura com efeitos (stock/saldo/contabilidade). Filtro central da S6:
+ * rascunhos (DRAFT) ficam invisíveis em KPIs, extractos e relatórios — só a lista de
+ * facturas e o detalhe os mostram, marcados como rascunho.
+ */
+export const ACTIVE_INVOICE_STATUSES: InvoiceStatus[] = ['ISSUED', 'PARTIAL', 'PAID'];
 export type PaymentMethod = 'CASH' | 'MPESA' | 'EMOLA' | 'CARD' | 'TRANSFER';
 
 export interface InvoiceListItem {
@@ -91,6 +98,7 @@ export interface InvoiceDetail {
   dueDate: Date;
   status: InvoiceStatus;
   displayStatus: InvoiceDisplayStatus;
+  draftNumber: string | null;
   subtotal: number;
   discountTotal: number;
   taxableBase: number;
@@ -102,6 +110,7 @@ export interface InvoiceDetail {
   notes: string | null;
   cancelledAt: Date | null;
   cancelledById: string | null;
+  cancelledByName: string | null;
   cancellationReason: string | null;
   lines: InvoiceLineItem[];
   payments: InvoicePaymentItem[];
@@ -130,6 +139,7 @@ export interface CustomerStatement {
 }
 
 function displayStatus(status: InvoiceStatus, dueDate: Date, now: Date): InvoiceDisplayStatus {
+  if (status === 'DRAFT') return 'rascunho';
   if (status === 'CANCELLED') return 'cancelado';
   if (status === 'PAID') return 'pago';
   if ((status === 'ISSUED' || status === 'PARTIAL') && dueDate < now) return 'vencido';
@@ -180,6 +190,9 @@ export async function getInvoice(db: PrismaClient, ctx: RequestContext, id: stri
       })
     : [];
   const movementByPayment = new Map(paymentMovements.map((m) => [m.sourceId, m]));
+  const cancelledBy = i.cancelledById
+    ? await db.user.findFirst({ where: { id: i.cancelledById }, select: { name: true, email: true } })
+    : null;
   return {
     id: i.id,
     number: i.number,
@@ -191,6 +204,7 @@ export async function getInvoice(db: PrismaClient, ctx: RequestContext, id: stri
     dueDate: i.dueDate,
     status: i.status as InvoiceStatus,
     displayStatus: displayStatus(i.status as InvoiceStatus, i.dueDate, new Date()),
+    draftNumber: i.draftNumber,
     subtotal: Number(i.subtotal),
     discountTotal: Number(i.discountTotal),
     taxableBase: Number(i.taxableBase),
@@ -202,6 +216,7 @@ export async function getInvoice(db: PrismaClient, ctx: RequestContext, id: stri
     notes: i.notes,
     cancelledAt: i.cancelledAt,
     cancelledById: i.cancelledById,
+    cancelledByName: cancelledBy ? cancelledBy.name || cancelledBy.email : null,
     cancellationReason: i.cancellationReason,
     lines: i.lines.map((l) => ({
       id: l.id,
@@ -273,7 +288,7 @@ export async function invoiceKpis(db: PrismaClient, ctx: RequestContext): Promis
   requireCompany(ctx);
   const now = new Date();
   const rows = await db.invoice.findMany({
-    where: { status: { not: 'CANCELLED' } },
+    where: { status: { in: ACTIVE_INVOICE_STATUSES } },
     select: { total: true, amountPaid: true, dueDate: true, status: true },
   });
   let invoiced = 0;
@@ -302,7 +317,7 @@ export async function getCustomerStatement(db: PrismaClient, ctx: RequestContext
   if (!customer) throw new NotFoundError('Cliente não encontrado.');
 
   const [invoices, payments, creditNotes, debitNotes] = await Promise.all([
-    db.invoice.findMany({ where: { customerId, status: { not: 'CANCELLED' } }, select: { number: true, issueDate: true, total: true } }),
+    db.invoice.findMany({ where: { customerId, status: { in: ACTIVE_INVOICE_STATUSES } }, select: { number: true, issueDate: true, total: true } }),
     db.payment.findMany({ where: { customerId, status: 'ACTIVE' }, select: { number: true, paidAt: true, amount: true } }),
     db.creditNote.findMany({ where: { customerId, status: 'ISSUED' }, select: { number: true, issueDate: true, total: true } }),
     db.debitNote.findMany({ where: { customerId, status: 'ISSUED' }, select: { number: true, issueDate: true, total: true } }),
@@ -647,6 +662,7 @@ export async function createPayment(db: PrismaClient, ctx: RequestContext, input
         const invoice = await tx.invoice.findFirst({ where: { id: data.invoiceId, companyId } });
         if (!invoice) throw new NotFoundError('Factura não encontrada.');
         if (invoice.status === 'CANCELLED') throw new ConflictError('A factura está cancelada.');
+        if (invoice.status === 'DRAFT') throw new ConflictError('A factura é um rascunho — emita-a antes de registar recibos.');
         const total = Number(invoice.total);
         const paid = Number(invoice.amountPaid);
         const outstanding = round2(total - paid);
@@ -1080,6 +1096,7 @@ export async function createPosSale(db: PrismaClient, ctx: RequestContext, input
         const paidInvoice = await tx.invoice.findFirst({ where: { id: paymentData.invoiceId, companyId } });
         if (!paidInvoice) throw new NotFoundError('Factura não encontrada.');
         if (paidInvoice.status === 'CANCELLED') throw new ConflictError('A factura está cancelada.');
+        if (paidInvoice.status === 'DRAFT') throw new ConflictError('A factura é um rascunho — emita-a antes de registar recibos.');
         const total = Number(paidInvoice.total);
         const paid = Number(paidInvoice.amountPaid);
         const outstanding = round2(total - paid);
@@ -1317,6 +1334,7 @@ export async function cancelInvoice(db: PrismaClient, ctx: RequestContext, input
         const invoice = await tx.invoice.findFirst({ where: { companyId, id: data.invoiceId } });
         if (!invoice) throw new NotFoundError('Factura não encontrada.');
         if (invoice.status === 'CANCELLED') throw new ConflictError('Esta factura já foi cancelada.');
+        if (invoice.status === 'DRAFT') throw new ConflictError('Esta factura é um rascunho sem efeitos — use «Descartar rascunho».');
 
         const activePayments = await tx.payment.findMany({
           where: { companyId, invoiceId: invoice.id, status: 'ACTIVE' },
@@ -1463,6 +1481,623 @@ export async function cancelInvoice(db: PrismaClient, ctx: RequestContext, input
       },
     });
     return op.result;
+  });
+}
+
+// ─────────────────────────── Rascunhos (S6) ───────────────────────────
+
+type PreparedInvoiceLine = {
+  productId: string;
+  sku: string | null;
+  description: string;
+  unitPrice: number;
+  quantity: number;
+  discountPercent: number;
+  taxRate: number;
+  total: number;
+  available: number;
+};
+
+/** Prepara as linhas a partir dos produtos actuais. `enforceStock` bloqueia quando não há stock. */
+async function prepareInvoiceLinesTx(
+  tx: Prisma.TransactionClient,
+  companyId: string,
+  warehouseId: string,
+  lines: ParsedInvoiceInput['lines'],
+  enforceStock: boolean,
+): Promise<PreparedInvoiceLine[]> {
+  const prepared: PreparedInvoiceLine[] = [];
+  for (const line of lines) {
+    const product = await tx.product.findFirst({ where: { id: line.productId, companyId } });
+    if (!product) throw new NotFoundError('Produto não encontrado.');
+    const level = await tx.stockLevel.findUnique({ where: { productId_warehouseId: { productId: product.id, warehouseId } } });
+    const available = level?.quantity ?? 0;
+    if (enforceStock && available < line.quantity) {
+      throw new ValidationError(`Stock insuficiente para ${product.name}: disponível ${available}, pedido ${line.quantity}.`);
+    }
+    const unitPrice = Number(product.salePrice);
+    const taxRate = Number(product.taxRate);
+    const r = computeLine({ quantity: line.quantity, unitPrice, discountPercent: line.discountPercent, taxPercent: taxRate });
+    prepared.push({
+      productId: product.id,
+      sku: product.sku,
+      description: product.name,
+      unitPrice,
+      quantity: line.quantity,
+      discountPercent: line.discountPercent,
+      taxRate,
+      total: r.total,
+      available,
+    });
+  }
+  return prepared;
+}
+
+/**
+ * Grava uma factura como rascunho (série RASC): sem stock, sem saldo do cliente,
+ * sem contabilidade e sem consumir número da série FT. O stock não é bloqueante
+ * no rascunho — a validação plena acontece na emissão.
+ */
+export async function saveInvoiceDraft(db: PrismaClient, ctx: RequestContext, input: InvoiceInput): Promise<{ id: string; number: string }> {
+  requirePermission(ctx, 'sales.create');
+  const companyId = requireCompany(ctx);
+  const parsed = invoiceInput.safeParse(input);
+  if (!parsed.success) throw new ValidationError(parsed.error.issues[0]?.message ?? 'Dados inválidos.');
+  const data = parsed.data;
+  const issueDate = resolveAllowedIssueDate(data.issueDate);
+  const requestFingerprint = invoiceFingerprint(data, issueDate);
+
+  if (data.lines.some((l) => l.discountPercent > 0) && !hasPermission(ctx, 'sales.approve_discount')) {
+    throw new ForbiddenError('Sem permissão para aplicar descontos.');
+  }
+
+  return db.$transaction(async (tx) => {
+    const op = await runIdempotentOperation<{ id: string; number: string }>(tx, ctx, {
+      scope: 'INVOICE_DRAFT_CREATE',
+      idempotencyKey: data.idempotencyKey,
+      requestFingerprint,
+      expectedResourceType: 'Invoice',
+      loadExisting: async (resourceId) => {
+        return tx.invoice.findFirst({ where: { companyId, id: resourceId }, select: { id: true, number: true } });
+      },
+      run: async () => {
+        const customer = await tx.customer.findFirst({ where: { id: data.customerId, companyId } });
+        if (!customer) throw new NotFoundError('Cliente não encontrado.');
+
+        const warehouse = data.warehouseId
+          ? await tx.warehouse.findFirst({ where: { id: data.warehouseId, companyId, status: 'ACTIVE' } })
+          : await tx.warehouse.findFirst({ where: { companyId, status: 'ACTIVE' }, orderBy: { code: 'asc' } });
+        if (!warehouse) throw new NotFoundError('Armazém não encontrado.');
+
+        const prepared = await prepareInvoiceLinesTx(tx, companyId, warehouse.id, data.lines, false);
+        const totals = computeDocumentTotals(
+          prepared.map((p) => ({ quantity: p.quantity, unitPrice: p.unitPrice, discountPercent: p.discountPercent, taxPercent: p.taxRate })),
+        );
+        assertConsistentTotals(totals);
+
+        const dueDate = data.dueDate ?? new Date(issueDate.getTime() + customer.paymentTermDays * 86_400_000);
+        const number = await nextDocNumber(tx, companyId, 'RASC', issueDate.getUTCFullYear());
+
+        const invoice = await tx.invoice.create({
+          data: {
+            companyId,
+            branchId: ctx.branchId ?? null,
+            number,
+            draftNumber: number,
+            customerId: customer.id,
+            customerName: customer.name,
+            customerNuit: customer.nuit,
+            warehouseId: warehouse.id,
+            issueDate,
+            dueDate,
+            status: 'DRAFT',
+            subtotal: totals.subtotal,
+            discountTotal: totals.discount,
+            taxableBase: totals.taxable,
+            taxTotal: totals.tax,
+            total: totals.total,
+            amountPaid: 0,
+            paymentMethod: data.paymentMethod ?? null,
+            notes: data.notes ?? null,
+            createdBy: ctx.userId,
+          },
+        });
+
+        for (const p of prepared) {
+          await tx.invoiceLine.create({
+            data: {
+              companyId,
+              invoiceId: invoice.id,
+              productId: p.productId,
+              sku: p.sku,
+              description: p.description,
+              unitPrice: p.unitPrice,
+              quantity: p.quantity,
+              discountPercent: p.discountPercent,
+              taxRate: p.taxRate,
+              total: p.total,
+            },
+          });
+        }
+
+        await writeAudit(tx, ctx, {
+          action: 'invoice.draft.create',
+          entity: 'Invoice',
+          entityId: invoice.id,
+          newValues: {
+            number,
+            customerId: customer.id,
+            customer: customer.name,
+            total: totals.total,
+            lineCount: prepared.length,
+            idempotencyKey: data.idempotencyKey,
+          },
+        });
+
+        return { resourceType: 'Invoice', resourceId: invoice.id, result: { id: invoice.id, number } };
+      },
+    });
+    return op.result;
+  });
+}
+
+const invoiceDraftUpdateInput = z.object({
+  draftId: z.string().min(1, 'Rascunho inválido.'),
+  customerId: z.string().min(1, 'Seleccione um cliente.'),
+  warehouseId: z.string().optional(),
+  paymentMethod: z.enum(['CASH', 'MPESA', 'EMOLA', 'CARD', 'TRANSFER']).optional(),
+  notes: z.string().trim().max(1000).optional(),
+  lines: z
+    .array(
+      z.object({
+        productId: z.string().min(1),
+        quantity: z.coerce.number().int().positive('Quantidade inválida.'),
+        discountPercent: z.coerce.number().min(0).max(100).default(0),
+      }),
+    )
+    .min(1, 'Adicione pelo menos uma linha.'),
+});
+
+export type InvoiceDraftUpdateInput = z.input<typeof invoiceDraftUpdateInput>;
+
+/** Actualiza um rascunho existente (linhas substituídas; preços refrescados dos produtos). */
+export async function updateInvoiceDraft(db: PrismaClient, ctx: RequestContext, input: InvoiceDraftUpdateInput): Promise<{ id: string; number: string }> {
+  requirePermission(ctx, 'sales.create');
+  const companyId = requireCompany(ctx);
+  const parsed = invoiceDraftUpdateInput.safeParse(input);
+  if (!parsed.success) throw new ValidationError(parsed.error.issues[0]?.message ?? 'Dados inválidos.');
+  const data = parsed.data;
+
+  if (data.lines.some((l) => l.discountPercent > 0) && !hasPermission(ctx, 'sales.approve_discount')) {
+    throw new ForbiddenError('Sem permissão para aplicar descontos.');
+  }
+
+  return db.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT id FROM invoices WHERE id = ${data.draftId} AND "companyId" = ${companyId} FOR UPDATE`;
+    const draft = await tx.invoice.findFirst({ where: { companyId, id: data.draftId }, include: { lines: true } });
+    if (!draft) throw new NotFoundError('Rascunho não encontrado.');
+    if (draft.status !== 'DRAFT') throw new ConflictError('Só é possível editar facturas em rascunho.');
+
+    const customer = await tx.customer.findFirst({ where: { id: data.customerId, companyId } });
+    if (!customer) throw new NotFoundError('Cliente não encontrado.');
+
+    const warehouse = data.warehouseId
+      ? await tx.warehouse.findFirst({ where: { id: data.warehouseId, companyId, status: 'ACTIVE' } })
+      : await tx.warehouse.findFirst({ where: { companyId, status: 'ACTIVE' }, orderBy: { code: 'asc' } });
+    if (!warehouse) throw new NotFoundError('Armazém não encontrado.');
+
+    const prepared = await prepareInvoiceLinesTx(tx, companyId, warehouse.id, data.lines, false);
+    const totals = computeDocumentTotals(
+      prepared.map((p) => ({ quantity: p.quantity, unitPrice: p.unitPrice, discountPercent: p.discountPercent, taxPercent: p.taxRate })),
+    );
+    assertConsistentTotals(totals);
+
+    const dueDate = new Date(draft.issueDate.getTime() + customer.paymentTermDays * 86_400_000);
+
+    await tx.invoiceLine.deleteMany({ where: { companyId, invoiceId: draft.id } });
+    for (const p of prepared) {
+      await tx.invoiceLine.create({
+        data: {
+          companyId,
+          invoiceId: draft.id,
+          productId: p.productId,
+          sku: p.sku,
+          description: p.description,
+          unitPrice: p.unitPrice,
+          quantity: p.quantity,
+          discountPercent: p.discountPercent,
+          taxRate: p.taxRate,
+          total: p.total,
+        },
+      });
+    }
+
+    await tx.invoice.update({
+      where: { id: draft.id },
+      data: {
+        customerId: customer.id,
+        customerName: customer.name,
+        customerNuit: customer.nuit,
+        warehouseId: warehouse.id,
+        dueDate,
+        subtotal: totals.subtotal,
+        discountTotal: totals.discount,
+        taxableBase: totals.taxable,
+        taxTotal: totals.tax,
+        total: totals.total,
+        paymentMethod: data.paymentMethod ?? null,
+        notes: data.notes ?? null,
+      },
+    });
+
+    await writeAudit(tx, ctx, {
+      action: 'invoice.draft.update',
+      entity: 'Invoice',
+      entityId: draft.id,
+      oldValues: {
+        customerId: draft.customerId,
+        customer: draft.customerName,
+        total: Number(draft.total),
+        lineCount: draft.lines.length,
+        notes: draft.notes,
+      },
+      newValues: {
+        customerId: customer.id,
+        customer: customer.name,
+        total: totals.total,
+        lineCount: prepared.length,
+        notes: data.notes ?? null,
+        lines: prepared.map((p) => ({ productId: p.productId, quantity: p.quantity, discountPercent: p.discountPercent })),
+      },
+    });
+
+    return { id: draft.id, number: draft.number };
+  });
+}
+
+const issueInvoiceDraftInput = z.object({
+  draftId: z.string().min(1, 'Rascunho inválido.'),
+  idempotencyKey: z.string().min(1, 'Chave de idempotência obrigatória.'),
+  issueDate: z.string().min(1, 'Seleccione a data de emissão.'),
+});
+
+export type IssueInvoiceDraftInput = z.input<typeof issueInvoiceDraftInput>;
+
+function issueDraftFingerprint(companyId: string, draftId: string, issueDate: Date): string {
+  return canonicalRequestFingerprint(FINGERPRINT_VERSION, {
+    companyId,
+    draftId,
+    issueDate: fpDate(issueDate),
+  });
+}
+
+/**
+ * Emite um rascunho: só aqui o número FT é consumido, o stock validado/baixado,
+ * o saldo do cliente incrementado e o lançamento SALE_ISSUED criado. O número
+ * RASC original fica preservado em draftNumber e na auditoria.
+ */
+export async function issueInvoiceDraft(db: PrismaClient, ctx: RequestContext, input: IssueInvoiceDraftInput): Promise<{ id: string; number: string }> {
+  requirePermission(ctx, 'sales.create');
+  const companyId = requireCompany(ctx);
+  const parsed = issueInvoiceDraftInput.safeParse(input);
+  if (!parsed.success) throw new ValidationError(parsed.error.issues[0]?.message ?? 'Dados inválidos.');
+  const data = parsed.data;
+  const issueDate = resolveAllowedIssueDate(data.issueDate);
+  const requestFingerprint = issueDraftFingerprint(companyId, data.draftId, issueDate);
+
+  return db.$transaction(async (tx) => {
+    const op = await runIdempotentOperation<{ id: string; number: string }>(tx, ctx, {
+      scope: 'INVOICE_DRAFT_ISSUE',
+      idempotencyKey: data.idempotencyKey,
+      requestFingerprint,
+      expectedResourceType: 'Invoice',
+      loadExisting: async (resourceId) => {
+        const invoice = await tx.invoice.findFirst({ where: { companyId, id: resourceId }, select: { id: true, number: true, status: true } });
+        if (!invoice) return null;
+        if (invoice.status === 'DRAFT') throw new ConflictError('Registo de idempotência aponta para um rascunho não emitido (integridade).');
+        const entry = await tx.journalEntry.findFirst({
+          where: { companyId, sourceType: 'INVOICE', sourceId: invoice.id, accountingEvent: 'SALE_ISSUED' },
+          select: { id: true },
+        });
+        if (!entry) throw new ConflictError('Registo de idempotência aponta para uma emissão sem lançamento contabilístico (integridade).');
+        return { id: invoice.id, number: invoice.number };
+      },
+      run: async () => {
+        await tx.$queryRaw`SELECT id FROM invoices WHERE id = ${data.draftId} AND "companyId" = ${companyId} FOR UPDATE`;
+        const draft = await tx.invoice.findFirst({ where: { companyId, id: data.draftId }, include: { lines: { orderBy: { id: 'asc' } } } });
+        if (!draft) throw new NotFoundError('Rascunho não encontrado.');
+        if (draft.status === 'CANCELLED') throw new ConflictError('Este rascunho foi descartado.');
+        if (draft.status !== 'DRAFT') throw new ConflictError('Esta factura já foi emitida.');
+        if (draft.lines.length === 0) throw new ValidationError('O rascunho não tem linhas.');
+
+        const customer = await tx.customer.findFirst({ where: { id: draft.customerId, companyId } });
+        if (!customer) throw new NotFoundError('Cliente do rascunho não encontrado.');
+        const warehouse = await tx.warehouse.findFirst({ where: { id: draft.warehouseId, companyId, status: 'ACTIVE' } });
+        if (!warehouse) throw new NotFoundError('O armazém do rascunho já não está activo.');
+
+        // Valida o stock à data da emissão (o rascunho nunca bloqueou stock).
+        const stockChecked: Array<{ productId: string; quantity: number; available: number }> = [];
+        for (const line of draft.lines) {
+          if (!line.productId) throw new ConflictError('Integridade: linha de rascunho sem produto.');
+          const level = await tx.stockLevel.findUnique({ where: { productId_warehouseId: { productId: line.productId, warehouseId: warehouse.id } } });
+          const available = level?.quantity ?? 0;
+          if (available < line.quantity) {
+            throw new ValidationError(`Stock insuficiente para ${line.description}: disponível ${available}, pedido ${line.quantity}.`);
+          }
+          stockChecked.push({ productId: line.productId, quantity: line.quantity, available });
+        }
+
+        // Totais recomputados a partir das linhas gravadas (mesma fórmula do rascunho).
+        const totals = computeDocumentTotals(
+          draft.lines.map((l) => ({ quantity: l.quantity, unitPrice: Number(l.unitPrice), discountPercent: Number(l.discountPercent), taxPercent: Number(l.taxRate) })),
+        );
+        assertConsistentTotals(totals);
+
+        const dueDate = new Date(issueDate.getTime() + customer.paymentTermDays * 86_400_000);
+        const number = await nextDocNumber(tx, companyId, 'FT', issueDate.getUTCFullYear());
+
+        await tx.invoice.update({
+          where: { id: draft.id },
+          data: {
+            number,
+            status: 'ISSUED',
+            issueDate,
+            dueDate,
+            customerName: customer.name,
+            customerNuit: customer.nuit,
+            subtotal: totals.subtotal,
+            discountTotal: totals.discount,
+            taxableBase: totals.taxable,
+            taxTotal: totals.tax,
+            total: totals.total,
+          },
+        });
+
+        for (const s of stockChecked) {
+          const balanceAfter = s.available - s.quantity;
+          await tx.stockLevel.update({
+            where: { productId_warehouseId: { productId: s.productId, warehouseId: warehouse.id } },
+            data: { quantity: balanceAfter },
+          });
+          await tx.stockMovement.create({
+            data: {
+              companyId,
+              productId: s.productId,
+              warehouseId: warehouse.id,
+              invoiceId: draft.id,
+              type: 'OUT',
+              quantity: -s.quantity,
+              balanceAfter,
+              document: number,
+              reason: 'Venda',
+              createdBy: ctx.userId,
+            },
+          });
+        }
+
+        await tx.customer.update({ where: { id: customer.id }, data: { balance: { increment: totals.total } } });
+
+        const ar = await getMappedAccountTx(tx, companyId, 'ACCOUNTS_RECEIVABLE');
+        const revenue = await getMappedAccountTx(tx, companyId, 'SALES_REVENUE');
+        const lines = [
+          { ledgerAccountId: ar.id, debit: totals.total, customerId: customer.id, description: `Factura emitida ${number}` },
+          { ledgerAccountId: revenue.id, credit: totals.tax > 0 ? totals.taxable : totals.total, description: `Factura emitida ${number}` },
+        ];
+        if (totals.tax > 0) {
+          const vat = await getMappedAccountTx(tx, companyId, 'VAT_OUTPUT');
+          lines.push({ ledgerAccountId: vat.id, credit: totals.tax, description: `Factura emitida ${number}` });
+        }
+
+        await postAccountingEventTx(tx, ctx, {
+          journalType: 'SALES',
+          entryDate: issueDate,
+          dateLabel: 'A data de emissão',
+          description: `Factura emitida ${number}`,
+          reference: number,
+          origin: { sourceType: 'INVOICE', sourceId: draft.id, accountingEvent: 'SALE_ISSUED' },
+          lines,
+        });
+
+        await writeAudit(tx, ctx, {
+          action: 'invoice.issue',
+          entity: 'Invoice',
+          entityId: draft.id,
+          oldValues: { status: 'DRAFT', number: draft.number },
+          newValues: {
+            number,
+            draftNumber: draft.draftNumber ?? draft.number,
+            customerId: customer.id,
+            customer: customer.name,
+            issueDate: formatAccountingDate(issueDate),
+            total: totals.total,
+            taxableBase: totals.taxable,
+            taxTotal: totals.tax,
+            idempotencyKey: data.idempotencyKey,
+            source: 'DRAFT',
+            accounting: { sourceType: 'INVOICE', accountingEvent: 'SALE_ISSUED' },
+          },
+        });
+
+        return { resourceType: 'Invoice', resourceId: draft.id, result: { id: draft.id, number } };
+      },
+    });
+    return op.result;
+  });
+}
+
+const discardInvoiceDraftInput = z.object({
+  draftId: z.string().min(1, 'Rascunho inválido.'),
+  reason: z.string(),
+});
+
+export type DiscardInvoiceDraftInput = z.input<typeof discardInvoiceDraftInput>;
+
+/**
+ * Descarta um rascunho: sem estorno (não há efeitos a reverter), mas com o mesmo
+ * registo obrigatório do cancelamento — utilizador, data/hora e motivo. Não se apaga.
+ */
+export async function discardInvoiceDraft(db: PrismaClient, ctx: RequestContext, input: DiscardInvoiceDraftInput): Promise<{ id: string; number: string }> {
+  requirePermission(ctx, 'sales.create');
+  const companyId = requireCompany(ctx);
+  const parsed = discardInvoiceDraftInput.safeParse(input);
+  if (!parsed.success) throw new ValidationError(parsed.error.issues[0]?.message ?? 'Dados inválidos.');
+  const data = parsed.data;
+  const reason = validateReversalReason(data.reason);
+
+  return db.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT id FROM invoices WHERE id = ${data.draftId} AND "companyId" = ${companyId} FOR UPDATE`;
+    const draft = await tx.invoice.findFirst({ where: { companyId, id: data.draftId } });
+    if (!draft) throw new NotFoundError('Rascunho não encontrado.');
+    if (draft.status === 'CANCELLED') throw new ConflictError('Este rascunho já foi descartado.');
+    if (draft.status !== 'DRAFT') throw new ConflictError('Só é possível descartar facturas em rascunho. Para facturas emitidas use o cancelamento.');
+
+    await tx.invoice.update({
+      where: { id: draft.id },
+      data: {
+        status: 'CANCELLED',
+        cancelledAt: new Date(),
+        cancelledById: ctx.userId,
+        cancellationReason: reason,
+      },
+    });
+
+    await writeAudit(tx, ctx, {
+      action: 'invoice.draft.discard',
+      entity: 'Invoice',
+      entityId: draft.id,
+      oldValues: { status: 'DRAFT' },
+      newValues: { status: 'CANCELLED', number: draft.number, reason },
+    });
+
+    return { id: draft.id, number: draft.number };
+  });
+}
+
+export interface InvoiceDraftForEdit {
+  id: string;
+  number: string;
+  customerId: string;
+  customerName: string;
+  customerNuit: string | null;
+  customerPhone: string | null;
+  warehouseId: string;
+  paymentMethod: PaymentMethod | null;
+  notes: string | null;
+  lines: Array<{ productId: string; name: string; sku: string; price: number; stock: number; qty: number; disc: number }>;
+}
+
+/** Carrega um rascunho para edição no formulário (linhas com produto e stock actual). */
+export async function getInvoiceDraftForEdit(db: PrismaClient, ctx: RequestContext, id: string): Promise<InvoiceDraftForEdit> {
+  requirePermission(ctx, 'sales.create');
+  const companyId = requireCompany(ctx);
+  const draft = await db.invoice.findFirst({
+    where: { companyId, id },
+    include: { lines: { orderBy: { id: 'asc' } }, customer: { select: { phone: true } } },
+  });
+  if (!draft) throw new NotFoundError('Rascunho não encontrado.');
+  if (draft.status !== 'DRAFT') throw new ConflictError('Esta factura já não é um rascunho.');
+
+  const productIds = draft.lines.map((l) => l.productId).filter(Boolean) as string[];
+  const levels = productIds.length
+    ? await db.stockLevel.findMany({ where: { productId: { in: productIds }, warehouseId: draft.warehouseId }, select: { productId: true, quantity: true } })
+    : [];
+  const stockByProduct = new Map(levels.map((s) => [s.productId, s.quantity]));
+
+  return {
+    id: draft.id,
+    number: draft.number,
+    customerId: draft.customerId,
+    customerName: draft.customerName,
+    customerNuit: draft.customerNuit,
+    customerPhone: draft.customer.phone,
+    warehouseId: draft.warehouseId,
+    paymentMethod: (draft.paymentMethod as PaymentMethod | null) ?? null,
+    notes: draft.notes,
+    lines: draft.lines.map((l) => ({
+      productId: l.productId ?? '',
+      name: l.description,
+      sku: l.sku ?? '',
+      price: Number(l.unitPrice),
+      stock: stockByProduct.get(l.productId ?? '') ?? 0,
+      qty: l.quantity,
+      disc: Number(l.discountPercent),
+    })),
+  };
+}
+
+// ─────────────────────────── Histórico da factura (S6) ───────────────────────────
+
+export interface InvoiceHistoryEntry {
+  id: string;
+  action: string;
+  label: string;
+  userName: string | null;
+  createdAt: Date;
+  details: string | null;
+}
+
+const INVOICE_HISTORY_LABELS: Record<string, string> = {
+  'invoice.draft.create': 'Rascunho criado',
+  'invoice.draft.update': 'Rascunho editado',
+  'invoice.draft.discard': 'Rascunho descartado',
+  'invoice.issue': 'Factura emitida',
+  'invoice.cancel': 'Factura cancelada',
+};
+
+function historyDetails(action: string, oldValues: unknown, newValues: unknown): string | null {
+  const oldV = (oldValues ?? {}) as Record<string, unknown>;
+  const newV = (newValues ?? {}) as Record<string, unknown>;
+  const money = (v: unknown) => (typeof v === 'number' ? `${v.toFixed(2)} MT` : null);
+  switch (action) {
+    case 'invoice.draft.create':
+      return money(newV.total) ? `${String(newV.number ?? '')} · Total ${money(newV.total)}`.trim() : null;
+    case 'invoice.draft.update': {
+      const before = money(oldV.total);
+      const after = money(newV.total);
+      if (before && after && before !== after) return `Total ${before} → ${after}`;
+      return 'Dados e linhas actualizados';
+    }
+    case 'invoice.issue': {
+      const draftNumber = typeof newV.draftNumber === 'string' ? newV.draftNumber : null;
+      const number = typeof newV.number === 'string' ? newV.number : '';
+      return draftNumber ? `Emitida como ${number} (rascunho ${draftNumber})` : `Emitida como ${number}`.trim() || null;
+    }
+    case 'invoice.cancel':
+      return typeof newV.cancellationReason === 'string' ? `Motivo: ${newV.cancellationReason}` : null;
+    case 'invoice.draft.discard':
+      return typeof newV.reason === 'string' ? `Motivo: ${newV.reason}` : null;
+    default:
+      return null;
+  }
+}
+
+/** Histórico de alterações da factura, lido do AuditLog (edições de rascunho e transições de estado). */
+export async function getInvoiceHistory(db: PrismaClient, ctx: RequestContext, invoiceId: string): Promise<InvoiceHistoryEntry[]> {
+  requirePermission(ctx, 'sales.view');
+  const companyId = requireCompany(ctx);
+  const invoice = await db.invoice.findFirst({ where: { companyId, id: invoiceId }, select: { id: true } });
+  if (!invoice) throw new NotFoundError('Factura não encontrada.');
+
+  const logs = await db.auditLog.findMany({
+    where: { entity: 'Invoice', entityId: invoiceId },
+    orderBy: { createdAt: 'asc' },
+  });
+  const userIds = Array.from(new Set(logs.map((l) => l.userId).filter(Boolean) as string[]));
+  const users = userIds.length
+    ? await db.user.findMany({ where: { id: { in: userIds } }, select: { id: true, name: true, email: true } })
+    : [];
+  const userById = new Map(users.map((u) => [u.id, u]));
+
+  return logs.map((l) => {
+    const user = l.userId ? userById.get(l.userId) : null;
+    return {
+      id: l.id,
+      action: l.action,
+      label: INVOICE_HISTORY_LABELS[l.action] ?? l.action,
+      userName: user ? user.name || user.email : (l.userId ?? null),
+      createdAt: l.createdAt,
+      details: historyDetails(l.action, l.oldValues, l.newValues),
+    };
   });
 }
 

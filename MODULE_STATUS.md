@@ -5,10 +5,10 @@ _Última actualização: 2026-07-18_
 Estado vivo do projecto. O conhecimento permanente (arquitectura, regras, comandos) está
 em [`CLAUDE.md`](CLAUDE.md).
 
-**Último commit funcional:** pendente na branch `s5-documentos-comerciais` (Sessão S5 do ROADMAP)
-**Fase concluída:** `S5 — Documentos Comerciais` (ROADMAP; fase anterior: `S4 — Dados da Empresa`)
+**Último commit funcional:** pendente na branch `s6-melhorias-fatura` (Sessão S6 do ROADMAP)
+**Fase concluída:** `S6 — Melhorias na Fatura` (ROADMAP; fase anterior: `S5 — Documentos Comerciais`)
 **UAT interna/demo:** V1 candidata a demo externa apos UAT interna, aprovada com ressalvas em 2026-07-06; P1-04 acrescenta Contabilidade V1 pronta para UAT/demo com limites; P1-05 acrescenta Fecho de Caixa V1 operacional sem persistencia formal; demo final check registado em `docs/DEMO_FINAL_CHECK.md` em 2026-07-08 como pronto com ressalvas menores
-**Próximo passo:** `Sessão S6 — Melhorias na Fatura` (ROADMAP) — não iniciar sem instrução explícita (tem pontos 🔒: schema de rascunho/histórico, regras de cancelamento e numeração de rascunhos; os enums de estado da S5 já incluem `DRAFT` para não exigir migration nova); mantém-se pendente o smoke manual final em browser externo/limpo (logout, clique final POS, Fecho de Caixa V1) antes da demo externa
+**Próximo passo:** `Sessão S7 — Fluxo de Ordem de Compra` (ROADMAP) — não iniciar sem instrução explícita (tem ponto 🔒: verificação de papel RBAC na aprovação da OC — qualquer alteração a permissões é aprovada antes); mantém-se pendente o smoke manual final em browser externo/limpo (logout, clique final POS, Fecho de Caixa V1) antes da demo externa
 
 ---
 
@@ -53,6 +53,7 @@ em [`CLAUDE.md`](CLAUDE.md).
 | **S3** | **Lista de Produtos** (selector Top 10/50/100/Todos, «Todos» com paginação server-side de 50, pesquisa server-side nome/SKU/categoria/marca, estado na URL `vista`/`pagina`/`q`) | ✅ |
 | **S4** | **Dados da Empresa** (endereço/website/logótipo por empresa, contas bancárias e carteiras móveis em tabelas próprias, ecrã `/admin/empresa` com gate `settings.manage`, upload PNG/JPG/WebP ≤ 1 MB na BD, `/api/company/logo` isolado por sessão com ETag/cache, `CompanyHeader` pronto para a S5, logótipo na sidebar/topbar) | ✅ |
 | **S5** | **Documentos Comerciais** (Cotação/NC/ND novos + OC imprimível; migração aditiva `s5_commercial_documents` — 6 tabelas + 3 enums; numeração atómica `COT`/`NC`/`ND` no `DocumentCounter`; NC contra factura com tecto por linha, devolução opcional com snapshot `unitCost` e lançamento espelho 411/221/121; ND com factura opcional D 121/C 411+221; extracto do cliente com NC/ND; suite `test:integration:documents` 12/12) | ✅ |
+| **S6** | **Melhorias na Fatura** (rascunhos série `RASC` sem efeitos + emissão que consome o FT só nesse instante, edição de rascunho, histórico de alterações no documento via `AuditLog`, descarte com motivo obrigatório, cancelamento com nome do responsável e hora; migração aditiva `s6_invoice_drafts`; filtro central `ACTIVE_INVOICE_STATUSES`; suite `test:integration:invoices:drafts` 13/13) | ✅ |
 | 9 | RH & Salários | 🗺️ futuro |
 | X | RLS forçado em toda a BD (fase transversal, pré-produção) | 🗺️ futuro |
 
@@ -364,6 +365,51 @@ duas NCs simultâneas contra a mesma factura já não podem ambas passar o tecto
 mutuamente com cancelamento em curso); e `cancelInvoice` ganhou bloqueio conservador simétrico ao
 dos recibos: factura com NC emitida não pode ser cancelada integralmente (a NC já reverteu
 saldo/stock parcialmente — cancelar duplicaria a reversão; regressão P0-03a 9/9 verde).
+
+**S6 — Melhorias na Fatura (2026-07-18):** sexta sessão do ROADMAP, na branch
+`s6-melhorias-fatura`, com migração aditiva aprovada `20260718120000_s6_invoice_drafts`:
+`DRAFT` acrescentado ao enum `InvoiceStatus` (a nota da S5 sobre `DRAFT` cobria só os enums de
+Cotação/NC/ND), coluna opcional `invoices.draftNumber` e scopes `INVOICE_DRAFT_CREATE`/
+`INVOICE_DRAFT_ISSUE`. Decisões aprovadas: (1) numeração — série própria `RASC` no
+`DocumentCounter` (`RASC 2026/0001`); o número FT só é consumido na transacção da emissão,
+pelo que a série FT nunca ganha buracos (rascunhos descartados só gastam números RASC, sem
+valor fiscal) e o RASC de origem fica preservado em `draftNumber` e visível no documento
+(«Origem»); (2) histórico — sem tabela nova: o `AuditLog` existente é a fonte
+(`invoice.draft.create`/`.update` com diff, `invoice.issue`, `invoice.draft.discard`,
+`invoice.cancel`), lido por `getInvoiceHistory` e apresentado num cartão «Histórico de
+alterações» no documento (noprint); (3) cancelamento — matriz aprovada reutiliza o
+`cancelInvoice` da P0-03a **sem tocar na lógica do estorno** (estorno simétrico do
+`SALE_ISSUED` no período corrente, reposição de stock por `reversesId`, decremento do saldo,
+idempotente; bloqueios por recibo activo e por NC emitida mantidos); a S6 acrescenta o nome
+do responsável + hora no documento e o **descarte de rascunho** como operação própria
+(`discardInvoiceDraft`, gate `sales.create`): sem estorno porque nunca houve efeitos, mas com
+motivo ≥ 10 chars, utilizador e data/hora obrigatórios; rascunho nunca se apaga da BD. Domínio
+novo em `invoices.ts`: `saveInvoiceDraft` (sem stock/saldo/contabilidade; stock não
+bloqueante), `updateInvoiceDraft` (linhas substituídas, preços refrescados dos produtos,
+auditoria com diff), `issueInvoiceDraft` (lock `FOR UPDATE`, valida stock à data, consome FT,
+baixa stock, incrementa saldo, lança `SALE_ISSUED`, idempotente — falha de stock não consome
+número), `getInvoiceDraftForEdit` e `getInvoiceHistory`. Levantamento aprovado de TODAS as
+queries sobre `invoices`: rascunhos visíveis apenas na lista de facturas (chip/filtro
+«Rascunhos») e no detalhe (banner «RASCUNHO — SEM VALIDADE FISCAL»); invisíveis em
+`invoiceKpis`, `getCustomerStatement`, relatórios de vendas/extracto/antiguidade via
+constante central `ACTIVE_INVOICE_STATUSES = ['ISSUED','PARTIAL','PAID']`; guards novos
+bloqueiam recibo, NC, ND e cancelamento sobre rascunhos (o POS continua a criar só `ISSUED`;
+contabilidade/tesouraria/stock não precisam de filtro — rascunho nunca lança nem movimenta).
+UI: botão «Gravar como Rascunho» na Nova Factura, edição em `/facturas/nova?rascunho=<id>`
+(mesmo formulário), documento com Editar/Emitir/Descartar (`DraftIssueDialog`/
+`DraftDiscardDialog`), sem permissões novas. Verificado ao vivo em browser: RASC 2026/0001
+criado (BD confirma zero movimentos/lançamentos/saldo e contador FT parado) → editado (total
+2 018,40 → 2 180,80 no histórico) → emitido como FT 2026/0026 (contígua à 0025; stock −3/−1,
+saldo +2 180,80, `LV 2026/0029` no Extrato Diário) → cancelado com motivo (estorno
+`LV 2026/0030` simétrico no Extrato Diário, stock e saldo repostos exactamente, responsável
+com nome e data/hora no documento). Validado: `prisma validate`/`migrate status` OK,
+typecheck 6/6, lint 6/6, testes unitários verdes, nova suite
+`pnpm test:integration:invoices:drafts` 13/13 (rascunho sem efeitos, replay idempotente da
+gravação e da emissão, emissão sem buracos na série, stock validado só na emissão, descarte
+com motivo, bloqueios recibo/NC/cancelamento sobre rascunho, KPIs/extracto sem rascunhos,
+cancelamento com recibo bloqueado, estorno idempotente, histórico completo, isolamento A/B e
+permissões), regressões invoice-cancellation 9/9 + documents 14/14 + POS 12/12 +
+relatórios 24/24 + reversal all 44/44, build OK.
 
 **Hardening pré-produção P0-01 (2026-07-02):** seed demo bloqueado em `production`
 antes de criar o Prisma Client; credenciais demo removidas da interface de

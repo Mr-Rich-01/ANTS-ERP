@@ -21,7 +21,7 @@ export default async function NovaNotaDebitoPage({ searchParams }: { searchParam
       where: { id: searchParams.invoiceId },
       select: { id: true, number: true, customerId: true, customerName: true, customerNuit: true, status: true },
     });
-    if (invoice && invoice.status !== 'CANCELLED') {
+    if (invoice && invoice.status !== 'CANCELLED' && invoice.status !== 'DRAFT') {
       linkedInvoice = { id: invoice.id, number: invoice.number, customerId: invoice.customerId, customerName: invoice.customerName, customerNuit: invoice.customerNuit ?? '' };
     }
   }

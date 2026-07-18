@@ -7,7 +7,7 @@ import { Icon } from '@/components/Icon';
 import { SearchCombobox, type ComboOption } from '@/components/ui/SearchCombobox';
 import { fmt } from '@/lib/format';
 import { ACCENT } from '@/lib/erp-nav';
-import { createInvoiceAction } from '@/app/(erp)/facturas/actions';
+import { createInvoiceAction, issueInvoiceDraftAction, saveInvoiceDraftAction, updateInvoiceDraftAction } from '@/app/(erp)/facturas/actions';
 
 export interface CustomerOpt {
   id: string;
@@ -25,6 +25,19 @@ export interface ProductOpt {
 export interface WarehouseOpt {
   id: string;
   label: string;
+}
+/** Rascunho carregado para edição (S6). */
+export interface DraftOpt {
+  id: string;
+  number: string;
+  customerId: string;
+  customerName: string;
+  customerNuit: string;
+  customerPhone: string;
+  warehouseId: string;
+  paymentMethod: 'CASH' | 'MPESA' | 'EMOLA' | 'CARD' | 'TRANSFER' | null;
+  notes: string;
+  lines: Array<{ productId: string; name: string; sku: string; price: number; stock: number; qty: number; disc: number }>;
 }
 
 interface Line {
@@ -55,17 +68,21 @@ function createIdempotencyKey(): string {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
-export function NovaFacturaClient({ customers, products, warehouses, canDiscount, canEditIssueDate }: { customers: CustomerOpt[]; products: ProductOpt[]; warehouses: WarehouseOpt[]; canDiscount: boolean; canEditIssueDate: boolean }) {
+export function NovaFacturaClient({ customers, products, warehouses, canDiscount, canEditIssueDate, draft }: { customers: CustomerOpt[]; products: ProductOpt[]; warehouses: WarehouseOpt[]; canDiscount: boolean; canEditIssueDate: boolean; draft?: DraftOpt | null }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
+  const [draftPending, startDraftTransition] = useTransition();
   const [idempotencyKey] = useState(() => createIdempotencyKey());
+  const [draftIdempotencyKey] = useState(() => createIdempotencyKey());
   const [issueDate, setIssueDate] = useState(() => civilDateInTimeZone());
-  const [customerId, setCustomerId] = useState(customers[0]?.id ?? '');
-  const [customer, setCustomer] = useState<CustomerOpt | null>(customers[0] ?? null);
-  const [warehouseId, setWarehouseId] = useState(warehouses[0]?.id ?? '');
-  const [pay, setPay] = useState<'CASH' | 'MPESA' | 'EMOLA' | 'CARD' | 'TRANSFER'>('TRANSFER');
-  const [notes, setNotes] = useState('');
-  const [lines, setLines] = useState<Line[]>([]);
+  const [customerId, setCustomerId] = useState(draft?.customerId ?? customers[0]?.id ?? '');
+  const [customer, setCustomer] = useState<CustomerOpt | null>(
+    draft ? { id: draft.customerId, name: draft.customerName, nuit: draft.customerNuit, phone: draft.customerPhone } : (customers[0] ?? null),
+  );
+  const [warehouseId, setWarehouseId] = useState(draft?.warehouseId ?? warehouses[0]?.id ?? '');
+  const [pay, setPay] = useState<'CASH' | 'MPESA' | 'EMOLA' | 'CARD' | 'TRANSFER'>(draft?.paymentMethod ?? 'TRANSFER');
+  const [notes, setNotes] = useState(draft?.notes ?? '');
+  const [lines, setLines] = useState<Line[]>(draft?.lines ?? []);
   const [error, setError] = useState<string | null>(null);
 
   const customerDefaults = useMemo<ComboOption[]>(
@@ -114,8 +131,56 @@ export function NovaFacturaClient({ customers, products, warehouses, canDiscount
     if (lines.length === 0) return setError('Adicione pelo menos uma linha.');
     if (overStock.length > 0) return setError(`Stock insuficiente: ${overStock.map((l) => l.name).join(', ')}.`);
     startTransition(async () => {
+      if (draft) {
+        // Persiste as edições pendentes antes de emitir, para o que está no ecrã ser o que é emitido.
+        const upd = await updateInvoiceDraftAction({
+          draftId: draft.id,
+          customerId,
+          warehouseId: warehouseId || undefined,
+          paymentMethod: pay,
+          notes: notes || undefined,
+          lines: lines.map((l) => ({ productId: l.productId, quantity: l.qty, discountPercent: l.disc })),
+        });
+        if (upd.error) return setError(upd.error);
+        const res = await issueInvoiceDraftAction({ draftId: draft.id, idempotencyKey, issueDate });
+        if (res.error) setError(res.error);
+        else if (res.id) router.push(`/facturas/documento?id=${res.id}`);
+        return;
+      }
       const res = await createInvoiceAction({
         idempotencyKey,
+        issueDate,
+        customerId,
+        warehouseId: warehouseId || undefined,
+        paymentMethod: pay,
+        notes: notes || undefined,
+        lines: lines.map((l) => ({ productId: l.productId, quantity: l.qty, discountPercent: l.disc })),
+      });
+      if (res.error) setError(res.error);
+      else if (res.id) router.push(`/facturas/documento?id=${res.id}`);
+    });
+  };
+
+  const saveDraft = () => {
+    setError(null);
+    if (!customerId) return setError('Seleccione um cliente.');
+    if (lines.length === 0) return setError('Adicione pelo menos uma linha.');
+    startDraftTransition(async () => {
+      if (draft) {
+        const res = await updateInvoiceDraftAction({
+          draftId: draft.id,
+          customerId,
+          warehouseId: warehouseId || undefined,
+          paymentMethod: pay,
+          notes: notes || undefined,
+          lines: lines.map((l) => ({ productId: l.productId, quantity: l.qty, discountPercent: l.disc })),
+        });
+        if (res.error) setError(res.error);
+        else if (res.id) router.push(`/facturas/documento?id=${res.id}`);
+        return;
+      }
+      const res = await saveInvoiceDraftAction({
+        idempotencyKey: draftIdempotencyKey,
         issueDate,
         customerId,
         warehouseId: warehouseId || undefined,
@@ -301,7 +366,9 @@ export function NovaFacturaClient({ customers, products, warehouses, canDiscount
         <div style={cardBox}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
             <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)' }}>Resumo</span>
-            <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--warn)', background: 'var(--warn-bg)', padding: '3px 10px', borderRadius: 20 }}>Rascunho</span>
+            <span className={draft ? 'font-mono' : undefined} style={{ fontSize: 11, fontWeight: 600, color: 'var(--warn)', background: 'var(--warn-bg)', padding: '3px 10px', borderRadius: 20 }}>
+              {draft ? draft.number : 'Rascunho'}
+            </span>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
             {([['Subtotal', fmt(totals.sub), 'var(--text)', false], ['Desconto', `− ${fmt(totals.disc)}`, 'var(--bad)', false], ['Incidência', fmt(totals.base), 'var(--text)', true], ['IVA (16%)', fmt(totals.tax), 'var(--text)', true]] as const).map(([l, v, color, border]) => (
@@ -327,14 +394,27 @@ export function NovaFacturaClient({ customers, products, warehouses, canDiscount
             </div>
           )}
 
-          <button onClick={emit} disabled={!canSubmit} style={{ width: '100%', height: 46, marginTop: 14, borderRadius: 11, border: 'none', background: ACCENT, color: '#fff', fontSize: 14, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, opacity: canSubmit ? 1 : 0.6, cursor: canSubmit ? 'pointer' : 'default' }}>
+          <button onClick={emit} disabled={!canSubmit || draftPending} style={{ width: '100%', height: 46, marginTop: 14, borderRadius: 11, border: 'none', background: ACCENT, color: '#fff', fontSize: 14, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, opacity: canSubmit && !draftPending ? 1 : 0.6, cursor: canSubmit && !draftPending ? 'pointer' : 'default' }}>
             <Icon name="file-check-2" size={17} />
             {pending ? 'A emitir…' : 'Emitir factura'}
+          </button>
+          <button
+            onClick={saveDraft}
+            disabled={pending || draftPending || !customerId || lines.length === 0}
+            style={{ width: '100%', height: 42, marginTop: 8, borderRadius: 11, border: '1px solid var(--warn)', background: 'var(--warn-bg)', color: 'var(--warn)', fontSize: 13, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, opacity: pending || draftPending || !customerId || lines.length === 0 ? 0.6 : 1, cursor: pending || draftPending || !customerId || lines.length === 0 ? 'default' : 'pointer' }}
+          >
+            <Icon name="save" size={16} />
+            {draftPending ? 'A gravar…' : draft ? 'Gravar alterações do rascunho' : 'Gravar como Rascunho'}
           </button>
           <button onClick={() => router.push('/facturas')} style={{ width: '100%', height: 42, marginTop: 8, borderRadius: 11, border: '1px solid var(--border)', background: 'var(--card)', color: 'var(--text2)', fontSize: 13, fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, cursor: 'pointer' }}>
             <Icon name="x" size={16} />
             Cancelar
           </button>
+          {!draft && (
+            <div style={{ marginTop: 10, fontSize: 11.5, color: 'var(--text3)', lineHeight: 1.5 }}>
+              O rascunho não movimenta stock, não altera saldos nem consome número da série FT — tudo acontece só na emissão.
+            </div>
+          )}
         </div>
       </div>
     </div>

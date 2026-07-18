@@ -103,14 +103,14 @@ Quick wins primeiro (validar o fluxo de trabalho), depois fundações (dados da 
 
 *(Prioridade 5)*
 
-🔒 **Aprovação:** schema (estado de rascunho, tabela de histórico/auditoria) e regras de cancelamento.
+🔒 **Aprovação:** schema (estado de rascunho, tabela de histórico/auditoria) e regras de cancelamento. *(Cumprido: matriz de cancelamento, migration `s6_invoice_drafts` e numeração RASC aprovadas em 2026-07-18.)*
 
-- [ ] Botão **Gravar como Rascunho**; rascunho editável posteriormente.
-- [ ] Rascunho **não** gera lançamentos contabilísticos nem movimenta stock — só na emissão.
-- [ ] Histórico de alterações (audit log da fatura).
-- [ ] Cancelamento com registo obrigatório de: utilizador, data, hora, motivo.
-- [ ] Cancelamento de fatura emitida → estorno contabilístico (reversal), nunca delete. 🔒 Desenho do estorno aprovado antes de implementar.
-- [ ] Numeração: definir se rascunhos consomem número de série ou só na emissão (decisão a aprovar).
+- [x] Botão **Gravar como Rascunho**; rascunho editável posteriormente (`/facturas/nova?rascunho=<id>`).
+- [x] Rascunho **não** gera lançamentos contabilísticos nem movimenta stock — só na emissão. *(Também não altera saldo do cliente nem consome número FT; invisível em KPIs/extractos/relatórios via `ACTIVE_INVOICE_STATUSES`.)*
+- [x] Histórico de alterações (audit log da fatura). *(Sem tabela nova: `AuditLog` existente + cartão «Histórico» no documento — criação/edição/emissão/descartar/cancelamento.)*
+- [x] Cancelamento com registo obrigatório de: utilizador, data, hora, motivo. *(Já existia da P0-03a; S6 acrescenta nome do responsável + hora no documento e o descarte de rascunho com o mesmo registo.)*
+- [x] Cancelamento de fatura emitida → estorno contabilístico (reversal), nunca delete. 🔒 Desenho do estorno aprovado antes de implementar. *(Reutilizado o `cancelInvoice` da P0-03a sem alterações à lógica do estorno; matriz aprovada.)*
+- [x] Numeração: definir se rascunhos consomem número de série ou só na emissão (decisão a aprovar). *(Aprovado: série própria `RASC` no `DocumentCounter`; o número FT só é consumido na emissão — sem buracos na série FT; `draftNumber` preserva a origem.)*
 
 ---
 

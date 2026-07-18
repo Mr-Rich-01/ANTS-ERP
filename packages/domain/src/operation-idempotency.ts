@@ -26,7 +26,9 @@ export type OperationScope =
   | 'MANUAL_TREASURY_REVERSE'
   | 'QUOTATION_CREATE'
   | 'CREDIT_NOTE_CREATE'
-  | 'DEBIT_NOTE_CREATE';
+  | 'DEBIT_NOTE_CREATE'
+  | 'INVOICE_DRAFT_CREATE'
+  | 'INVOICE_DRAFT_ISSUE';
 
 export const OPERATION_IDEMPOTENCY_SCOPES: readonly OperationScope[] = [
   'INVOICE_CREATE',
@@ -42,6 +44,8 @@ export const OPERATION_IDEMPOTENCY_SCOPES: readonly OperationScope[] = [
   'QUOTATION_CREATE',
   'CREDIT_NOTE_CREATE',
   'DEBIT_NOTE_CREATE',
+  'INVOICE_DRAFT_CREATE',
+  'INVOICE_DRAFT_ISSUE',
 ];
 
 const SCOPES: ReadonlySet<string> = new Set<OperationScope>(OPERATION_IDEMPOTENCY_SCOPES);

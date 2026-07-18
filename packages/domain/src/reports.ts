@@ -4,6 +4,7 @@ import type { RequestContext } from './context';
 import { requireCompany } from './context';
 import { hasPermission, requirePermission } from './permissions';
 import { ValidationError } from './errors';
+import { ACTIVE_INVOICE_STATUSES } from './invoices';
 
 export type OperationalReportKey =
   | 'sales'
@@ -251,7 +252,7 @@ async function buildReport(
 
 async function salesReport(db: PrismaClient, ctx: RequestContext, filters: ReturnType<typeof normalizeFilters>): Promise<ReportPayload> {
   const companyId = requireCompany(ctx);
-  const invoiceWhere: Prisma.InvoiceWhereInput = { companyId, status: { not: 'CANCELLED' }, ...dateRange('issueDate', filters) };
+  const invoiceWhere: Prisma.InvoiceWhereInput = { companyId, status: { in: ACTIVE_INVOICE_STATUSES }, ...dateRange('issueDate', filters) };
   if (filters.customerId) invoiceWhere.customerId = filters.customerId;
   const [invoices, payments] = await Promise.all([
     db.invoice.findMany({
@@ -347,7 +348,7 @@ async function customerStatementReport(db: PrismaClient, ctx: RequestContext, fi
   const [customers, invoices, payments] = await Promise.all([
     db.customer.findMany({ where, orderBy: { name: 'asc' }, select: { id: true, name: true, balance: true } }),
     db.invoice.findMany({
-      where: { companyId, status: { not: 'CANCELLED' }, ...dateRange('issueDate', filters), ...(filters.customerId ? { customerId: filters.customerId } : {}) },
+      where: { companyId, status: { in: ACTIVE_INVOICE_STATUSES }, ...dateRange('issueDate', filters), ...(filters.customerId ? { customerId: filters.customerId } : {}) },
       select: { customerId: true, total: true, amountPaid: true },
     }),
     db.payment.findMany({
@@ -390,7 +391,7 @@ async function receivablesAgingReport(db: PrismaClient, ctx: RequestContext, fil
   const companyId = requireCompany(ctx);
   const ref = filters.toDate;
   const invoices = await db.invoice.findMany({
-    where: { companyId, status: { not: 'CANCELLED' }, ...(filters.customerId ? { customerId: filters.customerId } : {}) },
+    where: { companyId, status: { in: ACTIVE_INVOICE_STATUSES }, ...(filters.customerId ? { customerId: filters.customerId } : {}) },
     select: { customerId: true, customerName: true, dueDate: true, total: true, amountPaid: true },
   });
   const byCustomer = new Map<string, { customer: string; b0_30: number; b31_60: number; b61_90: number; b90: number; total: number }>();
