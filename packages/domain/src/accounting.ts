@@ -62,6 +62,8 @@ export function accountingSourceTypeLabel(value: string | null | undefined): str
     CUSTOMER_PAYMENT: 'Recebimento de cliente',
     PURCHASE_RECEIPT: 'Recepcao de compra',
     SUPPLIER_PAYMENT: 'Pagamento a fornecedor',
+    CREDIT_NOTE: 'Nota de credito',
+    DEBIT_NOTE: 'Nota de debito',
     REVERSAL: 'Estorno',
   };
   return labels[value] ?? value;
@@ -74,6 +76,8 @@ export function accountingEventLabel(value: string | null | undefined): string {
     RECEIPT_POSTED: 'Recebimento registado',
     PURCHASE_RECEIVED: 'Recepcao de compra',
     SUPPLIER_PAYMENT_POSTED: 'Pagamento a fornecedor registado',
+    CREDIT_NOTE_ISSUED: 'Nota de credito emitida',
+    DEBIT_NOTE_ISSUED: 'Nota de debito emitida',
     REVERSAL_POSTED: 'Estorno registado',
   };
   return labels[value] ?? value;

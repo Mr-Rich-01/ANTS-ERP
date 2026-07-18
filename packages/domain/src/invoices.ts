@@ -301,15 +301,19 @@ export async function getCustomerStatement(db: PrismaClient, ctx: RequestContext
   const customer = await db.customer.findFirst({ where: { id: customerId }, select: { balance: true } });
   if (!customer) throw new NotFoundError('Cliente não encontrado.');
 
-  const [invoices, payments] = await Promise.all([
+  const [invoices, payments, creditNotes, debitNotes] = await Promise.all([
     db.invoice.findMany({ where: { customerId, status: { not: 'CANCELLED' } }, select: { number: true, issueDate: true, total: true } }),
     db.payment.findMany({ where: { customerId, status: 'ACTIVE' }, select: { number: true, paidAt: true, amount: true } }),
+    db.creditNote.findMany({ where: { customerId, status: 'ISSUED' }, select: { number: true, issueDate: true, total: true } }),
+    db.debitNote.findMany({ where: { customerId, status: 'ISSUED' }, select: { number: true, issueDate: true, total: true } }),
   ]);
 
   type Ev = { date: Date; doc: string; description: string; debit: number; credit: number };
   const events: Ev[] = [
     ...invoices.map((i) => ({ date: i.issueDate, doc: i.number, description: 'Factura de venda', debit: Number(i.total), credit: 0 })),
     ...payments.map((p) => ({ date: p.paidAt, doc: p.number, description: 'Recibo de pagamento', debit: 0, credit: Number(p.amount) })),
+    ...creditNotes.map((n) => ({ date: n.issueDate, doc: n.number, description: 'Nota de crédito', debit: 0, credit: Number(n.total) })),
+    ...debitNotes.map((n) => ({ date: n.issueDate, doc: n.number, description: 'Nota de débito', debit: Number(n.total), credit: 0 })),
   ].sort((a, b) => a.date.getTime() - b.date.getTime());
 
   const closingBalance = Number(customer.balance);
@@ -1323,6 +1327,13 @@ export async function cancelInvoice(db: PrismaClient, ctx: RequestContext, input
         }
         if (round2(Number(invoice.amountPaid)) !== 0) {
           throw new ConflictError('Integridade: factura sem recebimentos activos mas com valor pago diferente de zero.');
+        }
+
+        // Bloqueio conservador (S5): a NC já repôs saldo/stock parcialmente — o
+        // cancelamento integral duplicaria essa reversão. Simétrico ao dos recibos.
+        const issuedCreditNotes = await tx.creditNote.count({ where: { companyId, invoiceId: invoice.id, status: 'ISSUED' } });
+        if (issuedCreditNotes > 0) {
+          throw new ConflictError('Esta factura possui notas de crédito emitidas. O cancelamento integral não é permitido para não duplicar a reversão.');
         }
 
         await tx.$queryRaw`SELECT id FROM customers WHERE id = ${invoice.customerId} AND "companyId" = ${companyId} FOR UPDATE`;

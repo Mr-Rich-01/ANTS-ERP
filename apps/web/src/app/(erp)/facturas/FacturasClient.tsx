@@ -94,6 +94,10 @@ export function FacturasClient({ stats, rows, totalStr, canCreate }: { stats: St
             })}
           </div>
           <div style={{ flex: 1 }} />
+          <button onClick={() => router.push('/facturas/notas')} style={{ display: 'flex', alignItems: 'center', gap: 7, height: 36, padding: '0 13px', borderRadius: 9, border: '1px solid var(--border)', background: 'var(--card)', color: 'var(--text2)', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>
+            <Icon name="file-minus-2" size={15} />
+            Notas de crédito/débito
+          </button>
           {canCreate && (
             <button onClick={() => router.push('/facturas/nova')} style={{ display: 'flex', alignItems: 'center', gap: 7, height: 36, padding: '0 13px', borderRadius: 9, border: 'none', background: ACCENT, color: '#fff', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>
               <Icon name="plus" size={15} />

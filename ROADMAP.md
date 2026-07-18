@@ -91,11 +91,11 @@ Quick wins primeiro (validar o fluxo de trabalho), depois fundações (dados da 
 
 *(Prioridade 4)*
 
-- [ ] Layout base único de documento (usa o `CompanyHeader` da S4).
-- [ ] Emissão de: Fatura, Recibo, Nota de Crédito, Nota de Débito, Cotação, Ordem de Compra.
-- [ ] Mesmo padrão visual em todos; impressão/PDF consistente.
+- [x] Layout base único de documento (usa o `CompanyHeader` da S4).
+- [x] Emissão de: Fatura, Recibo, Nota de Crédito, Nota de Débito, Cotação, Ordem de Compra.
+- [x] Mesmo padrão visual em todos; impressão/PDF consistente.
 
-🔒 **Aprovação:** se Nota de Crédito/Débito gerarem lançamentos contabilísticos, o desenho desses lançamentos é aprovado antes de código (regras da S10 aplicam-se).
+🔒 **Aprovação:** se Nota de Crédito/Débito gerarem lançamentos contabilísticos, o desenho desses lançamentos é aprovado antes de código (regras da S10 aplicam-se). *(Cumprido: mapa D/C das NC/ND aprovado em 2026-07-18 — NC: D 411/D 221/C 121; ND: D 121/C 411/C 221; par 131/CMV da devolução adiado para a S10 por decisão aprovada.)*
 
 ---
 
@@ -158,6 +158,9 @@ Quick wins primeiro (validar o fluxo de trabalho), depois fundações (dados da 
 
 - [ ] Finalizar lançamentos manuais (validação: balanceados, período aberto, contas válidas).
 - [ ] Lançamentos automáticos a partir de: Vendas, Compras, Recebimento de mercadorias, Pagamentos, Recebimentos, Produção, Inventário, Ajustes de stock.
+- [ ] Introduzir CMV na venda (D CMV / C Existências) **e** o par da devolução nas NCs com devolução de stock (D Existências / C CMV ao `unitCost` snapshot das linhas) — os dois lados na mesma sessão, com teste de coerência da conta 131 contra o stock físico. *(Decisão da S5: a NC lança só o espelho da venda 411/221/121 até esta sessão.)*
+- [ ] Mapear conta de **Outros proveitos** para as ND (juros, portes) em vez de 411 Vendas — migrar ou reclassificar as ND já emitidas se necessário. *(Limitação declarada da S5: sem conta mapeada, a ND credita 411.)*
+- [ ] **Fluxo de anulação de Nota de Crédito** (estorno simétrico do `CREDIT_NOTE_ISSUED` + reversão da devolução de stock) — desbloqueia o cancelamento de faturas com NC, hoje impedido por guard conservador (`invoices.ts:1331`).
 - [ ] Cada fonte: idempotente (chave de origem única — reprocessar não duplica).
 - [ ] Testes unitários por tipo de lançamento: débito = crédito, contas correctas, valores correctos.
 

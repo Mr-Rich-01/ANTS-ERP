@@ -69,6 +69,10 @@ export default async function OcDetalhePage({ searchParams }: { searchParams: { 
           Voltar às compras
         </Link>
         <div style={{ display: 'flex', gap: 9 }}>
+          <Link href={`/compras/ordem/documento?id=${oc.id}`} style={{ display: 'flex', alignItems: 'center', gap: 7, height: 38, padding: '0 14px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--card)', color: 'var(--text2)', fontSize: 12.5, fontWeight: 600, textDecoration: 'none' }}>
+            <Icon name="printer" size={15} />
+            Documento / Imprimir
+          </Link>
           {canPay && (
             <SupplierPaymentDialog
               supplierId={oc.supplierId}

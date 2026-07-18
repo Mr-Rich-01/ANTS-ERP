@@ -9,6 +9,15 @@ export type ScreenId =
   | 'invoices'
   | 'invoiceNew'
   | 'invoiceDoc'
+  | 'quotations'
+  | 'quotationNew'
+  | 'quotationDoc'
+  | 'salesNotes'
+  | 'creditNoteNew'
+  | 'creditNoteDoc'
+  | 'debitNoteNew'
+  | 'debitNoteDoc'
+  | 'poDoc'
   | 'clients'
   | 'suppliers'
   | 'receiving'
@@ -42,6 +51,15 @@ export const SCREENS: Record<ScreenId, ScreenMeta> = {
   invoices: { id: 'invoices', route: '/facturas', title: 'Facturas', group: 'Vendas & Facturação', icon: 'receipt-text' },
   invoiceNew: { id: 'invoiceNew', route: '/facturas/nova', title: 'Nova factura', group: 'Vendas & Facturação', icon: 'receipt-text' },
   invoiceDoc: { id: 'invoiceDoc', route: '/facturas/documento', title: 'Documento de factura', group: 'Vendas & Facturação', icon: 'receipt-text' },
+  quotations: { id: 'quotations', route: '/cotacoes', title: 'Cotações', group: 'Vendas & Facturação', icon: 'file-text' },
+  quotationNew: { id: 'quotationNew', route: '/cotacoes/nova', title: 'Nova cotação', group: 'Vendas & Facturação', icon: 'file-text' },
+  quotationDoc: { id: 'quotationDoc', route: '/cotacoes/documento', title: 'Documento de cotação', group: 'Vendas & Facturação', icon: 'file-text' },
+  salesNotes: { id: 'salesNotes', route: '/facturas/notas', title: 'Notas de crédito & débito', group: 'Vendas & Facturação', icon: 'file-minus-2' },
+  creditNoteNew: { id: 'creditNoteNew', route: '/facturas/nota-credito/nova', title: 'Nova nota de crédito', group: 'Vendas & Facturação', icon: 'file-minus-2' },
+  creditNoteDoc: { id: 'creditNoteDoc', route: '/facturas/nota-credito', title: 'Nota de crédito (documento)', group: 'Vendas & Facturação', icon: 'file-minus-2' },
+  debitNoteNew: { id: 'debitNoteNew', route: '/facturas/nota-debito/nova', title: 'Nova nota de débito', group: 'Vendas & Facturação', icon: 'file-plus-2' },
+  debitNoteDoc: { id: 'debitNoteDoc', route: '/facturas/nota-debito', title: 'Nota de débito (documento)', group: 'Vendas & Facturação', icon: 'file-plus-2' },
+  poDoc: { id: 'poDoc', route: '/compras/ordem/documento', title: 'Ordem de compra (documento)', group: 'Compras', icon: 'truck' },
   clients: { id: 'clients', route: '/clientes', title: 'Clientes', group: 'Vendas & Facturação', icon: 'user-round' },
   suppliers: { id: 'suppliers', route: '/fornecedores', title: 'Fornecedores', group: 'Compras', icon: 'building' },
   receiving: { id: 'receiving', route: '/recepcao', title: 'Recepção de mercadorias', group: 'Compras', icon: 'package-check' },
@@ -81,6 +99,7 @@ export interface NavGroup {
 const NAV_PERMISSION: Partial<Record<ScreenId, string>> = {
   pos: 'sales.create',
   invoices: 'sales.view',
+  quotations: 'sales.view',
   clients: 'clients.view',
   purchases: 'purchases.create',
   products: 'stock.view',
@@ -97,6 +116,7 @@ export const NAV_GROUPS: NavGroup[] = [
     label: 'OPERAÇÕES',
     items: [
       { ...toNav('invoices'), badge: '12' },
+      toNav('quotations'),
       toNav('clients'),
       toNav('purchases'),
       toNav('suppliers'),
@@ -123,7 +143,9 @@ export function visibleNav(permissions: ReadonlySet<string>, isPlatformAdmin: bo
 /** Resolve qual item da sidebar fica activo a partir do ecrã actual (lógica do design). */
 export function activeNavId(screen: ScreenId): ScreenId {
   if (screen === 'invoiceNew' || screen === 'invoiceDoc') return 'invoices';
-  if (screen === 'receiving' || screen === 'poDetail') return 'purchases';
+  if (screen === 'salesNotes' || screen === 'creditNoteNew' || screen === 'creditNoteDoc' || screen === 'debitNoteNew' || screen === 'debitNoteDoc') return 'invoices';
+  if (screen === 'quotationNew' || screen === 'quotationDoc') return 'quotations';
+  if (screen === 'receiving' || screen === 'poDetail' || screen === 'poDoc') return 'purchases';
   if (screen === 'inventory' || screen === 'productDetail') return 'products';
   if (screen === 'dailyClose') return 'cash';
   if (screen === 'companyProfile') return 'admin';

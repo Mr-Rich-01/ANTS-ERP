@@ -73,6 +73,7 @@ export default async function DocumentoPage({ searchParams }: { searchParams: { 
   const canCancelInvoicePermission = hasPermission(ctx, 'invoices.cancel');
   const activePaymentCount = inv.payments.filter((p) => p.status === 'ACTIVE').length;
   const canCancelInvoice = canCancelInvoicePermission && inv.status !== 'CANCELLED' && activePaymentCount === 0;
+  const canIssueNotes = hasPermission(ctx, 'sales.create') && inv.status !== 'CANCELLED';
   const disabledCancelMessage = activePaymentCount > 0 ? 'Anule primeiro os recibos activos desta factura.' : null;
   const reversalDate = civilDateInTimeZone();
   const cancellationDate = reversalDate;
@@ -91,7 +92,19 @@ export default async function DocumentoPage({ searchParams }: { searchParams: { 
           <Icon name="arrow-left" size={16} />
           Voltar às facturas
         </Link>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap' }}>
+          {canIssueNotes && (
+            <>
+              <Link href={`/facturas/nota-credito/nova?invoiceId=${inv.id}`} style={topBtn}>
+                <Icon name="file-minus-2" size={16} />
+                Nota de crédito
+              </Link>
+              <Link href={`/facturas/nota-debito/nova?invoiceId=${inv.id}`} style={topBtn}>
+                <Icon name="file-plus-2" size={16} />
+                Nota de débito
+              </Link>
+            </>
+          )}
           {canCancelInvoice && (
             <InvoiceCancellationDialog
               cancellationDate={cancellationDate}

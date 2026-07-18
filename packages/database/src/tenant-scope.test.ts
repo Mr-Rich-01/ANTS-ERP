@@ -73,6 +73,15 @@ describe('scopeArgs — isolamento multiempresa', () => {
     });
   });
 
+  it('Documentos Comerciais S5 (Quotation/CreditNote/DebitNote) estão no âmbito: injecta companyId', () => {
+    expect(scopeArgs('Quotation', 'findMany', { where: { status: 'ISSUED' } }, C)).toEqual({ where: { status: 'ISSUED', companyId: C } });
+    expect(scopeArgs('QuotationLine', 'create', { data: { description: 'Item' } }, C)).toEqual({ data: { description: 'Item', companyId: C } });
+    expect(scopeArgs('CreditNote', 'create', { data: { number: 'NC 2026/0001' } }, C)).toEqual({ data: { number: 'NC 2026/0001', companyId: C } });
+    expect(scopeArgs('CreditNoteLine', 'findMany', { where: { creditNoteId: 'nc1' } }, C)).toEqual({ where: { creditNoteId: 'nc1', companyId: C } });
+    expect(scopeArgs('DebitNote', 'create', { data: { number: 'ND 2026/0001' } }, C)).toEqual({ data: { number: 'ND 2026/0001', companyId: C } });
+    expect(scopeArgs('DebitNoteLine', 'findMany', { where: { debitNoteId: 'nd1' } }, C)).toEqual({ where: { debitNoteId: 'nd1', companyId: C } });
+  });
+
   it('Compras (PurchaseOrder/PurchaseReceipt/SupplierPayment) estão no âmbito: injecta companyId', () => {
     expect(scopeArgs('PurchaseOrder', 'findMany', { where: { status: 'SENT' } }, C)).toEqual({ where: { status: 'SENT', companyId: C } });
     expect(scopeArgs('PurchaseReceipt', 'create', { data: { receiptNumber: 'GR 2026/0001' } }, C)).toEqual({

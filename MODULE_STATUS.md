@@ -5,10 +5,10 @@ _Última actualização: 2026-07-18_
 Estado vivo do projecto. O conhecimento permanente (arquitectura, regras, comandos) está
 em [`CLAUDE.md`](CLAUDE.md).
 
-**Último commit funcional:** pendente na branch `s4-dados-empresa` (Sessão S4 do ROADMAP)
-**Fase concluída:** `S4 — Dados da Empresa` (ROADMAP; fase anterior: `S3 — Lista de Produtos`)
+**Último commit funcional:** pendente na branch `s5-documentos-comerciais` (Sessão S5 do ROADMAP)
+**Fase concluída:** `S5 — Documentos Comerciais` (ROADMAP; fase anterior: `S4 — Dados da Empresa`)
 **UAT interna/demo:** V1 candidata a demo externa apos UAT interna, aprovada com ressalvas em 2026-07-06; P1-04 acrescenta Contabilidade V1 pronta para UAT/demo com limites; P1-05 acrescenta Fecho de Caixa V1 operacional sem persistencia formal; demo final check registado em `docs/DEMO_FINAL_CHECK.md` em 2026-07-08 como pronto com ressalvas menores
-**Próximo passo:** `Sessão S5 — Documentos Comerciais` (ROADMAP) — não iniciar sem instrução explícita (tem ponto 🔒 se NC/ND gerarem lançamentos contabilísticos); mantém-se pendente o smoke manual final em browser externo/limpo (logout, clique final POS, Fecho de Caixa V1) antes da demo externa
+**Próximo passo:** `Sessão S6 — Melhorias na Fatura` (ROADMAP) — não iniciar sem instrução explícita (tem pontos 🔒: schema de rascunho/histórico, regras de cancelamento e numeração de rascunhos; os enums de estado da S5 já incluem `DRAFT` para não exigir migration nova); mantém-se pendente o smoke manual final em browser externo/limpo (logout, clique final POS, Fecho de Caixa V1) antes da demo externa
 
 ---
 
@@ -52,6 +52,7 @@ em [`CLAUDE.md`](CLAUDE.md).
 | **S2** | **Dropdowns pesquisáveis** (`SearchCombobox` único shadcn/cmdk; Produtos/Clientes com pesquisa server-side + debounce via `/api/search/*`; Fornecedores/Contas/Armazéns client-side; aplicado em formulários e filtros) | ✅ |
 | **S3** | **Lista de Produtos** (selector Top 10/50/100/Todos, «Todos» com paginação server-side de 50, pesquisa server-side nome/SKU/categoria/marca, estado na URL `vista`/`pagina`/`q`) | ✅ |
 | **S4** | **Dados da Empresa** (endereço/website/logótipo por empresa, contas bancárias e carteiras móveis em tabelas próprias, ecrã `/admin/empresa` com gate `settings.manage`, upload PNG/JPG/WebP ≤ 1 MB na BD, `/api/company/logo` isolado por sessão com ETag/cache, `CompanyHeader` pronto para a S5, logótipo na sidebar/topbar) | ✅ |
+| **S5** | **Documentos Comerciais** (Cotação/NC/ND novos + OC imprimível; migração aditiva `s5_commercial_documents` — 6 tabelas + 3 enums; numeração atómica `COT`/`NC`/`ND` no `DocumentCounter`; NC contra factura com tecto por linha, devolução opcional com snapshot `unitCost` e lançamento espelho 411/221/121; ND com factura opcional D 121/C 411+221; extracto do cliente com NC/ND; suite `test:integration:documents` 12/12) | ✅ |
 | 9 | RH & Salários | 🗺️ futuro |
 | X | RLS forçado em toda a BD (fase transversal, pré-produção) | 🗺️ futuro |
 
@@ -320,6 +321,49 @@ typecheck 6/6, lint 6/6, testes unitários 98/98 (+9 de validação de upload/sa
 suite `pnpm test:integration:company-profile` 8/8 (isolamento A/B, permissões, upload inválido,
 auditoria sem bytes), relatórios 24/24, Fecho de Caixa 11/11, build OK com as rotas novas
 `/admin/empresa` e `/api/company/logo` incluídas.
+
+**S5 — Documentos Comerciais (2026-07-18):** quinta sessão do ROADMAP, na branch
+`s5-documentos-comerciais`, com migração aditiva aprovada `20260718075421_s5_commercial_documents`:
+6 tabelas novas (`quotations`/`quotation_lines`, `credit_notes`/`credit_note_lines`,
+`debit_notes`/`debit_note_lines`), 3 enums de estado (todos já com `DRAFT` para a S6 não exigir
+migration nova), 3 scopes novos de idempotência e um único toque em tabela existente (índice único
+aditivo `invoice_lines(companyId, id)` para a FK composta das linhas da NC). PG 16.14 confirmado
+antes dos `ALTER TYPE ADD VALUE`. Levantamento prévio: Factura e Recibo já emitiam e imprimiam com
+o layout S4 (nada a fazer); a OC ganhou apenas página imprimível `/compras/ordem/documento`;
+Cotação, NC e ND são fluxos 100% novos. Numeração aprovada: séries `COT`/`NC`/`ND` no
+`DocumentCounter` existente (por empresa/ano, upsert+increment atómico na transacção da emissão,
+formato `NC 2026/0001`; teste de concorrência sem duplicados). Domínio novo
+`packages/domain/src/commercial-documents.ts`: Cotação pré-transaccional (sem stock/saldo/
+contabilidade, validade obrigatória); NC sempre contra factura emitida (`invoiceId NOT NULL`),
+linhas derivadas das linhas da factura com tecto por linha (facturado − já creditado) e tecto
+global ≤ total da factura, motivo obrigatório, devolução de stock opcional (`returnStock`:
+`StockMovement IN` no armazém da factura ao custo médio corrente, snapshot em
+`CreditNoteLine.unitCost`, custo médio do produto intacto), decremento de `Customer.balance` e
+lançamento aprovado espelho da venda (D 411 Vendas base, D 221 IVA / C 121 Clientes, evento
+`CREDIT_NOTE_ISSUED`, diário SALES); ND contra cliente com factura opcional, linhas livres,
+incremento de `Customer.balance` e lançamento D 121 / C 411 (+C 221), evento `DEBIT_NOTE_ISSUED`.
+Decisão aprovada: o par 131/CMV da devolução fica para a S10 (checkbox adicionada ao ROADMAP S10
+com o snapshot `unitCost` como base), porque a venda V1 ainda não lança CMV — evita dupla contagem
+da 131. Limitação V1 declarada: ND credita 411 (sem conta mapeada de «Outros proveitos»). Extracto
+do cliente (`getCustomerStatement`) passou a incluir NC (crédito) e ND (débito). UI: `/cotacoes`
+(lista+nova+documento, entrada na sidebar), `/facturas/notas` (listas NC+ND),
+`/facturas/nota-credito[/nova]` e `/facturas/nota-debito[/nova]` (emissão a partir do documento da
+factura), `/compras/ordem/documento` — todos os documentos com `PrintLayout`/`CompanyHeader` da S4
+e blocos partilhados novos em `components/print/DocumentParts.tsx`. Verificado ao vivo em browser:
+FT 2026/0025, REC 2026/0018, NC 2026/0001 (com devolução e entrada em armazém), ND 2026/0001,
+COT 2026/0001 e OC 2026/0006 emitidos/impressos com o mesmo padrão visual; lançamentos NC/ND
+visíveis no Extrato Diário. Sem permissões novas (gates `sales.view`/`sales.create`/
+`purchases.create` existentes). Validado: `prisma validate` + `migrate status` + diff BD↔schema
+vazio, typecheck 6/6, lint 6/6, testes unitários verdes (tenant-scope +1), nova suite
+`pnpm test:integration:documents` 14/14 (cotação sem efeitos, idempotência, concorrência da
+numeração, NC com/sem devolução, tectos, factura cancelada, permissões, isolamento A/B, ND com/sem
+IVA, extracto reconciliado, tecto sob NCs simultâneas, bloqueio do cancelamento com NC), build OK
+41/41 páginas (8 rotas novas). Endurecimento pós-revisão (2026-07-18): o tecto da NC ficou
+serializado por `SELECT … FOR UPDATE` na linha da factura (o mesmo lock do cancelamento P0-03a —
+duas NCs simultâneas contra a mesma factura já não podem ambas passar o tecto, e NC exclui-se
+mutuamente com cancelamento em curso); e `cancelInvoice` ganhou bloqueio conservador simétrico ao
+dos recibos: factura com NC emitida não pode ser cancelada integralmente (a NC já reverteu
+saldo/stock parcialmente — cancelar duplicaria a reversão; regressão P0-03a 9/9 verde).
 
 **Hardening pré-produção P0-01 (2026-07-02):** seed demo bloqueado em `production`
 antes de criar o Prisma Client; credenciais demo removidas da interface de

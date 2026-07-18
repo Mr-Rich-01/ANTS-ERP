@@ -37,6 +37,7 @@
     "test:integration:reports": "pnpm --filter @ants/domain test:integration:reports",
     "test:integration:treasury:cash-closing": "pnpm --filter @ants/domain test:integration:treasury-cash-closing",
     "test:integration:company-profile": "pnpm --filter @ants/domain test:integration:company-profile",
+    "test:integration:documents": "pnpm --filter @ants/domain test:integration:documents",
     "docker:dev": "docker compose up -d postgres redis",
     "docker:build:web": "docker build -f apps/web/Dockerfile -t ants-erp-web:local .",
     "docker:build:worker": "docker build -f apps/worker/Dockerfile -t ants-erp-worker:local .",

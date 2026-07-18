@@ -54,6 +54,12 @@ model Company {
   purchaseOrders       PurchaseOrder[]
   purchaseOrderLines   PurchaseOrderLine[]
   supplierPayments     SupplierPayment[]
+  quotations           Quotation[]
+  quotationLines       QuotationLine[]
+  creditNotes          CreditNote[]
+  creditNoteLines      CreditNoteLine[]
+  debitNotes           DebitNote[]
+  debitNoteLines       DebitNoteLine[]
   treasuryAccounts     TreasuryAccount[]
   treasuryMovements    TreasuryMovement[]
   fiscalYears          FiscalYear[]
@@ -327,6 +333,9 @@ model Customer {
   invoices     Invoice[]
   payments     Payment[]
   journalLines JournalEntryLine[]
+  quotations   Quotation[]
+  creditNotes  CreditNote[]
+  debitNotes   DebitNote[]
 
   @@unique([companyId, nuit])
   @@unique([companyId, id])
@@ -412,6 +421,8 @@ model Product {
   invoiceLines         InvoiceLine[]
   purchaseOrderLines   PurchaseOrderLine[]
   purchaseReceiptItems PurchaseReceiptItem[]
+  quotationLines       QuotationLine[]
+  creditNoteLines      CreditNoteLine[]
 
   @@unique([companyId, sku])
   @@unique([companyId, id])
@@ -438,6 +449,7 @@ model Warehouse {
   invoices         Invoice[]
   purchaseOrders   PurchaseOrder[]
   purchaseReceipts PurchaseReceipt[]
+  creditNotes      CreditNote[]
 
   @@unique([companyId, code])
   @@unique([companyId, id])
@@ -535,6 +547,8 @@ model Invoice {
   lines          InvoiceLine[]
   payments       Payment[]
   stockMovements StockMovement[]
+  creditNotes    CreditNote[]
+  debitNotes     DebitNote[]
 
   @@unique([companyId, number])
   @@unique([companyId, id])
@@ -561,6 +575,9 @@ model InvoiceLine {
   /// Total da linha (líquido + imposto).
   total           Decimal  @db.Decimal(14, 2)
 
+  creditNoteLines CreditNoteLine[]
+
+  @@unique([companyId, id])
   @@index([companyId])
   @@index([invoiceId])
   @@map("invoice_lines")
@@ -604,6 +621,198 @@ model DocumentCounter {
 
   @@unique([companyId, key])
   @@map("document_counters")
+}
+
+// ─────────────────────────────────────────────────────────────
+// Documentos Comerciais (Sessão S5)
+// ─────────────────────────────────────────────────────────────
+
+/// Cotação: documento pré-transaccional — nunca gera stock nem contabilidade.
+model Quotation {
+  id            String          @id @default(cuid())
+  companyId     String
+  company       Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  /// Número (ex.: "COT 2026/0001"), único por empresa.
+  number        String
+  customerId    String
+  customer      Customer        @relation(fields: [companyId, customerId], references: [companyId, id], onDelete: Restrict)
+  /// Snapshot dos dados do cliente no momento da emissão.
+  customerName  String
+  customerNuit  String?
+  issueDate     DateTime        @default(now())
+  /// Validade da proposta.
+  validUntil    DateTime
+  status        QuotationStatus @default(ISSUED)
+  subtotal      Decimal         @db.Decimal(14, 2)
+  discountTotal Decimal         @db.Decimal(14, 2)
+  taxableBase   Decimal         @db.Decimal(14, 2)
+  taxTotal      Decimal         @db.Decimal(14, 2)
+  total         Decimal         @db.Decimal(14, 2)
+  notes         String?
+  createdBy     String?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  lines QuotationLine[]
+
+  @@unique([companyId, number])
+  @@unique([companyId, id])
+  @@index([companyId, status])
+  @@index([companyId, customerId])
+  @@index([companyId, issueDate])
+  @@map("quotations")
+}
+
+model QuotationLine {
+  id              String    @id @default(cuid())
+  companyId       String
+  company         Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  quotationId     String
+  quotation       Quotation @relation(fields: [companyId, quotationId], references: [companyId, id], onDelete: Cascade)
+  productId       String?
+  product         Product?  @relation(fields: [productId], references: [id], onDelete: SetNull)
+  sku             String?
+  description     String
+  unitPrice       Decimal   @db.Decimal(14, 2)
+  quantity        Int
+  discountPercent Decimal   @default(0) @db.Decimal(5, 2)
+  taxRate         Decimal   @default(16) @db.Decimal(5, 2)
+  /// Total da linha (líquido + imposto).
+  total           Decimal   @db.Decimal(14, 2)
+
+  @@index([companyId])
+  @@index([quotationId])
+  @@map("quotation_lines")
+}
+
+/// Nota de Crédito: emitida SEMPRE contra uma factura (invoiceId NOT NULL).
+/// Reduz o saldo do cliente; devolve stock apenas quando returnStock = true.
+model CreditNote {
+  id           String           @id @default(cuid())
+  companyId    String
+  company      Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  /// Número (ex.: "NC 2026/0001"), único por empresa.
+  number       String
+  invoiceId    String
+  invoice      Invoice          @relation(fields: [companyId, invoiceId], references: [companyId, id], onDelete: Restrict)
+  customerId   String
+  customer     Customer         @relation(fields: [companyId, customerId], references: [companyId, id], onDelete: Restrict)
+  /// Snapshot dos dados do cliente no momento da emissão.
+  customerName String
+  customerNuit String?
+  issueDate    DateTime         @default(now())
+  /// Motivo obrigatório (devolução, correcção de valor, desconto posterior…).
+  reason       String
+  /// true = devolução de mercadoria (movimentos IN); false = nota só de valor.
+  returnStock  Boolean          @default(false)
+  /// Armazém da devolução (o da factura de origem) quando returnStock.
+  warehouseId  String?
+  warehouse    Warehouse?       @relation(fields: [companyId, warehouseId], references: [companyId, id], onDelete: Restrict)
+  status       CreditNoteStatus @default(ISSUED)
+  subtotal     Decimal          @db.Decimal(14, 2)
+  taxableBase  Decimal          @db.Decimal(14, 2)
+  taxTotal     Decimal          @db.Decimal(14, 2)
+  total        Decimal          @db.Decimal(14, 2)
+  notes        String?
+  createdBy    String?
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  lines CreditNoteLine[]
+
+  @@unique([companyId, number])
+  @@unique([companyId, id])
+  @@index([companyId, invoiceId])
+  @@index([companyId, customerId])
+  @@index([companyId, status])
+  @@index([companyId, issueDate])
+  @@map("credit_notes")
+}
+
+model CreditNoteLine {
+  id            String      @id @default(cuid())
+  companyId     String
+  company       Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  creditNoteId  String
+  creditNote    CreditNote  @relation(fields: [companyId, creditNoteId], references: [companyId, id], onDelete: Cascade)
+  /// Linha da factura de origem — o tecto por linha valida-se contra ela.
+  invoiceLineId String
+  invoiceLine   InvoiceLine @relation(fields: [companyId, invoiceLineId], references: [companyId, id], onDelete: Restrict)
+  productId     String?
+  product       Product?    @relation(fields: [productId], references: [id], onDelete: SetNull)
+  sku           String?
+  description   String
+  /// Preço unitário herdado da factura de origem.
+  unitPrice     Decimal     @db.Decimal(14, 2)
+  quantity      Int
+  taxRate       Decimal     @default(16) @db.Decimal(5, 2)
+  /// Snapshot do custo médio no momento da devolução (só quando returnStock);
+  /// o histórico e os lançamentos não dependem do custo futuro.
+  unitCost      Decimal?    @db.Decimal(14, 2)
+  /// Total da linha (líquido + imposto).
+  total         Decimal     @db.Decimal(14, 2)
+
+  @@unique([companyId, creditNoteId, invoiceLineId])
+  @@index([companyId, invoiceLineId])
+  @@index([creditNoteId])
+  @@map("credit_note_lines")
+}
+
+/// Nota de Débito: contra um cliente, com factura de origem OPCIONAL.
+/// Aumenta o saldo do cliente; nunca movimenta stock.
+model DebitNote {
+  id           String          @id @default(cuid())
+  companyId    String
+  company      Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  /// Número (ex.: "ND 2026/0001"), único por empresa.
+  number       String
+  customerId   String
+  customer     Customer        @relation(fields: [companyId, customerId], references: [companyId, id], onDelete: Restrict)
+  /// Snapshot dos dados do cliente no momento da emissão.
+  customerName String
+  customerNuit String?
+  invoiceId    String?
+  invoice      Invoice?        @relation(fields: [companyId, invoiceId], references: [companyId, id], onDelete: Restrict)
+  issueDate    DateTime        @default(now())
+  /// Motivo obrigatório (juros de mora, portes, correcção a menor…).
+  reason       String
+  status       DebitNoteStatus @default(ISSUED)
+  subtotal     Decimal         @db.Decimal(14, 2)
+  taxableBase  Decimal         @db.Decimal(14, 2)
+  taxTotal     Decimal         @db.Decimal(14, 2)
+  total        Decimal         @db.Decimal(14, 2)
+  notes        String?
+  createdBy    String?
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+
+  lines DebitNoteLine[]
+
+  @@unique([companyId, number])
+  @@unique([companyId, id])
+  @@index([companyId, customerId])
+  @@index([companyId, invoiceId])
+  @@index([companyId, status])
+  @@index([companyId, issueDate])
+  @@map("debit_notes")
+}
+
+model DebitNoteLine {
+  id          String    @id @default(cuid())
+  companyId   String
+  company     Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  debitNoteId String
+  debitNote   DebitNote @relation(fields: [companyId, debitNoteId], references: [companyId, id], onDelete: Cascade)
+  description String
+  unitPrice   Decimal   @db.Decimal(14, 2)
+  quantity    Int
+  taxRate     Decimal   @default(16) @db.Decimal(5, 2)
+  /// Total da linha (líquido + imposto).
+  total       Decimal   @db.Decimal(14, 2)
+
+  @@index([companyId])
+  @@index([debitNoteId])
+  @@map("debit_note_lines")
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -908,6 +1117,29 @@ enum PaymentMethod {
   TRANSFER
 }
 
+/// DRAFT existe já no enum para o fluxo rascunho→emissão da S6 não exigir migration nova.
+enum QuotationStatus {
+  DRAFT
+  ISSUED
+  ACCEPTED
+  REJECTED
+  CANCELLED
+}
+
+/// DRAFT existe já no enum para o fluxo rascunho→emissão da S6 não exigir migration nova.
+enum CreditNoteStatus {
+  DRAFT
+  ISSUED
+  CANCELLED
+}
+
+/// DRAFT existe já no enum para o fluxo rascunho→emissão da S6 não exigir migration nova.
+enum DebitNoteStatus {
+  DRAFT
+  ISSUED
+  CANCELLED
+}
+
 enum PurchaseStatus {
   DRAFT
   SENT
@@ -1205,6 +1437,9 @@ enum OperationIdempotencyScope {
   PURCHASE_RECEIPT_REVERSE
   TREASURY_TRANSFER_REVERSE
   MANUAL_TREASURY_REVERSE
+  QUOTATION_CREATE
+  CREDIT_NOTE_CREATE
+  DEBIT_NOTE_CREATE
 }
 
 model OperationIdempotency {
