@@ -1,6 +1,6 @@
 import { NoPermission } from '@/components/NoPermission';
 import { forCompany } from '@ants/database';
-import { hasPermission, listProductsPage, productKpis, type StockStatus } from '@ants/domain';
+import { hasPermission, listProductsPage, listWarehouses, productKpis, type StockStatus } from '@ants/domain';
 import { getContext } from '@/lib/session';
 import { fmt } from '@/lib/format';
 import { ProdutosClient, type ProductRow, type ProductView } from './ProdutosClient';
@@ -35,9 +35,11 @@ export default async function ProdutosPage({ searchParams }: { searchParams: { v
   const take = vista === 'todos' ? PAGE_SIZE : Number(vista);
 
   const db = forCompany(ctx.companyId);
-  let [page, kpi] = await Promise.all([
+  const canCreate = hasPermission(ctx, 'products.create');
+  let [page, kpi, warehouses] = await Promise.all([
     listProductsPage(db, ctx, { query: q, take, skip: (pagina - 1) * take }),
     productKpis(db, ctx),
+    canCreate ? listWarehouses(db, ctx) : Promise.resolve([]),
   ]);
 
   // Página fora do intervalo (ex.: URL antigo após remoção de produtos) → recua para a última.
@@ -75,8 +77,9 @@ export default async function ProdutosPage({ searchParams }: { searchParams: { v
       totalPages={totalPages}
       query={q}
       stockValueStr={fmt(kpi.stockValue)}
-      canCreate={hasPermission(ctx, 'products.create')}
+      canCreate={canCreate}
       canViewInventory={hasPermission(ctx, 'stock.adjust')}
+      warehouses={warehouses.map((w) => ({ id: w.id, code: w.code, name: w.name }))}
     />
   );
 }

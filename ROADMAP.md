@@ -129,10 +129,10 @@ Quick wins primeiro (validar o fluxo de trabalho), depois fundações (dados da 
 
 *(Prioridade 9)*
 
-🔒 **Aprovação:** o stock inicial gera movimento de stock e lançamento contabilístico de abertura — desenho aprovado antes de código.
+🔒 **Aprovação:** o stock inicial gera movimento de stock e lançamento contabilístico de abertura — desenho aprovado antes de código. *(Cumprido: mapa D/C aprovado em 2026-07-18 — D 131 Mercadorias / C 312 «Regularização de abertura de existências», conta EQUITY nova com mapping `OPENING_BALANCE_EQUITY`, diário de Abertura `DAB`/`AB`, sem IVA porque não há fornecedor; sem conta de fallback — mapping em falta faz a operação falhar por inteiro com mensagem clara.)*
 
-- [ ] Ao criar produto: definir quantidade inicial e armazém.
-- [ ] Quantidade inicial entra como movimento de stock normal (com custo unitário para o weighted-average), não como valor "mágico" no campo de quantidade.
+- [x] Ao criar produto: definir quantidade inicial e armazém. *(Secção «Stock inicial (opcional)» no dialog de criação — quantidade, custo unitário e armazém, os três obrigatórios em conjunto; sem os campos o produto é criado como antes, com zero efeitos; produto existente não ganha o fluxo — ajustes são âmbito da S9.)*
+- [x] Quantidade inicial entra como movimento de stock normal (com custo unitário para o weighted-average), não como valor "mágico" no campo de quantidade. *(`StockMovement IN` «Stock inicial» + `StockLevel`; avgCost = custo unitário informado — primeira entrada define o custo médio e o valor do lançamento é o mesmo cálculo `quantidade × custo` na mesma transacção; idempotência com scope próprio `PRODUCT_CREATE`; evento `PRODUCT_OPENING_STOCK` idempotente por produto.)*
 
 ---
 
@@ -158,7 +158,7 @@ Quick wins primeiro (validar o fluxo de trabalho), depois fundações (dados da 
 
 - [ ] Finalizar lançamentos manuais (validação: balanceados, período aberto, contas válidas).
 - [ ] Lançamentos automáticos a partir de: Vendas, Compras, Recebimento de mercadorias, Pagamentos, Recebimentos, Produção, Inventário, Ajustes de stock.
-- [ ] Introduzir CMV na venda (D CMV / C Existências) **e** o par da devolução nas NCs com devolução de stock (D Existências / C CMV ao `unitCost` snapshot das linhas) — os dois lados na mesma sessão, com teste de coerência da conta 131 contra o stock físico. *(Decisão da S5: a NC lança só o espelho da venda 411/221/121 até esta sessão.)*
+- [ ] Introduzir CMV na venda (D CMV / C Existências) **e** o par da devolução nas NCs com devolução de stock (D Existências / C CMV ao `unitCost` snapshot das linhas) — os dois lados na mesma sessão, com teste de coerência da conta 131 contra o stock físico. *(Decisão da S5: a NC lança só o espelho da venda 411/221/121 até esta sessão. Decisão da S8: o teste de coerência 131 vs. stock físico deve incluir também os movimentos de abertura de stock inicial — lançamentos `PRODUCT_OPENING_STOCK` do diário `DAB` —, não só as compras.)*
 - [ ] Mapear conta de **Outros proveitos** para as ND (juros, portes) em vez de 411 Vendas — migrar ou reclassificar as ND já emitidas se necessário. *(Limitação declarada da S5: sem conta mapeada, a ND credita 411.)*
 - [ ] **Fluxo de anulação de Nota de Crédito** (estorno simétrico do `CREDIT_NOTE_ISSUED` + reversão da devolução de stock) — desbloqueia o cancelamento de faturas com NC, hoje impedido por guard conservador (`invoices.ts:1331`).
 - [ ] Cada fonte: idempotente (chave de origem única — reprocessar não duplica).

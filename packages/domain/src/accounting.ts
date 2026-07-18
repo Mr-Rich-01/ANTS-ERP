@@ -64,6 +64,7 @@ export function accountingSourceTypeLabel(value: string | null | undefined): str
     SUPPLIER_PAYMENT: 'Pagamento a fornecedor',
     CREDIT_NOTE: 'Nota de credito',
     DEBIT_NOTE: 'Nota de debito',
+    PRODUCT: 'Stock inicial de produto',
     REVERSAL: 'Estorno',
   };
   return labels[value] ?? value;

@@ -1,9 +1,20 @@
 import { z } from 'zod';
 import type { Prisma, PrismaClient } from '@ants/database';
+import { round2 } from '@ants/shared';
 import type { RequestContext } from './context';
 import { requireCompany } from './context';
 import { requirePermission } from './permissions';
 import { ConflictError, NotFoundError, ValidationError } from './errors';
+import { writeAudit } from './audit';
+import { getMappedAccountTx } from './accounting';
+import { postAccountingEventTx } from './accounting-events';
+import {
+  FINGERPRINT_VERSION,
+  canonicalRequestFingerprint,
+  fpAmount,
+  fpInt,
+  runIdempotentOperation,
+} from './operation-idempotency';
 
 export type StockStatus = 'ok' | 'low' | 'out';
 
@@ -264,6 +275,44 @@ const productInput = z.object({
 
 export type ProductInput = z.input<typeof productInput>;
 
+/**
+ * Stock inicial opcional na CRIAÇÃO do produto (S8). Os três campos são
+ * obrigatórios em conjunto: a quantidade exige custo unitário > 0 (senão o
+ * custo médio ponderado nasce errado ou a zero) e o armazém de destino.
+ */
+const initialStockInput = z.object({
+  quantity: z.coerce
+    .number({ invalid_type_error: 'Quantidade inicial inválida.' })
+    .int('A quantidade inicial tem de ser um número inteiro.')
+    .positive('A quantidade inicial tem de ser maior que zero.'),
+  unitCost: z.coerce
+    .number({ invalid_type_error: 'Custo unitário inicial inválido.' })
+    .positive('Com quantidade inicial, o custo unitário inicial é obrigatório e tem de ser maior que zero.'),
+  warehouseId: z.string().min(1, 'Com quantidade inicial, seleccione o armazém de destino.'),
+});
+
+export type InitialStockInput = z.input<typeof initialStockInput>;
+
+export interface CreateProductOptions {
+  /** Stock inicial (apenas na criação; produto existente é âmbito da S9). */
+  initialStock?: InitialStockInput;
+  /** Chave estável por tentativa; quando presente activa idempotência operacional. */
+  idempotencyKey?: string;
+}
+
+export interface CreateProductResult {
+  id: string;
+  /** Presente apenas quando foi registado stock inicial. */
+  initialStock?: {
+    movementId: string;
+    entryId: string;
+    entryNumber: string;
+    quantity: number;
+    unitCost: number;
+    value: number;
+  };
+}
+
 function parseInput(input: ProductInput) {
   const parsed = productInput.safeParse(input);
   if (!parsed.success) {
@@ -272,31 +321,194 @@ function parseInput(input: ProductInput) {
   return parsed.data;
 }
 
-/** Cria um produto na empresa activa. SKU único por empresa. */
-export async function createProduct(db: PrismaClient, ctx: RequestContext, input: ProductInput): Promise<{ id: string }> {
-  requirePermission(ctx, 'products.create');
-  requireCompany(ctx);
-  const data = parseInput(input);
-
-  const dup = await db.product.findFirst({ where: { sku: data.sku } });
-  if (dup) throw new ConflictError('Já existe um produto com este SKU.');
-
-  const data2 = {
+function createProductFingerprint(
+  companyId: string,
+  data: ReturnType<typeof parseInput>,
+  initialStock: z.output<typeof initialStockInput> | null,
+): string {
+  return canonicalRequestFingerprint(FINGERPRINT_VERSION, {
+    companyId,
     sku: data.sku,
     name: data.name,
     category: data.category ?? null,
     brand: data.brand ?? null,
     unit: data.unit,
-    salePrice: data.salePrice,
-    avgCost: data.avgCost,
-    taxRate: data.taxRate,
-    minStock: data.minStock,
+    salePrice: fpAmount(data.salePrice),
+    avgCost: fpAmount(data.avgCost),
+    taxRate: fpAmount(data.taxRate),
+    minStock: fpInt(data.minStock),
     barcode: data.barcode ?? null,
     notes: data.notes ?? null,
-    createdBy: ctx.userId,
-  } satisfies Omit<Prisma.ProductUncheckedCreateInput, 'companyId'>;
-  const created = await db.product.create({ data: data2 as Prisma.ProductUncheckedCreateInput });
-  return { id: created.id };
+    initialStock: initialStock
+      ? { quantity: fpInt(initialStock.quantity), unitCost: fpAmount(initialStock.unitCost), warehouseId: initialStock.warehouseId }
+      : null,
+  });
+}
+
+/**
+ * Cria um produto na empresa activa. SKU único por empresa.
+ *
+ * Com `options.initialStock` (S8), a MESMA transacção regista a entrada como
+ * movimento de stock normal (`StockMovement IN`, nunca escrita directa da
+ * quantidade), inicializa o custo médio pela fórmula ponderada (stock anterior
+ * é zero ⇒ avgCost = custo unitário informado) e lança a abertura na
+ * contabilidade: D 131 Existências (`INVENTORY`) / C capital próprio de
+ * abertura (`OPENING_BALANCE_EQUITY`), diário de Abertura, sem IVA — o stock
+ * inicial não tem fornecedor. Se um dos mappings não existir, a operação
+ * falha por inteiro com mensagem clara (sem conta de fallback).
+ */
+export async function createProduct(
+  db: PrismaClient,
+  ctx: RequestContext,
+  input: ProductInput,
+  options: CreateProductOptions = {},
+): Promise<CreateProductResult> {
+  requirePermission(ctx, 'products.create');
+  const companyId = requireCompany(ctx);
+  const data = parseInput(input);
+
+  let initialStock: z.output<typeof initialStockInput> | null = null;
+  if (options.initialStock) {
+    const parsed = initialStockInput.safeParse(options.initialStock);
+    if (!parsed.success) throw new ValidationError(parsed.error.issues[0]?.message ?? 'Stock inicial inválido.');
+    initialStock = parsed.data;
+  }
+  // Um único cálculo, usado no avgCost, no movimento e no lançamento.
+  const unitCost = initialStock ? round2(initialStock.unitCost) : null;
+  const openingValue = initialStock && unitCost !== null ? round2(initialStock.quantity * unitCost) : null;
+  const requestFingerprint = createProductFingerprint(companyId, data, initialStock);
+
+  return db.$transaction(async (tx) => {
+    const runCreate = async (): Promise<{ resourceType: string; resourceId: string; result: CreateProductResult }> => {
+      const dup = await tx.product.findFirst({ where: { sku: data.sku, companyId } });
+      if (dup) throw new ConflictError('Já existe um produto com este SKU.');
+
+      const created = await tx.product.create({
+        data: {
+          companyId,
+          sku: data.sku,
+          name: data.name,
+          category: data.category ?? null,
+          brand: data.brand ?? null,
+          unit: data.unit,
+          salePrice: data.salePrice,
+          // Primeira entrada define o custo médio: com stock inicial, o custo
+          // unitário informado substitui o custo de catálogo do formulário.
+          avgCost: unitCost ?? data.avgCost,
+          taxRate: data.taxRate,
+          minStock: data.minStock,
+          barcode: data.barcode ?? null,
+          notes: data.notes ?? null,
+          createdBy: ctx.userId,
+        } as Prisma.ProductUncheckedCreateInput,
+      });
+
+      if (!initialStock || unitCost === null || openingValue === null) {
+        return { resourceType: 'Product', resourceId: created.id, result: { id: created.id } };
+      }
+
+      const warehouse = await tx.warehouse.findFirst({ where: { id: initialStock.warehouseId, companyId, status: 'ACTIVE' } });
+      if (!warehouse) throw new NotFoundError('Armazém de destino do stock inicial não encontrado ou inactivo.');
+      if (openingValue <= 0) throw new ValidationError('O valor do stock inicial tem de ser maior que zero.');
+
+      await tx.stockLevel.upsert({
+        where: { productId_warehouseId: { productId: created.id, warehouseId: warehouse.id } },
+        update: { quantity: initialStock.quantity },
+        create: { companyId, productId: created.id, warehouseId: warehouse.id, quantity: initialStock.quantity },
+      });
+      const movement = await tx.stockMovement.create({
+        data: {
+          companyId,
+          productId: created.id,
+          warehouseId: warehouse.id,
+          type: 'IN',
+          quantity: initialStock.quantity,
+          balanceAfter: initialStock.quantity,
+          document: 'Stock inicial',
+          reason: `Stock inicial na criação do produto ${data.sku}`,
+          createdBy: ctx.userId,
+        },
+      });
+
+      const inventory = await getMappedAccountTx(tx, companyId, 'INVENTORY');
+      const openingEquity = await getMappedAccountTx(tx, companyId, 'OPENING_BALANCE_EQUITY');
+      const entry = await postAccountingEventTx(tx, ctx, {
+        journalType: 'OPENING',
+        entryDate: new Date(),
+        description: `Stock inicial do produto ${data.sku} — ${data.name}`,
+        reference: data.sku,
+        origin: { sourceType: 'PRODUCT', sourceId: created.id, accountingEvent: 'PRODUCT_OPENING_STOCK' },
+        lines: [
+          { ledgerAccountId: inventory.id, debit: openingValue, description: `Stock inicial ${data.sku} (${initialStock.quantity} × ${unitCost.toFixed(2)})` },
+          { ledgerAccountId: openingEquity.id, credit: openingValue, description: `Abertura de existências ${data.sku}` },
+        ],
+      });
+
+      await writeAudit(tx, ctx, {
+        action: 'product.initial_stock',
+        entity: 'Product',
+        entityId: created.id,
+        newValues: {
+          sku: data.sku,
+          warehouseId: warehouse.id,
+          quantity: initialStock.quantity,
+          unitCost,
+          value: openingValue,
+          avgCost: unitCost,
+          stockMovementId: movement.id,
+          journalEntryId: entry.id,
+          entryNumber: entry.entryNumber,
+          idempotencyKey: options.idempotencyKey ?? null,
+        },
+      });
+
+      return {
+        resourceType: 'Product',
+        resourceId: created.id,
+        result: {
+          id: created.id,
+          initialStock: { movementId: movement.id, entryId: entry.id, entryNumber: entry.entryNumber, quantity: initialStock.quantity, unitCost, value: openingValue },
+        },
+      };
+    };
+
+    if (!options.idempotencyKey) {
+      return (await runCreate()).result;
+    }
+
+    const op = await runIdempotentOperation<CreateProductResult>(tx, ctx, {
+      scope: 'PRODUCT_CREATE',
+      idempotencyKey: options.idempotencyKey,
+      requestFingerprint,
+      expectedResourceType: 'Product',
+      loadExisting: async (resourceId) => {
+        const product = await tx.product.findFirst({ where: { companyId, id: resourceId }, select: { id: true } });
+        if (!product) return null;
+        if (!initialStock) return { id: product.id };
+        const [movement, entry] = await Promise.all([
+          tx.stockMovement.findFirst({ where: { companyId, productId: product.id, type: 'IN', document: 'Stock inicial' }, select: { id: true, quantity: true } }),
+          tx.journalEntry.findFirst({
+            where: { companyId, sourceType: 'PRODUCT', sourceId: product.id, accountingEvent: 'PRODUCT_OPENING_STOCK' },
+            select: { id: true, entryNumber: true },
+          }),
+        ]);
+        if (!movement || !entry) throw new ConflictError('Registo de idempotência aponta para um produto com stock inicial incompleto (integridade).');
+        return {
+          id: product.id,
+          initialStock: {
+            movementId: movement.id,
+            entryId: entry.id,
+            entryNumber: entry.entryNumber,
+            quantity: movement.quantity,
+            unitCost: unitCost ?? 0,
+            value: openingValue ?? 0,
+          },
+        };
+      },
+      run: runCreate,
+    });
+    return op.result;
+  });
 }
 
 /** Actualiza um produto da empresa activa. SKU único por empresa (excluindo o próprio). */

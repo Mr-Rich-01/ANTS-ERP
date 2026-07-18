@@ -1461,6 +1461,7 @@ enum OperationIdempotencyScope {
   DEBIT_NOTE_CREATE
   INVOICE_DRAFT_CREATE
   INVOICE_DRAFT_ISSUE
+  PRODUCT_CREATE
 }
 
 model OperationIdempotency {

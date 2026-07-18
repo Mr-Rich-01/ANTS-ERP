@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Icon } from '@/components/Icon';
 import { ACCENT } from '@/lib/erp-nav';
-import { ProductFormDialog } from '@/components/produtos/ProductFormDialog';
+import { ProductFormDialog, type WarehouseOption } from '@/components/produtos/ProductFormDialog';
 
 export type ProductView = '10' | '50' | '100' | 'todos';
 
@@ -76,6 +76,7 @@ export function ProdutosClient({
   stockValueStr,
   canCreate,
   canViewInventory,
+  warehouses,
 }: {
   rows: ProductRow[];
   total: number;
@@ -86,6 +87,7 @@ export function ProdutosClient({
   stockValueStr: string;
   canCreate: boolean;
   canViewInventory: boolean;
+  warehouses: WarehouseOption[];
 }) {
   const router = useRouter();
   const [q, setQ] = useState(query);
@@ -151,6 +153,7 @@ export function ProdutosClient({
           {canCreate && (
             <ProductFormDialog
               mode="create"
+              warehouses={warehouses}
               trigger={
                 <button style={{ display: 'flex', alignItems: 'center', gap: 7, height: 36, padding: '0 13px', borderRadius: 9, border: 'none', background: ACCENT, color: '#fff', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>
                   <Icon name="plus" size={15} />

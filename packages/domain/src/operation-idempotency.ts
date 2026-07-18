@@ -28,7 +28,8 @@ export type OperationScope =
   | 'CREDIT_NOTE_CREATE'
   | 'DEBIT_NOTE_CREATE'
   | 'INVOICE_DRAFT_CREATE'
-  | 'INVOICE_DRAFT_ISSUE';
+  | 'INVOICE_DRAFT_ISSUE'
+  | 'PRODUCT_CREATE';
 
 export const OPERATION_IDEMPOTENCY_SCOPES: readonly OperationScope[] = [
   'INVOICE_CREATE',
@@ -46,6 +47,7 @@ export const OPERATION_IDEMPOTENCY_SCOPES: readonly OperationScope[] = [
   'DEBIT_NOTE_CREATE',
   'INVOICE_DRAFT_CREATE',
   'INVOICE_DRAFT_ISSUE',
+  'PRODUCT_CREATE',
 ];
 
 const SCOPES: ReadonlySet<string> = new Set<OperationScope>(OPERATION_IDEMPOTENCY_SCOPES);

@@ -5,10 +5,10 @@ _Última actualização: 2026-07-18_
 Estado vivo do projecto. O conhecimento permanente (arquitectura, regras, comandos) está
 em [`CLAUDE.md`](CLAUDE.md).
 
-**Último commit funcional:** pendente na branch `s7-ordem-compra` (Sessão S7 do ROADMAP)
-**Fase concluída:** `S7 — Fluxo de Ordem de Compra` (ROADMAP; fase anterior: `S6 — Melhorias na Fatura`)
+**Último commit funcional:** pendente na branch `s8-produtos-stock-inicial` (Sessão S8 do ROADMAP)
+**Fase concluída:** `S8 — Produtos: criação com stock inicial` (ROADMAP; fase anterior: `S7 — Fluxo de Ordem de Compra`)
 **UAT interna/demo:** V1 candidata a demo externa apos UAT interna, aprovada com ressalvas em 2026-07-06; P1-04 acrescenta Contabilidade V1 pronta para UAT/demo com limites; P1-05 acrescenta Fecho de Caixa V1 operacional sem persistencia formal; demo final check registado em `docs/DEMO_FINAL_CHECK.md` em 2026-07-08 como pronto com ressalvas menores
-**Próximo passo:** `Sessão S8 — Produtos: criação com stock inicial` (ROADMAP) — não iniciar sem instrução explícita (tem ponto 🔒: o stock inicial gera movimento de stock e lançamento contabilístico de abertura — desenho aprovado antes de código); mantém-se pendente o smoke manual final em browser externo/limpo (logout, clique final POS, Fecho de Caixa V1) antes da demo externa
+**Próximo passo:** `Sessão S9 — Inventário em duas etapas` (ROADMAP) — não iniciar sem instrução explícita (tem ponto 🔒: plano completo antes de código — schema + lógica de ajuste; a validação gera movimentos de stock e lançamentos contabilísticos, com ligação à S10); mantém-se pendente o smoke manual final em browser externo/limpo (logout, clique final POS, Fecho de Caixa V1) antes da demo externa
 
 ---
 
@@ -55,6 +55,7 @@ em [`CLAUDE.md`](CLAUDE.md).
 | **S5** | **Documentos Comerciais** (Cotação/NC/ND novos + OC imprimível; migração aditiva `s5_commercial_documents` — 6 tabelas + 3 enums; numeração atómica `COT`/`NC`/`ND` no `DocumentCounter`; NC contra factura com tecto por linha, devolução opcional com snapshot `unitCost` e lançamento espelho 411/221/121; ND com factura opcional D 121/C 411+221; extracto do cliente com NC/ND; suite `test:integration:documents` 12/12) | ✅ |
 | **S6** | **Melhorias na Fatura** (rascunhos série `RASC` sem efeitos + emissão que consome o FT só nesse instante, edição de rascunho, histórico de alterações no documento via `AuditLog`, descarte com motivo obrigatório, cancelamento com nome do responsável e hora; migração aditiva `s6_invoice_drafts`; filtro central `ACTIVE_INVOICE_STATUSES`; suite `test:integration:invoices:drafts` 13/13) | ✅ |
 | **S7** | **Fluxo de Ordem de Compra** (estados `PENDING_APPROVAL`→`APPROVED`/`REJECTED` antes da recepção; aprovação/rejeição com gate `purchases.approve` existente — zero alterações de RBAC; rejeição terminal com motivo ≥ 10 chars; recepção só de OCs aprovadas; observações da recepção na UI; indicação ao solicitante por chips/destaque; migrações aditivas `s7_purchase_order_approval` + backfill `SENT`→`APPROVED`; suite `test:integration:purchases:approval` 9/9) | ✅ |
+| **S8** | **Produtos: criação com stock inicial** (secção opcional «Stock inicial» no dialog de criação — quantidade + custo unitário + armazém; `StockMovement IN` normal que inicializa o avgCost = custo informado; lançamento de abertura D 131 / C 312 nova via mapping `OPENING_BALANCE_EQUITY` no diário `DAB`; scope de idempotência `PRODUCT_CREATE`; migração aditiva `s8_product_initial_stock`; suite `test:integration:products:initial-stock` 10/10) | ✅ |
 | 9 | RH & Salários | 🗺️ futuro |
 | X | RLS forçado em toda a BD (fase transversal, pré-produção) | 🗺️ futuro |
 
@@ -452,6 +453,48 @@ por uma falha pré-existente do `c1 #16` (uma 6.ª conta de tesouraria «ABSA» 
 demo num teste ao vivo de 2026-07-08); com autorização explícita, a conta foi removida numa
 transacção com verificação prévia (0 movimentos de tesouraria, 0 linhas de lançamento, sem razão
 ligada) e o agregado voltou a **203/203**.
+
+**S8 — Produtos: criação com stock inicial (2026-07-18):** oitava sessão do ROADMAP, na branch
+`s8-produtos-stock-inicial`, com migração aditiva aprovada `20260718200000_s8_product_initial_stock`
+(um único toque de schema: `PRODUCT_CREATE` no enum `OperationIdempotencyScope`). **Desenho
+contabilístico aprovado (🔒) antes de código:** o stock inicial de um produto novo é entrada de
+existências SEM fornecedor (a 131 até aqui só era debitada no `PURCHASE_RECEIVED` contra a 211),
+pelo que a contrapartida aprovada é capital próprio de abertura — **D 131 Mercadorias
+(`INVENTORY`) / C 312 «Regularização de abertura de existências»** (conta EQUITY nova, filha de
+31 Capital, mapping novo `OPENING_BALANCE_EQUITY`), sem IVA (nada é dedutível sem documento de
+fornecedor), no **diário de Abertura `DAB`** (tipo `OPENING`, prefixo `AB`, seeded desde a 8a e
+usado pela primeira vez). Evento `sourceType 'PRODUCT'` / `accountingEvent 'PRODUCT_OPENING_STOCK'`
+— naturalmente único por produto. A conta 312 + mapping entram pela definição canónica do seed
+(idempotente, não destrutivo — re-seed acrescenta às empresas dev/demo existentes; empresas novas
+de produção herdam-nos pelo provisionamento explícito que já é a regra desde P0-01); **sem conta
+de fallback**: mapping em falta faz a operação falhar por inteiro com a mensagem clara do
+`getMappedAccountTx` (coberto por teste). Domínio: `createProduct` ganhou `options.initialStock`
+`{quantity>0 int, unitCost>0, warehouseId}` (os três obrigatórios em conjunto; custo 0 rejeitado
+para o weighted-average não nascer errado/a zero) — na MESMA transacção: `StockLevel` +
+`StockMovement IN` («Stock inicial», nunca escrita directa da quantidade), avgCost = custo
+unitário informado (primeira entrada define o custo médio; substitui o custo de catálogo do
+formulário) e lançamento com o mesmo cálculo `round2(qtd × custo)`, auditoria explícita
+`product.initial_stock` e idempotência com scope próprio `PRODUCT_CREATE` (fingerprint v1 do
+payload completo; replay devolve o mesmo produto sem duplicar efeitos). Produto existente NÃO
+ganha fluxo de stock inicial (ajuste de inventário é âmbito da S9); sem stock inicial o
+comportamento é exactamente o de antes (zero efeitos). UI: secção «Stock inicial (opcional)» no
+dialog Novo produto (quantidade, custo unitário, armazém activo; chave de idempotência por
+abertura do dialog); labels do Extrato Diário ganharam `PRODUCT` → «Stock inicial de produto».
+Decisão registada no ROADMAP (S10): o teste de coerência 131 vs. stock físico deve incluir os
+movimentos `PRODUCT_OPENING_STOCK`, não só compras. Verificado ao vivo em browser:
+`S8-DEMO-001` criado com 8 × 120,50 MT no Armazém Maputo → StockLevel 8, movimento IN «Stock
+inicial», avgCost 120,50 (custo de catálogo 10 substituído), lançamento `AB 2026/0001` no Extrato
+Diário (D 131 / C 312 = 964,00, Publicado), auditoria e registo de idempotência; ficha do produto
+mostra o movimento como os restantes; `S8-DEMO-002` sem stock inicial → zero efeitos;
+quantidade sem custo → erro claro no dialog e nada criado. Testes dos seeds 8b `#25`/c1 `#17`
+actualizados (40 contas / 16 mappings da demo — a 312 e o `OPENING_BALANCE_EQUITY` são agora
+esperados). Validado: `prisma migrate status` OK, typecheck 6/6, lint 6/6, testes unitários
+verdes, nova suite `pnpm test:integration:products:initial-stock` 10/10 (sem stock inicial zero
+efeitos, custo obrigatório com quantidade > 0, armazém/inteiros validados, D131/C312 balanceado
+no `AB`, arredondamento a 2 casas com cálculo único, idempotência + conflito de fingerprint,
+weighted-average com recepção posterior (10@10 + 10@20 → 15), permissões, mapping em falta com
+rollback total, isolamento A/B), regressões accounting 203/203 + reversal all 44/44 + POS 12/12 +
+purchases approval 9/9 + relatórios 24/24, build OK.
 
 **Hardening pré-produção P0-01 (2026-07-02):** seed demo bloqueado em `production`
 antes de criar o Prisma Client; credenciais demo removidas da interface de

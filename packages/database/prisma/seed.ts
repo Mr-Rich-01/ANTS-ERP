@@ -529,6 +529,8 @@ async function seedDemo(prisma: PrismaClient) {
     { code: '221', name: 'IVA liquidado', type: 'LIABILITY', normal: 'CREDIT', parent: '22', level: 3, posting: true, provisioningKey: 'VAT_OUTPUT' },
     { code: '231', name: 'Remunerações a pagar', type: 'LIABILITY', normal: 'CREDIT', parent: '23', level: 3, posting: true, provisioningKey: 'SALARIES_PAYABLE' },
     { code: '311', name: 'Capital social', type: 'EQUITY', normal: 'CREDIT', parent: '31', level: 3, posting: true },
+    // S8: contrapartida do lançamento de abertura de stock inicial (produto novo sem fornecedor).
+    { code: '312', name: 'Regularização de abertura de existências', type: 'EQUITY', normal: 'CREDIT', parent: '31', level: 3, posting: true, provisioningKey: 'OPENING_BALANCE_EQUITY' },
     { code: '321', name: 'Resultado do exercício', type: 'EQUITY', normal: 'CREDIT', parent: '32', level: 3, posting: true },
     { code: '322', name: 'Resultados transitados', type: 'EQUITY', normal: 'CREDIT', parent: '32', level: 3, posting: true },
     { code: '411', name: 'Vendas de mercadorias', type: 'REVENUE', normal: 'CREDIT', parent: '41', level: 3, posting: true, provisioningKey: 'SALES_REVENUE' },
@@ -588,6 +590,7 @@ async function seedDemo(prisma: PrismaClient) {
     'CASH_MAIN', 'BANK_MAIN', 'MOBILE_MONEY', 'ACCOUNTS_RECEIVABLE', 'INVENTORY', 'VAT_INPUT',
     'ACCOUNTS_PAYABLE', 'VAT_OUTPUT', 'SALARIES_PAYABLE', 'SALES_REVENUE', 'COST_OF_GOODS_SOLD',
     'PURCHASES_EXPENSE', 'GENERAL_EXPENSE', 'CASH_DIFFERENCE', 'SALARIES_EXPENSE',
+    'OPENING_BALANCE_EQUITY',
   ];
   for (const key of systemKeys) {
     const acct = await prisma.ledgerAccount.findUnique({

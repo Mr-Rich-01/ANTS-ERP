@@ -197,7 +197,7 @@ describe('Fase 8c.1 — fundação das integrações (integração)', () => {
   });
 
   it('#17 dados 8a/8b da demo continuam intactos', async () => {
-    expect(await prisma.ledgerAccount.count({ where: { companyId: 'demo-company' } })).toBe(39); // 37 base + 114 + 115
+    expect(await prisma.ledgerAccount.count({ where: { companyId: 'demo-company' } })).toBe(40); // 37 base + 114 + 115 + 312 (S8)
     expect(await prisma.journalEntry.count({ where: { companyId: 'demo-company' } })).toBe(demoJournalEntriesBaseline);
   });
 
