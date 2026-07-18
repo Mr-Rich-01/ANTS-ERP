@@ -99,6 +99,49 @@ export async function listProducts(db: PrismaClient, ctx: RequestContext): Promi
   return rows.map(toListItem);
 }
 
+export interface ProductPage {
+  items: ProductListItem[];
+  /** Total de produtos que correspondem ao filtro (para paginação). */
+  total: number;
+}
+
+/**
+ * Página da listagem de produtos com pesquisa server-side por nome/SKU/categoria/marca.
+ * `take` fica limitado a 100 e `skip` nunca é negativo — a tabela inteira nunca é devolvida.
+ */
+export async function listProductsPage(
+  db: PrismaClient,
+  ctx: RequestContext,
+  params: { query?: string; take: number; skip?: number },
+): Promise<ProductPage> {
+  requirePermission(ctx, 'stock.view');
+  requireCompany(ctx);
+  const take = Math.min(Math.max(Math.trunc(params.take), 1), 100);
+  const skip = Math.max(Math.trunc(params.skip ?? 0), 0);
+  const query = params.query?.trim();
+  const where: Prisma.ProductWhereInput = query
+    ? {
+        OR: [
+          { name: { contains: query, mode: 'insensitive' } },
+          { sku: { contains: query, mode: 'insensitive' } },
+          { category: { contains: query, mode: 'insensitive' } },
+          { brand: { contains: query, mode: 'insensitive' } },
+        ],
+      }
+    : {};
+  const [total, rows] = await Promise.all([
+    db.product.count({ where }),
+    db.product.findMany({
+      where,
+      orderBy: { name: 'asc' },
+      take,
+      skip,
+      include: { stockLevels: { select: { quantity: true } } },
+    }),
+  ]);
+  return { items: rows.map(toListItem), total };
+}
+
 export interface ProductSearchOption {
   id: string;
   sku: string;

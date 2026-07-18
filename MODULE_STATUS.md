@@ -5,10 +5,10 @@ _Última actualização: 2026-07-18_
 Estado vivo do projecto. O conhecimento permanente (arquitectura, regras, comandos) está
 em [`CLAUDE.md`](CLAUDE.md).
 
-**Último commit funcional:** pendente na branch `s2-dropdowns` (Sessão S2 do ROADMAP)
-**Fase concluída:** `S2 — Dropdowns pesquisáveis` (ROADMAP; fase anterior: `S1 — Nomenclatura e Relatórios`)
+**Último commit funcional:** pendente na branch `s3-lista-produtos` (Sessão S3 do ROADMAP)
+**Fase concluída:** `S3 — Lista de Produtos` (ROADMAP; fase anterior: `S2 — Dropdowns pesquisáveis`)
 **UAT interna/demo:** V1 candidata a demo externa apos UAT interna, aprovada com ressalvas em 2026-07-06; P1-04 acrescenta Contabilidade V1 pronta para UAT/demo com limites; P1-05 acrescenta Fecho de Caixa V1 operacional sem persistencia formal; demo final check registado em `docs/DEMO_FINAL_CHECK.md` em 2026-07-08 como pronto com ressalvas menores
-**Próximo passo:** `Sessão S3 — Lista de Produtos` (ROADMAP) — não iniciar sem instrução explícita; mantém-se pendente o smoke manual final em browser externo/limpo (logout, clique final POS, Fecho de Caixa V1) antes da demo externa
+**Próximo passo:** `Sessão S4 — Dados da Empresa` (ROADMAP) — não iniciar sem instrução explícita (tem ponto 🔒 de aprovação de schema); mantém-se pendente o smoke manual final em browser externo/limpo (logout, clique final POS, Fecho de Caixa V1) antes da demo externa
 
 ---
 
@@ -50,6 +50,7 @@ em [`CLAUDE.md`](CLAUDE.md).
 | **P1-05** | **Fecho de Caixa V1** (movimentos do dia, entradas/saidas, saldo esperado, valor contado, diferenca, sem diferenca/sobra/falta, CSV e impressao/PDF via browser, sem persistencia formal) | ✅ |
 | **S1** | **Nomenclatura e Relatórios** (Excedente/Déficit no fecho de caixa, «Diário» → «Extrato Diário» na Contabilidade, «Status» → «Estado»; apenas strings de UI/CSV) | ✅ |
 | **S2** | **Dropdowns pesquisáveis** (`SearchCombobox` único shadcn/cmdk; Produtos/Clientes com pesquisa server-side + debounce via `/api/search/*`; Fornecedores/Contas/Armazéns client-side; aplicado em formulários e filtros) | ✅ |
+| **S3** | **Lista de Produtos** (selector Top 10/50/100/Todos, «Todos» com paginação server-side de 50, pesquisa server-side nome/SKU/categoria/marca, estado na URL `vista`/`pagina`/`q`) | ✅ |
 | 9 | RH & Salários | 🗺️ futuro |
 | X | RLS forçado em toda a BD (fase transversal, pré-produção) | 🗺️ futuro |
 
@@ -271,6 +272,23 @@ Contabilidade (conta do plano) — nos filtros GET o combobox submete por input 
 mesmo `name`, preservando os filtros existentes. Selects de enums pequenos (tipo, método,
 fluxo, estado, perfil) mantêm-se nativos. Validado: typecheck 6/6, lint 6/6, testes
 unitários 89/89, build OK.
+
+**S3 — Lista de Produtos (2026-07-18):** terceira sessão do ROADMAP, na branch
+`s3-lista-produtos` — sem schema, migrations, dependências, auth/RBAC ou lógica
+contabilística. A listagem `/produtos` deixou de carregar a tabela inteira: nova função de
+domínio `listProductsPage` (`packages/domain/src/products.ts`) com `requirePermission
+('stock.view')` + cliente isolado `forCompany`, `take` limitado a 100, `skip` nunca
+negativo, pesquisa `contains insensitive` em nome/SKU/categoria/marca e `{ items, total }`
+via `findMany` + `count`. O Server Component lê `searchParams` (`vista=10|50|100|todos`,
+`pagina`, `q`, saneados no servidor) e o estado vive na URL — sobrevive a refresh e é
+partilhável; página fora do intervalo recua para a última. `ProdutosClient` ganhou selector
+segmentado Top 10 (default) / Top 50 / Top 100 / Todos, pesquisa server-side com debounce
+300 ms via `router.replace` (repõe `pagina=1`) e paginação Anterior/Seguinte («Página X de
+Y», 50 por página) visível só em «Todos» com mais de uma página. Decisão: «Top» é
+alfabético (`orderBy name asc`, critério já existente — não há métrica de relevância);
+`listProducts` e `searchProductOptions` ficam intactos. Regressão verificada em browser:
+ordenação, clique de linha → ficha, Inventário/Novo produto, contador e rodapé com valor de
+stock. Validado: typecheck 6/6, lint 6/6, testes unitários 89/89, build OK (31/31 páginas).
 
 **Hardening pré-produção P0-01 (2026-07-02):** seed demo bloqueado em `production`
 antes de criar o Prisma Client; credenciais demo removidas da interface de

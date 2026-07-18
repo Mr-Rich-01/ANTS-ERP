@@ -1,10 +1,12 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Icon } from '@/components/Icon';
 import { ACCENT } from '@/lib/erp-nav';
 import { ProductFormDialog } from '@/components/produtos/ProductFormDialog';
+
+export type ProductView = '10' | '50' | '100' | 'todos';
 
 export interface ProductRow {
   id: string;
@@ -47,27 +49,59 @@ const toolBtn: React.CSSProperties = {
   cursor: 'pointer',
 };
 
+const VIEW_OPTIONS: { value: ProductView; label: string }[] = [
+  { value: '10', label: 'Top 10' },
+  { value: '50', label: 'Top 50' },
+  { value: '100', label: 'Top 100' },
+  { value: 'todos', label: 'Todos' },
+];
+
+/** URL da listagem com o estado (vista/página/pesquisa); omite os defaults para manter a URL limpa. */
+function listUrl(state: { vista: ProductView; pagina: number; q: string }): string {
+  const params = new URLSearchParams();
+  if (state.vista !== '10') params.set('vista', state.vista);
+  if (state.vista === 'todos' && state.pagina > 1) params.set('pagina', String(state.pagina));
+  if (state.q) params.set('q', state.q);
+  const qs = params.toString();
+  return qs ? `/produtos?${qs}` : '/produtos';
+}
+
 export function ProdutosClient({
   rows,
+  total,
+  vista,
+  pagina,
+  totalPages,
+  query,
   stockValueStr,
   canCreate,
   canViewInventory,
 }: {
   rows: ProductRow[];
+  total: number;
+  vista: ProductView;
+  pagina: number;
+  totalPages: number;
+  query: string;
   stockValueStr: string;
   canCreate: boolean;
   canViewInventory: boolean;
 }) {
   const router = useRouter();
-  const [q, setQ] = useState('');
+  const [q, setQ] = useState(query);
 
-  const filtered = useMemo(() => {
-    const term = q.trim().toLowerCase();
-    if (!term) return rows;
-    return rows.filter(
-      (r) => r.name.toLowerCase().includes(term) || r.sku.toLowerCase().includes(term) || r.category.toLowerCase().includes(term) || r.brand.toLowerCase().includes(term),
-    );
-  }, [q, rows]);
+  // Pesquisa server-side com debounce: reflecte o termo na URL (e repõe a página 1).
+  useEffect(() => {
+    const term = q.trim();
+    if (term === query) return;
+    const t = setTimeout(() => {
+      router.replace(listUrl({ vista, pagina: 1, q: term }));
+    }, 300);
+    return () => clearTimeout(t);
+  }, [q, query, vista, router]);
+
+  const showingAll = vista === 'todos';
+  const countLabel = total === 1 ? 'produto' : 'produtos';
 
   return (
     <div style={{ padding: '14px 26px 30px' }}>
@@ -79,9 +113,34 @@ export function ProdutosClient({
             </span>
             <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Pesquisar produto, SKU…" style={{ border: 'none', background: 'none', outline: 'none', fontSize: 12.5, width: '100%', color: 'var(--text)' }} />
           </div>
+          <div style={{ display: 'flex', alignItems: 'center', border: '1px solid var(--border)', borderRadius: 9, overflow: 'hidden' }}>
+            {VIEW_OPTIONS.map((opt, i) => {
+              const active = opt.value === vista;
+              return (
+                <button
+                  key={opt.value}
+                  onClick={() => router.push(listUrl({ vista: opt.value, pagina: 1, q: q.trim() }))}
+                  style={{
+                    height: 34,
+                    padding: '0 12px',
+                    border: 'none',
+                    borderLeft: i === 0 ? 'none' : '1px solid var(--bd-soft)',
+                    background: active ? 'var(--accent-bg)' : 'var(--card)',
+                    color: active ? 'var(--accent-fg)' : 'var(--text2)',
+                    fontSize: 12,
+                    fontWeight: active ? 600 : 500,
+                    cursor: 'pointer',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {opt.label}
+                </button>
+              );
+            })}
+          </div>
           <div style={{ flex: 1 }} />
           <span style={{ fontSize: 12, color: 'var(--text3)' }}>
-            {filtered.length} {filtered.length === 1 ? 'produto' : 'produtos'}
+            {showingAll || rows.length >= total ? `${total} ${countLabel}` : `${rows.length} de ${total} ${countLabel}`}
           </span>
           {canViewInventory && (
             <button onClick={() => router.push('/inventario')} style={{ ...toolBtn, color: 'var(--accent-fg)', fontWeight: 600 }}>
@@ -118,14 +177,14 @@ export function ProdutosClient({
               </tr>
             </thead>
             <tbody>
-              {filtered.length === 0 ? (
+              {rows.length === 0 ? (
                 <tr>
                   <td colSpan={9} style={{ padding: '34px 14px', textAlign: 'center', color: 'var(--text3)', fontSize: 13 }}>
-                    {rows.length === 0 ? 'Ainda não há produtos. Crie o primeiro.' : 'Nenhum produto corresponde à pesquisa.'}
+                    {query ? 'Nenhum produto corresponde à pesquisa.' : 'Ainda não há produtos. Crie o primeiro.'}
                   </td>
                 </tr>
               ) : (
-                filtered.map((p) => (
+                rows.map((p) => (
                   <tr key={p.id} className="ants-row" style={{ borderBottom: '1px solid var(--bd-soft2)', cursor: 'pointer' }} onClick={() => router.push(`/produtos/ficha?id=${p.id}`)}>
                     <td className="font-mono" style={{ padding: '12px 14px', fontSize: 12, color: 'var(--text2)', whiteSpace: 'nowrap' }}>
                       {p.sku}
@@ -160,7 +219,7 @@ export function ProdutosClient({
             <tfoot>
               <tr style={{ background: 'var(--card2)' }}>
                 <td colSpan={5} style={{ padding: '13px 14px', fontSize: 12.5, fontWeight: 600, color: 'var(--text)' }}>
-                  Total · {rows.length} {rows.length === 1 ? 'produto' : 'produtos'}
+                  Total · {total} {countLabel}
                 </td>
                 <td style={{ padding: '13px 14px', textAlign: 'right', fontSize: 11, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.5px' }}>Valor stock</td>
                 <td colSpan={3} className="tnum" style={{ padding: '13px 14px', textAlign: 'right', fontSize: 13.5, fontWeight: 700, color: 'var(--text)', whiteSpace: 'nowrap' }}>
@@ -170,6 +229,30 @@ export function ProdutosClient({
             </tfoot>
           </table>
         </div>
+
+        {showingAll && totalPages > 1 && (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12, padding: '12px 16px', borderTop: '1px solid var(--bd-soft)' }}>
+            <button
+              onClick={() => router.push(listUrl({ vista, pagina: pagina - 1, q: q.trim() }))}
+              disabled={pagina <= 1}
+              style={{ ...toolBtn, height: 32, opacity: pagina <= 1 ? 0.5 : 1, cursor: pagina <= 1 ? 'default' : 'pointer' }}
+            >
+              <Icon name="chevron-left" size={15} />
+              Anterior
+            </button>
+            <span style={{ fontSize: 12.5, color: 'var(--text2)' }}>
+              Página {pagina} de {totalPages}
+            </span>
+            <button
+              onClick={() => router.push(listUrl({ vista, pagina: pagina + 1, q: q.trim() }))}
+              disabled={pagina >= totalPages}
+              style={{ ...toolBtn, height: 32, opacity: pagina >= totalPages ? 0.5 : 1, cursor: pagina >= totalPages ? 'default' : 'pointer' }}
+            >
+              Seguinte
+              <Icon name="chevron-right" size={15} />
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

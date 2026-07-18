@@ -65,9 +65,9 @@ Quick wins primeiro (validar o fluxo de trabalho), depois fundações (dados da 
 
 *(Prioridade 11)*
 
-- [ ] Selector de visualização: Top 10 / Top 50 / Top 100 / Todos.
-- [ ] "Todos" com paginação server-side (nunca carregar a tabela inteira).
-- [ ] Pesquisa rápida na listagem.
+- [x] Selector de visualização: Top 10 / Top 50 / Top 100 / Todos.
+- [x] "Todos" com paginação server-side (nunca carregar a tabela inteira).
+- [x] Pesquisa rápida na listagem.
 
 ---
 
