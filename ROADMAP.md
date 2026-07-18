@@ -77,11 +77,11 @@ Quick wins primeiro (validar o fluxo de trabalho), depois fundações (dados da 
 
 🔒 **Aprovação:** alterações de schema (campos novos na entidade Company).
 
-- [ ] Campos por empresa: logótipo, nome, NUIT, endereço, telefone, email, website (opcional), contas bancárias (lista), carteiras móveis (M-Pesa, e-Mola, etc.).
-- [ ] Upload e armazenamento do logótipo.
-- [ ] Ecrã de configuração da empresa.
-- [ ] Estes dados devem alimentar automaticamente o cabeçalho de todos os documentos (preparar um `CompanyHeader` reutilizável para a S5).
-- [ ] Logótipo na interface (sidebar/topbar) respeitando o tenant activo.
+- [x] Campos por empresa: logótipo, nome, NUIT, endereço, telefone, email, website (opcional), contas bancárias (lista), carteiras móveis (M-Pesa, e-Mola, etc.).
+- [x] Upload e armazenamento do logótipo.
+- [x] Ecrã de configuração da empresa.
+- [x] Estes dados devem alimentar automaticamente o cabeçalho de todos os documentos (preparar um `CompanyHeader` reutilizável para a S5).
+- [x] Logótipo na interface (sidebar/topbar) respeitando o tenant activo.
 
 **Nota multi-tenant:** dados e logótipo são por empresa; verificar isolamento no upload e na leitura.
 

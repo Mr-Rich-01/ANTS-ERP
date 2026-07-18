@@ -23,6 +23,9 @@ model Company {
   email          String?
   phone          String?
   status         CompanyStatus @default(ACTIVE)
+  address        String?
+  website        String?
+  logoUpdatedAt  DateTime?
   // Localização padrão (configurável por empresa)
   currency       String        @default("MZN")
   currencySymbol String        @default("MT")
@@ -61,6 +64,9 @@ model Company {
   journalEntryLines    JournalEntryLine[]
   accountingMappings   AccountingMapping[]
   operationIdempotency OperationIdempotency[]
+  bankAccounts         CompanyBankAccount[]
+  mobileWallets        CompanyMobileWallet[]
+  logo                 CompanyLogo?
 
   @@index([status])
   @@map("companies")
@@ -78,6 +84,58 @@ model CompanySettings {
   updatedAt      DateTime @updatedAt
 
   @@map("company_settings")
+}
+
+// Contas bancárias da empresa (listadas nos documentos comerciais por sortOrder)
+model CompanyBankAccount {
+  id            String   @id @default(cuid())
+  companyId     String
+  company       Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  bankName      String
+  accountHolder String?
+  accountNumber String?
+  nib           String? // 21 dígitos, validado no domínio
+  iban          String?
+  swift         String?
+  isActive      Boolean  @default(true)
+  sortOrder     Int      @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([companyId])
+  @@map("company_bank_accounts")
+}
+
+// Carteiras móveis da empresa (M-Pesa, e-Mola, … — string livre, sem enum)
+model CompanyMobileWallet {
+  id            String   @id @default(cuid())
+  companyId     String
+  company       Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  provider      String
+  walletNumber  String
+  accountHolder String?
+  isActive      Boolean  @default(true)
+  sortOrder     Int      @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([companyId])
+  @@map("company_mobile_wallets")
+}
+
+// Logótipo da empresa (1:1, bytes fora da query da Company; máx. 1 MB validado no domínio)
+model CompanyLogo {
+  id        String   @id @default(cuid())
+  companyId String   @unique
+  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  data      Bytes
+  mimeType  String // image/png | image/jpeg | image/webp
+  fileName  String // nome sanitizado (informativo)
+  sizeBytes Int
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("company_logos")
 }
 
 model Branch {

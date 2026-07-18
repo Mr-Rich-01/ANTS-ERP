@@ -25,6 +25,7 @@ export type ScreenId =
   | 'hr'
   | 'reports'
   | 'admin'
+  | 'companyProfile'
   | 'entityProfile';
 
 export interface ScreenMeta {
@@ -57,6 +58,7 @@ export const SCREENS: Record<ScreenId, ScreenMeta> = {
   hr: { id: 'hr', route: '/rh', title: 'Recursos Humanos', group: 'Gestão', icon: 'users' },
   reports: { id: 'reports', route: '/relatorios', title: 'Relatórios', group: 'Gestão', icon: 'bar-chart-3' },
   admin: { id: 'admin', route: '/admin', title: 'Administração', group: 'Gestão', icon: 'settings' },
+  companyProfile: { id: 'companyProfile', route: '/admin/empresa', title: 'Dados da Empresa', group: 'Gestão', icon: 'building-2' },
   entityProfile: { id: 'entityProfile', route: '/contas/perfil', title: 'Perfil de conta', group: 'Gestão de contas', icon: 'user-round' },
 };
 
@@ -124,6 +126,7 @@ export function activeNavId(screen: ScreenId): ScreenId {
   if (screen === 'receiving' || screen === 'poDetail') return 'purchases';
   if (screen === 'inventory' || screen === 'productDetail') return 'products';
   if (screen === 'dailyClose') return 'cash';
+  if (screen === 'companyProfile') return 'admin';
   return screen;
 }
 

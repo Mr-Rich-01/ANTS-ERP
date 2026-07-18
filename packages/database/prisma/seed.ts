@@ -108,9 +108,52 @@ async function seedDemo(prisma: PrismaClient) {
       currencySymbol: 'MT',
       timezone: 'Africa/Maputo',
       locale: 'pt-MZ',
+      phone: '+258 21 300 000',
+      address: 'Av. 25 de Setembro, 1234, Maputo',
+      website: 'https://ants.co.mz',
       settings: { create: {} },
     },
   });
+
+  // 3b) Dados da empresa (S4): preenche campos novos só quando ainda vazios
+  // (não sobrepõe alterações feitas no ecrã de configuração).
+  await prisma.company.updateMany({
+    where: { id: company.id, address: null },
+    data: { address: 'Av. 25 de Setembro, 1234, Maputo' },
+  });
+  await prisma.company.updateMany({
+    where: { id: company.id, website: null },
+    data: { website: 'https://ants.co.mz' },
+  });
+  await prisma.company.updateMany({
+    where: { id: company.id, phone: null },
+    data: { phone: '+258 21 300 000' },
+  });
+
+  // Contas bancárias e carteiras móveis demo — sem chave única própria,
+  // idempotente via findFirst + create.
+  for (const [i, acc] of [
+    { bankName: 'BCI', accountHolder: 'ANTS Demo, Lda.', accountNumber: '12345678901', nib: '000800001234567890123' },
+    { bankName: 'Millennium BIM', accountHolder: 'ANTS Demo, Lda.', accountNumber: '98765432101', nib: '000100009876543210198' },
+  ].entries()) {
+    const exists = await prisma.companyBankAccount.findFirst({
+      where: { companyId: company.id, bankName: acc.bankName, accountNumber: acc.accountNumber },
+    });
+    if (!exists) {
+      await prisma.companyBankAccount.create({ data: { companyId: company.id, sortOrder: i, ...acc } });
+    }
+  }
+  for (const [i, w] of [
+    { provider: 'M-Pesa', walletNumber: '84 000 0000', accountHolder: 'ANTS Demo, Lda.' },
+    { provider: 'e-Mola', walletNumber: '86 000 0000', accountHolder: 'ANTS Demo, Lda.' },
+  ].entries()) {
+    const exists = await prisma.companyMobileWallet.findFirst({
+      where: { companyId: company.id, provider: w.provider, walletNumber: w.walletNumber },
+    });
+    if (!exists) {
+      await prisma.companyMobileWallet.create({ data: { companyId: company.id, sortOrder: i, ...w } });
+    }
+  }
 
   // 4) Filiais
   for (const b of [

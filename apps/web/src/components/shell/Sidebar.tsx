@@ -9,9 +9,12 @@ import { ACCENT, activeNavId, ROUTE_TO_SCREEN, visibleNav, type ScreenId } from 
 interface SidebarProps {
   permissions: string[];
   isPlatformAdmin: boolean;
+  /** URL do logótipo da empresa activa (S4); null = monograma por omissão. */
+  companyLogoUrl?: string | null;
+  companyName?: string | null;
 }
 
-export function Sidebar({ permissions, isPlatformAdmin }: SidebarProps) {
+export function Sidebar({ permissions, isPlatformAdmin, companyLogoUrl, companyName }: SidebarProps) {
   const pathname = usePathname();
   const { collapsed } = useShell();
   const showLabels = !collapsed;
@@ -48,27 +51,55 @@ export function Sidebar({ permissions, isPlatformAdmin }: SidebarProps) {
           borderBottom: '1px solid rgba(255,255,255,.07)',
         }}
       >
-        <div
-          style={{
-            width: 34,
-            height: 34,
-            borderRadius: 9,
-            background: ACCENT,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            flex: 'none',
-            fontWeight: 700,
-            fontSize: 17,
-            color: '#fff',
-            boxShadow: 'inset 0 0 0 1px rgba(255,255,255,.12)',
-          }}
-        >
-          A
-        </div>
+        {companyLogoUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={companyLogoUrl}
+            alt=""
+            style={{
+              width: 34,
+              height: 34,
+              borderRadius: 9,
+              objectFit: 'contain',
+              flex: 'none',
+              background: '#fff',
+              boxShadow: 'inset 0 0 0 1px rgba(255,255,255,.12)',
+            }}
+          />
+        ) : (
+          <div
+            style={{
+              width: 34,
+              height: 34,
+              borderRadius: 9,
+              background: ACCENT,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flex: 'none',
+              fontWeight: 700,
+              fontSize: 17,
+              color: '#fff',
+              boxShadow: 'inset 0 0 0 1px rgba(255,255,255,.12)',
+            }}
+          >
+            {(companyName ?? 'A').charAt(0).toUpperCase()}
+          </div>
+        )}
         {showLabels && (
-          <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.05 }}>
-            <span style={{ fontSize: 15, fontWeight: 700, letterSpacing: '.3px' }}>ANTS</span>
+          <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.05, minWidth: 0 }}>
+            <span
+              style={{
+                fontSize: 15,
+                fontWeight: 700,
+                letterSpacing: '.3px',
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+              }}
+            >
+              {companyName ?? 'ANTS'}
+            </span>
             <span
               style={{
                 fontSize: 10,

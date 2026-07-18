@@ -5,10 +5,10 @@ _Última actualização: 2026-07-18_
 Estado vivo do projecto. O conhecimento permanente (arquitectura, regras, comandos) está
 em [`CLAUDE.md`](CLAUDE.md).
 
-**Último commit funcional:** pendente na branch `s3-lista-produtos` (Sessão S3 do ROADMAP)
-**Fase concluída:** `S3 — Lista de Produtos` (ROADMAP; fase anterior: `S2 — Dropdowns pesquisáveis`)
+**Último commit funcional:** pendente na branch `s4-dados-empresa` (Sessão S4 do ROADMAP)
+**Fase concluída:** `S4 — Dados da Empresa` (ROADMAP; fase anterior: `S3 — Lista de Produtos`)
 **UAT interna/demo:** V1 candidata a demo externa apos UAT interna, aprovada com ressalvas em 2026-07-06; P1-04 acrescenta Contabilidade V1 pronta para UAT/demo com limites; P1-05 acrescenta Fecho de Caixa V1 operacional sem persistencia formal; demo final check registado em `docs/DEMO_FINAL_CHECK.md` em 2026-07-08 como pronto com ressalvas menores
-**Próximo passo:** `Sessão S4 — Dados da Empresa` (ROADMAP) — não iniciar sem instrução explícita (tem ponto 🔒 de aprovação de schema); mantém-se pendente o smoke manual final em browser externo/limpo (logout, clique final POS, Fecho de Caixa V1) antes da demo externa
+**Próximo passo:** `Sessão S5 — Documentos Comerciais` (ROADMAP) — não iniciar sem instrução explícita (tem ponto 🔒 se NC/ND gerarem lançamentos contabilísticos); mantém-se pendente o smoke manual final em browser externo/limpo (logout, clique final POS, Fecho de Caixa V1) antes da demo externa
 
 ---
 
@@ -51,6 +51,7 @@ em [`CLAUDE.md`](CLAUDE.md).
 | **S1** | **Nomenclatura e Relatórios** (Excedente/Déficit no fecho de caixa, «Diário» → «Extrato Diário» na Contabilidade, «Status» → «Estado»; apenas strings de UI/CSV) | ✅ |
 | **S2** | **Dropdowns pesquisáveis** (`SearchCombobox` único shadcn/cmdk; Produtos/Clientes com pesquisa server-side + debounce via `/api/search/*`; Fornecedores/Contas/Armazéns client-side; aplicado em formulários e filtros) | ✅ |
 | **S3** | **Lista de Produtos** (selector Top 10/50/100/Todos, «Todos» com paginação server-side de 50, pesquisa server-side nome/SKU/categoria/marca, estado na URL `vista`/`pagina`/`q`) | ✅ |
+| **S4** | **Dados da Empresa** (endereço/website/logótipo por empresa, contas bancárias e carteiras móveis em tabelas próprias, ecrã `/admin/empresa` com gate `settings.manage`, upload PNG/JPG/WebP ≤ 1 MB na BD, `/api/company/logo` isolado por sessão com ETag/cache, `CompanyHeader` pronto para a S5, logótipo na sidebar/topbar) | ✅ |
 | 9 | RH & Salários | 🗺️ futuro |
 | X | RLS forçado em toda a BD (fase transversal, pré-produção) | 🗺️ futuro |
 
@@ -289,6 +290,36 @@ alfabético (`orderBy name asc`, critério já existente — não há métrica d
 `listProducts` e `searchProductOptions` ficam intactos. Regressão verificada em browser:
 ordenação, clique de linha → ficha, Inventário/Novo produto, contador e rodapé com valor de
 stock. Validado: typecheck 6/6, lint 6/6, testes unitários 89/89, build OK (31/31 páginas).
+
+**S4 — Dados da Empresa (2026-07-18):** quarta sessão do ROADMAP, na branch `s4-dados-empresa`,
+com migration aditiva aprovada `20260718023352_s4_company_profile`: `Company` ganhou `address`,
+`website` e `logoUpdatedAt` (todos opcionais) e foram criadas `company_bank_accounts` (bankName,
+accountHolder, accountNumber, nib 21 dígitos, iban, swift, isActive, sortOrder),
+`company_mobile_wallets` (provider texto livre, walletNumber, accountHolder, isActive, sortOrder)
+e `company_logos` (BYTEA 1:1 com mimeType/fileName/sizeBytes; decisão aprovada: logótipo na BD —
+backups pg_dump já o cobrem e não exige volumes Docker novos). Os 3 modelos entraram em
+`COMPANY_SCOPED`; `CompanyLogo` foi excluído da auditoria automática (bytes nunca vão ao
+`AuditLog`; o upload regista `company.logo.update` explícito sem bytes). Novo domínio
+`packages/domain/src/company-profile.ts`: `getCompanyProfile`/`updateCompanyProfile` (gate
+`settings.manage` existente — sem permissões novas, Zod com NUIT 9 dígitos, NIB 21 dígitos,
+website http(s), listas substituídas em transacção única com sortOrder pela ordem do formulário,
+que é a ordem dos documentos da S5) e `setCompanyLogo`/`removeCompanyLogo`/`getCompanyLogo`
+(PNG/JPG/WebP ≤ 1 MB, SVG rejeitado por decisão, assinatura de bytes verificada, nome sanitizado).
+Ecrã novo `/admin/empresa` (Server Component + client, ligado ao cartão Identidade do `/admin`);
+rota `GET /api/company/logo` serve apenas o logótipo da empresa da sessão (sem ids/caminhos no
+request), com ETag = `updatedAt` partilhado, 304 condicional e `Cache-Control` imutável no URL
+versionado `?v=` (o BYTEA não é lido em cada página). `getCompanyPrintProfile` passou a preferir
+o endereço/contas/carteiras próprios da empresa com fallback ao comportamento anterior
+(filial + referências de Tesouraria); `CompanyHeader` mostra logótipo real e carteiras móveis
+(pronto para a S5); sidebar/topbar mostram logótipo e nome da empresa activa com fallback ao
+monograma. `next.config` ganhou `serverActions.bodySizeLimit: '2mb'` para o upload. Verificado ao
+vivo em browser: edição persistida + auditoria, upload, logótipo em sidebar/topbar/documento,
+cache imutável com ETag coincidente, e isolamento — sessão de outra empresa recebe 404 no logo,
+vê o próprio monograma e é bloqueada em `/admin/empresa` sem `settings.manage`. Validado:
+typecheck 6/6, lint 6/6, testes unitários 98/98 (+9 de validação de upload/sanitização), nova
+suite `pnpm test:integration:company-profile` 8/8 (isolamento A/B, permissões, upload inválido,
+auditoria sem bytes), relatórios 24/24, Fecho de Caixa 11/11, build OK com as rotas novas
+`/admin/empresa` e `/api/company/logo` incluídas.
 
 **Hardening pré-produção P0-01 (2026-07-02):** seed demo bloqueado em `production`
 antes de criar o Prisma Client; credenciais demo removidas da interface de

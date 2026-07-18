@@ -49,7 +49,11 @@ export interface CompanyIdentity {
 
 export interface CompanyPrintProfile extends CompanyIdentity {
   address: string | null;
+  website: string | null;
+  /** Versão do logótipo (cache-busting em /api/company/logo?v=…); null = sem logótipo. */
+  logoVersion: string | null;
   bankAccounts: Array<{ name: string; type: string; reference: string | null }>;
+  mobileWallets: Array<{ provider: string; number: string }>;
 }
 
 /** Lista os utilizadores da empresa activa (com perfis e filiais). */
@@ -132,23 +136,53 @@ export async function getCompanyIdentity(db: PrismaClient, ctx: RequestContext):
 /** Dados públicos da empresa para documentos imprimíveis, sem saldos nem segredos. */
 export async function getCompanyPrintProfile(db: PrismaClient, ctx: RequestContext): Promise<CompanyPrintProfile | null> {
   const companyId = requireCompany(ctx);
-  const c = await getCompanyIdentity(db, ctx);
-  if (!c) return null;
-  const [branch, bankAccounts] = await Promise.all([
+  const company = await db.company.findUnique({ where: { id: companyId } });
+  if (!company) return null;
+
+  const [branch, ownBankAccounts, ownWallets] = await Promise.all([
     ctx.branchId
       ? db.branch.findFirst({ where: { companyId, id: ctx.branchId }, select: { address: true } })
       : db.branch.findFirst({ where: { companyId, status: 'ACTIVE' }, orderBy: { code: 'asc' }, select: { address: true } }),
-    db.treasuryAccount.findMany({
+    db.companyBankAccount.findMany({
+      where: { companyId, isActive: true },
+      orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+    }),
+    db.companyMobileWallet.findMany({
+      where: { companyId, isActive: true },
+      orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+    }),
+  ]);
+
+  // S4: contas/carteiras próprias da empresa; fallback ao comportamento anterior
+  // (referências das contas de Tesouraria) enquanto ainda não estiverem configuradas.
+  let bankAccounts: CompanyPrintProfile['bankAccounts'] = ownBankAccounts.map((a) => ({
+    name: a.bankName,
+    type: 'BANK',
+    reference: a.iban ?? a.nib ?? a.accountNumber,
+  }));
+  if (!bankAccounts.length) {
+    bankAccounts = await db.treasuryAccount.findMany({
       where: { companyId, status: 'ACTIVE', type: { in: ['BANK', 'MOBILE'] }, reference: { not: null } },
       orderBy: [{ type: 'asc' }, { name: 'asc' }],
       select: { name: true, type: true, reference: true },
       take: 4,
-    }),
-  ]);
+    });
+  }
+
   return {
-    ...c,
-    address: branch?.address ?? null,
+    legalName: company.legalName,
+    tradeName: company.tradeName,
+    nuit: company.nuit,
+    email: company.email,
+    phone: company.phone,
+    currency: company.currency,
+    currencySymbol: company.currencySymbol,
+    locale: company.locale,
+    address: company.address ?? branch?.address ?? null,
+    website: company.website,
+    logoVersion: company.logoUpdatedAt ? String(company.logoUpdatedAt.getTime()) : null,
     bankAccounts,
+    mobileWallets: ownWallets.map((w) => ({ provider: w.provider, number: w.walletNumber })),
   };
 }
 

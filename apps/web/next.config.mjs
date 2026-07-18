@@ -8,6 +8,9 @@ const nextConfig = {
   transpilePackages: ['@ants/ui', '@ants/shared', '@ants/domain', '@ants/database'],
   // Módulos nativos / pesados não devem ser empacotados pelo bundler do servidor.
   experimental: {
+    // Upload do logótipo (S4): 1 MB de imagem + overhead multipart excede o
+    // limite por omissão (1 MB) das server actions.
+    serverActions: { bodySizeLimit: '2mb' },
     serverComponentsExternalPackages: ['@node-rs/argon2', '@prisma/client'],
     outputFileTracingIncludes: {
       '/*': ['./node_modules/@node-rs/**/*'],

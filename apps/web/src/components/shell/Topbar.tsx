@@ -12,6 +12,8 @@ interface TopbarProps {
   userEmail: string;
   userInitials: string;
   companyName: string;
+  /** URL do logótipo da empresa activa (S4); null = iniciais. */
+  companyLogoUrl?: string | null;
 }
 
 // Dados de UI (placeholders). TODO: ligar a sessão/notificações reais nas fases respectivas.
@@ -54,7 +56,7 @@ function companyInitials(name: string): string {
     .toUpperCase();
 }
 
-export function Topbar({ userName, userEmail, userInitials, companyName }: TopbarProps) {
+export function Topbar({ userName, userEmail, userInitials, companyName, companyLogoUrl }: TopbarProps) {
   const { theme, toggleTheme, toggleCollapsed } = useShell();
   const router = useRouter();
   const [quickOpen, setQuickOpen] = useState(false);
@@ -174,23 +176,32 @@ export function Topbar({ userName, userEmail, userInitials, companyName }: Topba
           background: 'var(--card)',
         }}
       >
-        <span
-          style={{
-            width: 26,
-            height: 26,
-            borderRadius: 7,
-            background: ACCENT,
-            color: '#fff',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            fontSize: 11,
-            fontWeight: 700,
-            flex: 'none',
-          }}
-        >
-          {companyInitials(companyName) || 'E'}
-        </span>
+        {companyLogoUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={companyLogoUrl}
+            alt=""
+            style={{ width: 26, height: 26, borderRadius: 7, objectFit: 'contain', flex: 'none', background: '#fff' }}
+          />
+        ) : (
+          <span
+            style={{
+              width: 26,
+              height: 26,
+              borderRadius: 7,
+              background: ACCENT,
+              color: '#fff',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: 11,
+              fontWeight: 700,
+              flex: 'none',
+            }}
+          >
+            {companyInitials(companyName) || 'E'}
+          </span>
+        )}
         <span style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.1, textAlign: 'left' }}>
           <span style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text)' }}>{companyName}</span>
           <span style={{ fontSize: 10.5, color: 'var(--text3)' }}>Empresa activa</span>

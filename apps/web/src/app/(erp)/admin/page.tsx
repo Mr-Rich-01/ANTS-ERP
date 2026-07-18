@@ -54,6 +54,7 @@ export default async function AdminPage() {
       }))}
       company={company}
       canViewAudit={canViewAudit}
+      canManageSettings={hasPermission(ctx, 'settings.manage')}
       permissions={permissions}
       currentUserId={ctx.userId}
     />

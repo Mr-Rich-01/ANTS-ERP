@@ -32,6 +32,8 @@ const AUDITED_OPS = new Set<string>(['create', 'update', 'delete', 'upsert', 'up
 const AUDIT_EXCLUDED = new Set<string>([
   'AuditLog',
   'Session',
+  // Logótipo: os bytes nunca vão para o AuditLog; o upload regista auditoria explícita.
+  'CompanyLogo',
   'StockLevel',
   'StockMovement',
   // Vendas: a emissão/recebimento regista auditoria explícita e semântica.

@@ -12,8 +12,13 @@ export default async function ErpLayout({ children }: { children: React.ReactNod
 
   const company = await prisma.company.findUnique({
     where: { id: user.companyId ?? '' },
-    select: { legalName: true, tradeName: true },
+    select: { legalName: true, tradeName: true, logoUpdatedAt: true },
   });
+  // URL versionado (cache imutável no browser); a rota valida a sessão e serve
+  // sempre o logótipo da empresa da sessão — nunca por id vindo do cliente.
+  const companyLogoUrl = company?.logoUpdatedAt
+    ? `/api/company/logo?v=${company.logoUpdatedAt.getTime()}`
+    : null;
 
   const initials = (user.name ?? user.email ?? 'U')
     .split(' ')
@@ -27,7 +32,12 @@ export default async function ErpLayout({ children }: { children: React.ReactNod
       className="ants-shell"
       style={{ height: '100vh', display: 'flex', overflow: 'hidden', background: 'var(--bg)' }}
     >
-      <Sidebar permissions={user.permissions} isPlatformAdmin={user.isPlatformAdmin} />
+      <Sidebar
+        permissions={user.permissions}
+        isPlatformAdmin={user.isPlatformAdmin}
+        companyLogoUrl={companyLogoUrl}
+        companyName={company?.tradeName ?? company?.legalName ?? null}
+      />
       <main
         className="ants-main"
         style={{
@@ -44,6 +54,7 @@ export default async function ErpLayout({ children }: { children: React.ReactNod
           userEmail={user.email ?? ''}
           userInitials={initials}
           companyName={company?.tradeName ?? company?.legalName ?? 'Empresa activa'}
+          companyLogoUrl={companyLogoUrl}
         />
         <div className="ants-scroll" style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden' }}>
           <ScreenHeader />

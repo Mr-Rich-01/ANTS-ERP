@@ -11,6 +11,9 @@
 export const COMPANY_SCOPED = new Set<string>([
   'Branch',
   'CompanySettings',
+  'CompanyBankAccount',
+  'CompanyMobileWallet',
+  'CompanyLogo',
   'User',
   'Role',
   'AuditLog',

@@ -7,6 +7,7 @@ export * from './permissions';
 export * from './audit';
 export * from './auth';
 export * from './admin';
+export * from './company-profile';
 export * from './customers';
 export * from './suppliers';
 export * from './products';

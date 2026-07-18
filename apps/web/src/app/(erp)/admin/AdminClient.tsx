@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useTransition } from 'react';
+import Link from 'next/link';
 import { Icon } from '@/components/Icon';
 import { ACCENT } from '@/lib/erp-nav';
 import { ADMIN_TABS, type AdminTabId } from '@/lib/data/admin';
@@ -56,6 +57,7 @@ interface Props {
   audit: AuditRow[];
   company: CompanyInfo | null;
   canViewAudit: boolean;
+  canManageSettings: boolean;
   permissions: PermItem[];
   currentUserId: string;
 }
@@ -100,7 +102,7 @@ function EmptyState({ icon, text }: { icon: string; text: string }) {
   );
 }
 
-export function AdminClient({ users, roles, audit, company, canViewAudit, permissions, currentUserId }: Props) {
+export function AdminClient({ users, roles, audit, company, canViewAudit, canManageSettings, permissions, currentUserId }: Props) {
   const [tab, setTab] = useState<AdminTabId>('users');
   const [pending, startTransition] = useTransition();
 
@@ -313,10 +315,15 @@ export function AdminClient({ users, roles, audit, company, canViewAudit, permis
                 </span>
                 <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)' }}>Identidade da empresa</span>
               </div>
-              <button style={{ fontSize: 12, fontWeight: 600, color: 'var(--accent-fg)', background: 'none', border: 'none', display: 'flex', alignItems: 'center', gap: 5 }}>
-                <Icon name="pencil" size={14} />
-                Editar
-              </button>
+              {canManageSettings ? (
+                <Link
+                  href="/admin/empresa"
+                  style={{ fontSize: 12, fontWeight: 600, color: 'var(--accent-fg)', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 5 }}
+                >
+                  <Icon name="pencil" size={14} />
+                  Editar
+                </Link>
+              ) : null}
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 13, padding: 12, border: '1px solid var(--bd-soft)', borderRadius: 12, marginBottom: 14 }}>
               <span style={{ width: 48, height: 48, borderRadius: 13, background: '#0e2a30', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, fontWeight: 700 }}>A</span>
