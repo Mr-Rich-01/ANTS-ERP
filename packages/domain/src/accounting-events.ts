@@ -24,6 +24,7 @@ import {
   dateWithin,
   formatAccountingDate,
   formatDisplayDate,
+  getMappedAccountTx,
   nextEntryNumber,
   periodRangeLabel,
   recalcTotals,
@@ -266,6 +267,74 @@ export async function postAccountingEventTx(
     newValues: { sourceType: o.sourceType, sourceId: o.sourceId, accountingEvent: o.accountingEvent, entryNumber, entryDate: formatAccountingDate(input.entryDate), totalDebit, totalCredit },
   });
   return { id: entry.id, entryNumber, created: true };
+}
+
+// ─────────────────────────── CMV / custo das existências (S10a) ───────────────────────────
+
+export interface InventoryCostItem {
+  quantity: number;
+  /** Snapshot do custo médio da linha (o MESMO valor gravado no documento). */
+  unitCost: number;
+}
+
+/**
+ * Fórmula ÚNICA do custo das existências: `round2(Σ round2(qtd × unitCost))`.
+ * Usada pelo lançamento e pelos valores de auditoria — nunca recalcular localmente.
+ */
+export function inventoryCostTotal(items: InventoryCostItem[]): number {
+  return round2(items.reduce((sum, i) => sum + round2(i.quantity * i.unitCost), 0));
+}
+
+export interface InventoryCostEventInput {
+  origin: EntryOrigin;
+  /** Data contabilística do documento de origem (emissão). */
+  entryDate: Date;
+  dateLabel?: string;
+  description: string;
+  reference: string;
+  /**
+   * Linhas com produto (qtd × unitCost snapshot). Total `<= 0` → não lança nada
+   * (venda só de serviços, sem produtos ou custo médio zero — padrão S9).
+   */
+  items: InventoryCostItem[];
+  /**
+   * 'OUT' = saída de existências (venda): D CMV / C Mercadorias.
+   * 'IN'  = reposição (devolução por NC): D Mercadorias / C CMV.
+   */
+  direction: 'OUT' | 'IN';
+}
+
+/**
+ * Lança o evento de custo das existências (CMV) de uma origem, como lançamento
+ * SEPARADO do evento de receita (o SALE_ISSUED/CREDIT_NOTE_ISSUED fica intacto).
+ * Sem conta de fallback: mapping em falta faz a operação falhar por inteiro.
+ * Idempotente pela chave canónica da origem, como todos os eventos.
+ */
+export async function postInventoryCostEventTx(
+  tx: Prisma.TransactionClient,
+  ctx: RequestContext,
+  input: InventoryCostEventInput,
+): Promise<{ id: string; entryNumber: string; created: boolean } | null> {
+  const companyId = requireCompany(ctx);
+  const totalCost = inventoryCostTotal(input.items);
+  if (totalCost <= 0) return null;
+
+  const cogs = await getMappedAccountTx(tx, companyId, 'COST_OF_GOODS_SOLD');
+  const inventory = await getMappedAccountTx(tx, companyId, 'INVENTORY');
+  const [debitAccount, creditAccount] = input.direction === 'OUT' ? [cogs, inventory] : [inventory, cogs];
+
+  return postAccountingEventTx(tx, ctx, {
+    journalType: 'SALES',
+    entryDate: input.entryDate,
+    dateLabel: input.dateLabel ?? 'A data de emissão',
+    description: input.description,
+    reference: input.reference,
+    origin: input.origin,
+    lines: [
+      { ledgerAccountId: debitAccount.id, debit: totalCost, description: input.description },
+      { ledgerAccountId: creditAccount.id, credit: totalCost, description: input.description },
+    ],
+  });
 }
 
 // ─────────────────────────── Estorno de evento ───────────────────────────

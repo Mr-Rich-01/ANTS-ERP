@@ -655,6 +655,9 @@ model InvoiceLine {
   quantity        Int
   discountPercent Decimal  @default(0) @db.Decimal(5, 2)
   taxRate         Decimal  @default(16) @db.Decimal(5, 2)
+  /// Snapshot do custo médio (avgCost) no momento da EMISSÃO — base do CMV (S10a).
+  /// NULL: linha sem produto, rascunho ainda não emitido ou factura pré-S10.
+  unitCost        Decimal? @db.Decimal(14, 2)
   /// Total da linha (líquido + imposto).
   total           Decimal  @db.Decimal(14, 2)
 

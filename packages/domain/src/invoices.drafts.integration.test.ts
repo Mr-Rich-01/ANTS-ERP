@@ -101,12 +101,17 @@ async function provision() {
   const vat = await prisma.ledgerAccount.create({ data: { companyId: CA, code: '221', name: 'IVA liquidado', accountType: 'LIABILITY', normalBalance: 'CREDIT', level: 1, isPosting: true, isActive: true } });
   const revenue = await prisma.ledgerAccount.create({ data: { companyId: CA, code: '411', name: 'Vendas', accountType: 'REVENUE', normalBalance: 'CREDIT', level: 1, isPosting: true, isActive: true } });
   const cash = await prisma.ledgerAccount.create({ data: { companyId: CA, code: '111', name: 'Caixa', accountType: 'ASSET', normalBalance: 'DEBIT', level: 1, isPosting: true, isActive: true } });
+  // S10a: a emissão passou a lançar CMV — as vendas exigem os mappings de existências.
+  const inventory = await prisma.ledgerAccount.create({ data: { companyId: CA, code: '131', name: 'Mercadorias', accountType: 'ASSET', normalBalance: 'DEBIT', level: 1, isPosting: true, isActive: true } });
+  const cogs = await prisma.ledgerAccount.create({ data: { companyId: CA, code: '511', name: 'CMV', accountType: 'EXPENSE', normalBalance: 'DEBIT', level: 1, isPosting: true, isActive: true } });
 
   await prisma.accountingMapping.createMany({
     data: [
       { companyId: CA, systemKey: 'ACCOUNTS_RECEIVABLE', ledgerAccountId: ar.id },
       { companyId: CA, systemKey: 'SALES_REVENUE', ledgerAccountId: revenue.id },
       { companyId: CA, systemKey: 'VAT_OUTPUT', ledgerAccountId: vat.id },
+      { companyId: CA, systemKey: 'INVENTORY', ledgerAccountId: inventory.id },
+      { companyId: CA, systemKey: 'COST_OF_GOODS_SOLD', ledgerAccountId: cogs.id },
     ],
   });
 
@@ -298,7 +303,9 @@ describe('S6 — rascunhos de factura', () => {
     expect(replay).toEqual(first);
     expect(await stockOf(ids.product)).toBe(stockBefore - 3);
     expect(await ftCounter()).toBe(ftBefore + 1);
-    expect(await prisma.journalEntry.count({ where: { companyId: CA, sourceType: 'INVOICE', sourceId: draft.id } })).toBe(1);
+    // S10a: a emissão lança receita (SALE_ISSUED) + CMV (COGS_POSTED) — um de cada, sem duplicados no replay.
+    expect(await prisma.journalEntry.count({ where: { companyId: CA, sourceType: 'INVOICE', sourceId: draft.id, accountingEvent: 'SALE_ISSUED' } })).toBe(1);
+    expect(await prisma.journalEntry.count({ where: { companyId: CA, sourceType: 'INVOICE', sourceId: draft.id, accountingEvent: 'COGS_POSTED' } })).toBe(1);
     expect(await prisma.stockMovement.count({ where: { companyId: CA, invoiceId: draft.id } })).toBe(1);
   });
 

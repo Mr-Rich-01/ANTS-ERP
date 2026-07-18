@@ -112,6 +112,23 @@ Empresa demo: **ANTS Demo, Lda.** (`demo-company`), filiais Maputo e Matola.
    arredondamento a 2 casas). Datas no formato pt-MZ.
 8. **Segredos fora do git.** `.env`/`.env.local` nunca commitados; só `.env.example`.
 
+## Decisões arquitecturais registadas
+
+- **Custeio (weighted-average) — janela de concorrência do `avgCost` na emissão de vendas
+  (decisão de 2026-07-18, S10a; NÃO reabrir como pendência).** O caminho de emissão
+  (Nova Factura, POS, emissão de rascunho) lê o `avgCost` e baixa o stock **na mesma
+  transacção**, mas deliberadamente **não faz `FOR UPDATE` na linha do produto** — tal
+  como a recepção de compra (que recalcula o `avgCost` só sob o lock da ordem) e o
+  snapshot `unitCost` das NCs (S5). Em Read Committed, uma recepção concorrente pode
+  comitar um `avgCost` novo entre a leitura da venda e o seu commit; nesse caso o CMV
+  sai ao custo comitado no momento da leitura. **Fundamentação:** serializar o caminho
+  quente do POS com locks de produto não compensa um desvio que o modelo de custo médio
+  ponderado já tolera por natureza (ordem de grandeza do próprio arredondamento do
+  weighted-average); o lançamento fica sempre coerente consigo próprio — linha da
+  factura (`invoice_lines.unitCost`), movimento e `COGS_POSTED` usam o MESMO valor,
+  via a fórmula única `inventoryCostTotal` em `accounting-events.ts` — e as saídas
+  nunca recalculam o `avgCost`, pelo que a própria transacção não invalida o que leu.
+
 ## Convenções
 
 - Commits em português; terminar com a linha `Co-Authored-By: Claude Opus 4.8`.

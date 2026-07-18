@@ -78,7 +78,7 @@ async function teardown(companyId: string) {
   await prisma.company.deleteMany({ where: { id: companyId } });
 }
 
-async function ledger(companyId: string, code: string, name: string, accountType: 'ASSET' | 'LIABILITY' | 'REVENUE', normalBalance: 'DEBIT' | 'CREDIT', parentId?: string) {
+async function ledger(companyId: string, code: string, name: string, accountType: 'ASSET' | 'LIABILITY' | 'REVENUE' | 'EXPENSE', normalBalance: 'DEBIT' | 'CREDIT', parentId?: string) {
   return prisma.ledgerAccount.create({
     data: { companyId, code, name, accountType, normalBalance, parentId: parentId ?? null, level: parentId ? 2 : 1, isPosting: parentId ? true : code !== '1' },
   });
@@ -107,6 +107,8 @@ async function provisionCompany(companyId: string, legalName: string, full = fal
   const vatOutput = (await ledger(companyId, '221', 'IVA liquidado', 'LIABILITY', 'CREDIT')).id;
   const payable = (await ledger(companyId, '211', 'Fornecedores', 'LIABILITY', 'CREDIT')).id;
   const revenue = (await ledger(companyId, '411', 'Vendas', 'REVENUE', 'CREDIT')).id;
+  // S10a: a emissão passou a lançar CMV — as vendas exigem o mapping do 511.
+  const cogs = (await ledger(companyId, '511', 'CMV', 'EXPENSE', 'DEBIT')).id;
 
   await prisma.accountingMapping.createMany({
     data: [
@@ -116,6 +118,7 @@ async function provisionCompany(companyId: string, legalName: string, full = fal
       { companyId, systemKey: 'INVENTORY', ledgerAccountId: inventory },
       { companyId, systemKey: 'VAT_INPUT', ledgerAccountId: vatInput },
       { companyId, systemKey: 'ACCOUNTS_PAYABLE', ledgerAccountId: payable },
+      { companyId, systemKey: 'COST_OF_GOODS_SOLD', ledgerAccountId: cogs },
     ],
   });
 

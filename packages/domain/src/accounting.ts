@@ -75,10 +75,12 @@ export function accountingEventLabel(value: string | null | undefined): string {
   if (!value) return '';
   const labels: Record<string, string> = {
     SALE_ISSUED: 'Factura emitida',
+    COGS_POSTED: 'Custo das mercadorias vendidas',
     RECEIPT_POSTED: 'Recebimento registado',
     PURCHASE_RECEIVED: 'Recepcao de compra',
     SUPPLIER_PAYMENT_POSTED: 'Pagamento a fornecedor registado',
     CREDIT_NOTE_ISSUED: 'Nota de credito emitida',
+    CREDIT_NOTE_COGS_REVERSED: 'Devolução — reposição de existências',
     DEBIT_NOTE_ISSUED: 'Nota de debito emitida',
     STOCK_COUNT_VALIDATED: 'Contagem de inventário validada',
     REVERSAL_POSTED: 'Estorno registado',

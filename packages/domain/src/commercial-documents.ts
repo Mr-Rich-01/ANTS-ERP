@@ -18,7 +18,7 @@ import { requirePermission, hasPermission } from './permissions';
 import { ConflictError, NotFoundError, ValidationError } from './errors';
 import { writeAudit } from './audit';
 import { formatAccountingDate, getMappedAccountTx, parseAccountingDate } from './accounting';
-import { postAccountingEventTx } from './accounting-events';
+import { inventoryCostTotal, postAccountingEventTx, postInventoryCostEventTx, type InventoryCostItem } from './accounting-events';
 import {
   FINGERPRINT_VERSION,
   canonicalRequestFingerprint,
@@ -621,13 +621,16 @@ export async function createCreditNote(db: PrismaClient, ctx: RequestContext, in
           },
         });
 
+        // Linhas devolvidas com custo (base do par 131/CMV — S10a).
+        const returnItems: InventoryCostItem[] = [];
         for (const p of prepared) {
           // Snapshot do custo médio no momento da devolução (aprovado): o documento
-          // e o futuro par 131/CMV (S10) não dependem do custo posterior.
+          // e o par 131/CMV (S10a) não dependem do custo posterior.
           let unitCost: number | null = null;
           if (data.returnStock && p.productId) {
             const product = await tx.product.findFirst({ where: { id: p.productId, companyId }, select: { avgCost: true } });
             unitCost = product ? round2(Number(product.avgCost)) : null;
+            if (unitCost !== null) returnItems.push({ quantity: p.quantity, unitCost });
           }
           await tx.creditNoteLine.create({
             data: {
@@ -694,6 +697,20 @@ export async function createCreditNote(db: PrismaClient, ctx: RequestContext, in
           lines,
         });
 
+        // Par da devolução (S10a): a mercadoria volta às existências ao unitCost
+        // snapshot das linhas — D Mercadorias / C CMV, lançamento SEPARADO do espelho.
+        if (data.returnStock) {
+          await postInventoryCostEventTx(tx, ctx, {
+            origin: { sourceType: 'CREDIT_NOTE', sourceId: creditNote.id, accountingEvent: 'CREDIT_NOTE_COGS_REVERSED' },
+            entryDate: creditNote.issueDate,
+            dateLabel: 'A data de emissão',
+            description: `Reposição de existências ${number} (factura ${invoice.number})`,
+            reference: number,
+            items: returnItems,
+            direction: 'IN',
+          });
+        }
+
         await writeAudit(tx, ctx, {
           action: 'credit_note.issue',
           entity: 'CreditNote',
@@ -710,6 +727,7 @@ export async function createCreditNote(db: PrismaClient, ctx: RequestContext, in
             total: totals.total,
             taxableBase: totals.taxable,
             taxTotal: totals.tax,
+            returnCostTotal: data.returnStock ? inventoryCostTotal(returnItems) : null,
             idempotencyKey: data.idempotencyKey,
             accounting: { sourceType: 'CREDIT_NOTE', accountingEvent: 'CREDIT_NOTE_ISSUED' },
           },

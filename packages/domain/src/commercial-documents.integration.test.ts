@@ -99,12 +99,17 @@ async function provision() {
   const ar = await prisma.ledgerAccount.create({ data: { companyId: CA, code: '121', name: 'Clientes', accountType: 'ASSET', normalBalance: 'DEBIT', level: 2, parentId: group.id, isPosting: true, isActive: true } });
   const vat = await prisma.ledgerAccount.create({ data: { companyId: CA, code: '221', name: 'IVA liquidado', accountType: 'LIABILITY', normalBalance: 'CREDIT', level: 1, isPosting: true, isActive: true } });
   const revenue = await prisma.ledgerAccount.create({ data: { companyId: CA, code: '411', name: 'Vendas', accountType: 'REVENUE', normalBalance: 'CREDIT', level: 1, isPosting: true, isActive: true } });
+  // S10a: a emissão passou a lançar CMV e a NC com devolução lança o par 131/511.
+  const inventory = await prisma.ledgerAccount.create({ data: { companyId: CA, code: '131', name: 'Mercadorias', accountType: 'ASSET', normalBalance: 'DEBIT', level: 2, parentId: group.id, isPosting: true, isActive: true } });
+  const cogs = await prisma.ledgerAccount.create({ data: { companyId: CA, code: '511', name: 'CMV', accountType: 'EXPENSE', normalBalance: 'DEBIT', level: 1, isPosting: true, isActive: true } });
 
   await prisma.accountingMapping.createMany({
     data: [
       { companyId: CA, systemKey: 'ACCOUNTS_RECEIVABLE', ledgerAccountId: ar.id },
       { companyId: CA, systemKey: 'SALES_REVENUE', ledgerAccountId: revenue.id },
       { companyId: CA, systemKey: 'VAT_OUTPUT', ledgerAccountId: vat.id },
+      { companyId: CA, systemKey: 'INVENTORY', ledgerAccountId: inventory.id },
+      { companyId: CA, systemKey: 'COST_OF_GOODS_SOLD', ledgerAccountId: cogs.id },
     ],
   });
 

@@ -5,10 +5,10 @@ _Última actualização: 2026-07-18_
 Estado vivo do projecto. O conhecimento permanente (arquitectura, regras, comandos) está
 em [`CLAUDE.md`](CLAUDE.md).
 
-**Último commit funcional:** pendente na branch `s9-inventario` (Sessão S9 do ROADMAP)
-**Fase concluída:** `S9 — Inventário em duas etapas` (ROADMAP; fase anterior: `S8 — Produtos: criação com stock inicial`)
+**Último commit funcional:** pendente na branch `s10-contabilidade-lancamentos` (Sessão S10a do ROADMAP)
+**Fase concluída:** `S10a — Contabilidade: CMV ponta-a-ponta` (ROADMAP; fase anterior: `S9 — Inventário em duas etapas`)
 **UAT interna/demo:** V1 candidata a demo externa apos UAT interna, aprovada com ressalvas em 2026-07-06; P1-04 acrescenta Contabilidade V1 pronta para UAT/demo com limites; P1-05 acrescenta Fecho de Caixa V1 operacional sem persistencia formal; demo final check registado em `docs/DEMO_FINAL_CHECK.md` em 2026-07-08 como pronto com ressalvas menores
-**Próximo passo:** `Sessão S10 — Contabilidade: lançamentos` (ROADMAP) — não iniciar sem instrução explícita (tem ponto 🔒: mapa débito/crédito de cada tipo de lançamento aprovado ANTES de qualquer código; inclui CMV na venda + par da devolução das NCs, conta «Outros proveitos» das ND, anulação de NC; o teste de coerência 131 vs. stock físico deve incluir `PRODUCT_OPENING_STOCK` (S8) e `STOCK_COUNT_VALIDATED` (S9)); mantém-se pendente o smoke manual final em browser externo/limpo (logout, clique final POS, Fecho de Caixa V1) antes da demo externa
+**Próximo passo:** `Sessão S10b — Anulação de NC + ND→Outros proveitos` (divisão S10a/S10b/S10c aprovada em 2026-07-18; fronteiras no ROADMAP S10) — não iniciar sem instrução explícita, em branch própria; segue-se a `S10c — Lançamentos manuais (UI) + regularização retroactiva de existências` (decisões aprovadas: data de corte para o CMV histórico + operação de regularização genérica/idempotente/auditada com valor calculado na execução; ND histórica em 411 fica documentada, sem reclassificação); mantém-se pendente o smoke manual final em browser externo/limpo (logout, clique final POS, Fecho de Caixa V1) antes da demo externa
 
 ---
 
@@ -57,12 +57,13 @@ em [`CLAUDE.md`](CLAUDE.md).
 | **S7** | **Fluxo de Ordem de Compra** (estados `PENDING_APPROVAL`→`APPROVED`/`REJECTED` antes da recepção; aprovação/rejeição com gate `purchases.approve` existente — zero alterações de RBAC; rejeição terminal com motivo ≥ 10 chars; recepção só de OCs aprovadas; observações da recepção na UI; indicação ao solicitante por chips/destaque; migrações aditivas `s7_purchase_order_approval` + backfill `SENT`→`APPROVED`; suite `test:integration:purchases:approval` 9/9) | ✅ |
 | **S8** | **Produtos: criação com stock inicial** (secção opcional «Stock inicial» no dialog de criação — quantidade + custo unitário + armazém; `StockMovement IN` normal que inicializa o avgCost = custo informado; lançamento de abertura D 131 / C 312 nova via mapping `OPENING_BALANCE_EQUITY` no diário `DAB`; scope de idempotência `PRODUCT_CREATE`; migração aditiva `s8_product_initial_stock`; suite `test:integration:products:initial-stock` 10/10) | ✅ |
 | **S9** | **Inventário em duas etapas** (contagem série `CI` em RASCUNHO com snapshot `systemQty` e zero efeitos → validação `stock.adjust` aplica o delta contado sobre o stock corrente sob `FOR UPDATE`; `StockMovement ADJUST` com `stockCountId` + lançamento único `AJ` no `DAJ`: Excedente D 131/C 421, Déficit D 551/C 131 ao avgCost corrente com avgCost intacto; edição com refresh de snapshots e descarte com motivo padrão S6; ajuste directo legado removido; migração aditiva `s9_stock_counts`; suite `test:integration:stock:counts` 14/14) | ✅ |
+| **S10a** | **Contabilidade — CMV ponta-a-ponta** (snapshot `invoice_lines.unitCost` capturado na emissão; evento separado `COGS_POSTED` D 511/C 131 nos 3 pontos de emissão — Nova Factura, POS, emissão de rascunho — com `SALE_ISSUED` intacto; par `CREDIT_NOTE_COGS_REVERSED` D 131/C 511 nas NCs com devolução ao `unitCost` snapshot; `cancelInvoice` estorna também o CMV quando existe; migração aditiva `s10a_invoice_line_unit_cost`; suite `test:integration:accounting:cogs` 14/14 com teste-âncora coerência 131 = stock físico) | ✅ |
 | 9 | RH & Salários | 🗺️ futuro |
 | X | RLS forçado em toda a BD (fase transversal, pré-produção) | 🗺️ futuro |
 
-**Validações actuais:** typecheck 6/6 · lint 6/6 · **testes unitários 89** · **security hardening 16/16** · **auth company-selection 7/7** · **reversal all 44/44** · **integração de
-contabilidade 203/203** (8b 32 + 8c.1 30 + 8c.2a 18 + 8c.2b 34 + 8c.3 17 + P1-04 14 + P0-02 5 + P0-03.0 9 + P0-03b 10 + P0-03a 9 + P0-03c 7 + P0-03d 8 + P0-03e 6 + P0-03f 4;
-`pnpm test:integration:accounting`, sub: `…:c1`, `…:c2a`, `…:c2`, `…:c3`, `…:reports`, `…:reversal:customer-payment`, `…:reversal:invoice`, `…:reversal:supplier-payment`, `…:reversal:purchase-receipt`, `…:reversal:treasury-transfer`, `…:reversal:uat`, `…:reversal:all`) · **POS 7/7** (`pnpm test:integration:pos`) · `prisma validate` OK · `prisma migrate status` OK · `pnpm build` OK
+**Validações actuais:** typecheck 6/6 · lint 6/6 · **testes unitários 99** · **security hardening 16/16** · **auth company-selection 7/7** · **reversal all 44/44** · **integração de
+contabilidade 217/217** (8b 32 + 8c.1 30 + 8c.2a 18 + 8c.2b 34 + 8c.3 17 + **S10a/cogs 14** + P1-04 14 + P0-02 5 + P0-03.0 9 + P0-03b 10 + P0-03a 9 + P0-03c 7 + P0-03d 8 + P0-03e 6 + P0-03f 4;
+`pnpm test:integration:accounting`, sub: `…:c1`, `…:c2a`, `…:c2`, `…:c3`, `…:cogs`, `…:reports`, `…:reversal:customer-payment`, `…:reversal:invoice`, `…:reversal:supplier-payment`, `…:reversal:purchase-receipt`, `…:reversal:treasury-transfer`, `…:reversal:uat`, `…:reversal:all`) · **POS 7/7** (`pnpm test:integration:pos`) · `prisma validate` OK · `prisma migrate status` OK · `pnpm build` OK
 em Windows nativo (30/30 páginas estaticas + `/api/health` dinamico) e Docker Linux com Node 20 + OpenSSL · imagens Docker de produção
 `web`, `worker` e target `migrate` OK · seed idempotente (2×) · login/contexto
 multiempresa 7/7 · **POS 12/12** (`pnpm test:integration:pos`) · **relatorios 24/24** (`pnpm test:integration:reports`) · **Fecho de Caixa V1 11/11** (`pnpm test:integration:treasury:cash-closing`) · `pnpm build` OK em Windows nativo (31/31 páginas, incluindo `/api/health`, `/relatorios/exportar`, `/contabilidade/exportar` e `/tesouraria/fecho/exportar`) ·
@@ -549,6 +550,51 @@ com rollback e recuperação por edição, sem diferenças, custo 0, descarte, m
 com rollback, isolamento A/B, numeração CI, idempotência da criação), regressões accounting
 203/203 + products initial-stock 10/10 + POS 12/12 + reversal all 44/44 + relatórios 24/24 +
 purchases approval 9/9, build OK (rotas novas `/inventario/contagem`).
+
+**S10a — Contabilidade: CMV ponta-a-ponta (2026-07-18):** primeira sub-sessão da S10 (divisão
+S10a/S10b/S10c aprovada; fronteiras registadas no ROADMAP), na branch `s10-contabilidade-lancamentos`,
+com migração aditiva aprovada `20260719010000_s10a_invoice_line_unit_cost` (uma única coluna:
+`invoice_lines.unitCost DECIMAL(14,2) NULL` — snapshot do custo médio na EMISSÃO; NULL = linha sem
+produto, rascunho não emitido ou factura pré-S10a). **Desenho aprovado (🔒) antes de código**, com
+quatro decisões: (1) o CMV entra como **evento separado `COGS_POSTED`** (sourceType `INVOICE`,
+diário SALES, mesma transacção da emissão) — o lançamento `SALE_ISSUED` fica byte-a-byte intacto,
+o que preservou as 44 regressões de estornos e o formato do c2 (o próprio c2 #9 já afirmava o nome
+`COGS_POSTED`); helper único `postInventoryCostEventTx` em `accounting-events.ts` (D 511
+`COST_OF_GOODS_SOLD` / C 131 `INVENTORY` ao Σ `round2(qtd × unitCost)`; sem fallback de mapping —
+falha total com mensagem clara; custo 0/só serviços → sem lançamento, padrão S9) usado nos TRÊS
+pontos de emissão: `createInvoice`, `createPosSale` e `issueInvoiceDraft` (no rascunho o snapshot
+só é capturado na emissão — gravação deixa `unitCost` NULL); (2) par da devolução nas NCs:
+`CREDIT_NOTE_COGS_REVERSED` D 131 / C 511 ao `unitCost` snapshot das linhas da NC (S5), lançamento
+separado do espelho 411/221/121; (3) `cancelInvoice` (P0-03a) estorna também o `COGS_POSTED`
+**quando existe** — facturas pré-S10a sem CMV cancelam sem erro (`cogsReversalId` null), lógica do
+estorno do `SALE_ISSUED` intocada, `loadCompletedInvoiceCancellation` valida o estorno do CMV na
+idempotência; (4) questão retroactiva aprovada: **data de corte** — as 25 facturas demo sem CMV
+ficam como verdade histórica; a regularização única (D 131 / C 312) será uma operação de domínio
+genérica/idempotente/auditada na S10c com valor calculado na execução (divergência demo em
+2026-07-18: 131 = 12 082,00 vs. físico 323 493,00 = −311 411,00 MT, dominada pelo stock do seed
+da Fase 4 sem abertura; verificação pós-S10a: a divergência mantém-se exactamente constante — venda
+e NC novas movem 131 e físico em sincronia); a ND histórica em 411 (ND 2026/0001, base 150,00) fica
+documentada sem reclassificação e a conta 422/`OTHER_INCOME` é âmbito da S10b. Labels do Extrato
+Diário: `COGS_POSTED` → «Custo das mercadorias vendidas», `CREDIT_NOTE_COGS_REVERSED` →
+«Devolução — reposição de existências». Verificado ao vivo em browser: `FT 2026/0028` (3 ×
+Coca-Cola 2L, avgCost 101,00) → `LV 2026/0032` SALE_ISSUED intacto (D 121 487,20 / C 411 420,00 /
+C 221 67,20) + `LV 2026/0033` COGS D 511 / C 131 = 303,00 e `unitCost` 101,00 na linha;
+`NC 2026/0002` com devolução de 1 un → espelho `LV 2026/0034` + par `LV 2026/0035` D 131 / C 511 =
+101,00 e movimento IN; Extrato Diário balanceado com os labels novos. Suites afectadas actualizadas
+deliberadamente (provisões de teste ganharam contas/mappings 131+511: invoice-cancellation,
+reversals-uat, reversal-foundation, drafts, documents; 1 asserção do drafts «1 lançamento por
+factura» → «SALE_ISSUED + COGS_POSTED sem duplicados»; 1 `findFirst` do P0-03a passou a filtrar
+`SALE_ISSUED`); c2 34/34 passou sem alterações (produtos com avgCost 0). Validado: `prisma
+validate`/`migrate status`/diff BD↔schema vazio, typecheck 6/6, lint 6/6, testes unitários 99,
+nova suite `pnpm test:integration:accounting:cogs` 14/14 (SALE_ISSUED intacto + COGS separado,
+custo 0 sem lançamento, snapshot estável a alterações posteriores do avgCost, rascunho com snapshot
+da emissão, POS, idempotência, par da NC ao snapshot da NC, NC sem devolução sem par, cancelamento
+com estorno duplo + replay, cancelamento sem CMV, mapping em falta com rollback total, isolamento
+A/B, **coerência 131 = Σ qtd×avgCost = 301,00** cruzando abertura S8 + compra + venda + NC +
+cancelamento + contagem S9, lançamentos CMV sempre equilibrados), agregado accounting **217/217**,
+reversal all 44/44, documents 14/14, drafts 13/13, POS 12/12, relatórios 24/24, purchases approval
+9/9, products initial-stock 10/10, stock counts 14/14, cash-closing 11/11, company-profile 8/8,
+auth 7/7, build OK.
 
 **Hardening pré-produção P0-01 (2026-07-02):** seed demo bloqueado em `production`
 antes de criar o Prisma Client; credenciais demo removidas da interface de

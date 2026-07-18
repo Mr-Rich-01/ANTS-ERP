@@ -70,7 +70,7 @@ async function teardown(companyId: string) {
   await prisma.company.deleteMany({ where: { id: companyId } });
 }
 
-async function ledger(code: string, name: string, accountType: 'ASSET' | 'LIABILITY' | 'REVENUE', normalBalance: 'DEBIT' | 'CREDIT', parentId?: string) {
+async function ledger(code: string, name: string, accountType: 'ASSET' | 'LIABILITY' | 'REVENUE' | 'EXPENSE', normalBalance: 'DEBIT' | 'CREDIT', parentId?: string) {
   return prisma.ledgerAccount.create({
     data: { companyId: CA, code, name, accountType, normalBalance, parentId: parentId ?? null, level: parentId ? 2 : 1, isPosting: parentId ? true : code !== '1' },
   });
@@ -93,11 +93,16 @@ async function provision() {
   const cashLedger = (await ledger('111', 'Caixa', 'ASSET', 'DEBIT', root)).id;
   const vat = (await ledger('221', 'IVA liquidado', 'LIABILITY', 'CREDIT')).id;
   const revenue = (await ledger('411', 'Vendas', 'REVENUE', 'CREDIT')).id;
+  // S10a: a emissão passou a lançar CMV — as vendas exigem os mappings de existências.
+  const inventory = (await ledger('131', 'Mercadorias', 'ASSET', 'DEBIT', root)).id;
+  const cogs = (await ledger('511', 'CMV', 'EXPENSE', 'DEBIT')).id;
   await prisma.accountingMapping.createMany({
     data: [
       { companyId: CA, systemKey: 'ACCOUNTS_RECEIVABLE', ledgerAccountId: ar },
       { companyId: CA, systemKey: 'SALES_REVENUE', ledgerAccountId: revenue },
       { companyId: CA, systemKey: 'VAT_OUTPUT', ledgerAccountId: vat },
+      { companyId: CA, systemKey: 'INVENTORY', ledgerAccountId: inventory },
+      { companyId: CA, systemKey: 'COST_OF_GOODS_SOLD', ledgerAccountId: cogs },
     ],
   });
   const customer = await prisma.customer.create({ data: { companyId: CA, name: 'Cliente P0-03a', paymentTermDays: 0 } });
@@ -313,7 +318,9 @@ describe('P0-03a - cancelamento integral de factura', () => {
 
   it('JournalEntry ausente faz rollback e nao cria compensatorios', async () => {
     const inv = await issue();
-    const entry = await prisma.journalEntry.findFirstOrThrow({ where: { companyId: CA, sourceType: 'INVOICE', sourceId: inv.id } });
+    // S10a: a factura passou a ter dois lançamentos (SALE_ISSUED + COGS_POSTED);
+    // o cenário deste teste é a ausência do SALE_ISSUED em concreto.
+    const entry = await prisma.journalEntry.findFirstOrThrow({ where: { companyId: CA, sourceType: 'INVOICE', sourceId: inv.id, accountingEvent: 'SALE_ISSUED' } });
     const originals = await prisma.stockMovement.findMany({ where: { companyId: CA, invoiceId: inv.id, type: 'OUT' } });
     await prisma.journalEntryLine.deleteMany({ where: { companyId: CA, journalEntryId: entry.id } });
     await prisma.journalEntry.delete({ where: { id: entry.id } });

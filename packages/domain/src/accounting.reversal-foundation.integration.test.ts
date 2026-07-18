@@ -108,6 +108,8 @@ async function provision() {
   const payable = (await ledger('211', 'Fornecedores', 'LIABILITY', 'CREDIT')).id;
   const vatOut = (await ledger('221', 'IVA liquidado', 'LIABILITY', 'CREDIT')).id;
   const revenue = (await ledger('411', 'Vendas', 'REVENUE', 'CREDIT')).id;
+  // S10a: a emissão passou a lançar CMV — as vendas exigem o mapping do 511.
+  const cogs = (await ledger('511', 'CMV', 'EXPENSE', 'DEBIT')).id;
   await prisma.accountingMapping.createMany({
     data: [
       { companyId: CA, systemKey: 'ACCOUNTS_RECEIVABLE', ledgerAccountId: ar },
@@ -116,6 +118,7 @@ async function provision() {
       { companyId: CA, systemKey: 'INVENTORY', ledgerAccountId: inventory },
       { companyId: CA, systemKey: 'VAT_INPUT', ledgerAccountId: vatIn },
       { companyId: CA, systemKey: 'ACCOUNTS_PAYABLE', ledgerAccountId: payable },
+      { companyId: CA, systemKey: 'COST_OF_GOODS_SOLD', ledgerAccountId: cogs },
     ],
   });
   const customer = await prisma.customer.create({ data: { companyId: CA, name: 'Cliente RF' } });

@@ -8,7 +8,7 @@ import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from '.
 import { writeAudit } from './audit';
 import { postTreasuryMovementTx, reverseOperationalTreasuryMovementTx } from './treasury';
 import { formatAccountingDate, getMappedAccountTx, parseAccountingDate, type AccountingJournalType } from './accounting';
-import { postAccountingEventTx, resolveTreasuryLedgerTx, reverseAccountingEventTx } from './accounting-events';
+import { inventoryCostTotal, postAccountingEventTx, postInventoryCostEventTx, resolveTreasuryLedgerTx, reverseAccountingEventTx } from './accounting-events';
 import {
   FINGERPRINT_VERSION,
   canonicalRequestFingerprint,
@@ -460,6 +460,7 @@ export async function createInvoice(db: PrismaClient, ctx: RequestContext, input
           taxRate: number;
           total: number;
           available: number;
+          unitCost: number;
         }>;
 
         for (const line of data.lines) {
@@ -483,6 +484,9 @@ export async function createInvoice(db: PrismaClient, ctx: RequestContext, input
             taxRate,
             total: r.total,
             available,
+            // Snapshot do custo médio na emissão — base do CMV (S10a). Saídas nunca
+            // recalculam o avgCost, por isso o valor é estável dentro da transacção.
+            unitCost: round2(Number(product.avgCost)),
           });
         }
 
@@ -530,6 +534,7 @@ export async function createInvoice(db: PrismaClient, ctx: RequestContext, input
               quantity: p.quantity,
               discountPercent: p.discountPercent,
               taxRate: p.taxRate,
+              unitCost: p.unitCost,
               total: p.total,
             },
           });
@@ -577,6 +582,19 @@ export async function createInvoice(db: PrismaClient, ctx: RequestContext, input
           lines,
         });
 
+        // CMV (S10a): lançamento SEPARADO ao custo médio do momento da emissão —
+        // mesmas linhas gravadas na factura, fórmula única em inventoryCostTotal.
+        const cogsTotal = inventoryCostTotal(prepared);
+        await postInventoryCostEventTx(tx, ctx, {
+          origin: { sourceType: 'INVOICE', sourceId: invoice.id, accountingEvent: 'COGS_POSTED' },
+          entryDate: invoice.issueDate,
+          dateLabel: 'A data de emissão',
+          description: `Custo das vendas ${number}`,
+          reference: number,
+          items: prepared,
+          direction: 'OUT',
+        });
+
         await writeAudit(tx, ctx, {
           action: 'invoice.issue',
           entity: 'Invoice',
@@ -589,6 +607,7 @@ export async function createInvoice(db: PrismaClient, ctx: RequestContext, input
             total: totals.total,
             taxableBase: totals.taxable,
             taxTotal: totals.tax,
+            cogsTotal,
             idempotencyKey: data.idempotencyKey,
             accounting: { sourceType: 'INVOICE', accountingEvent: 'SALE_ISSUED' },
           },
@@ -918,6 +937,7 @@ export async function createPosSale(db: PrismaClient, ctx: RequestContext, input
           taxRate: number;
           total: number;
           available: number;
+          unitCost: number;
         }>;
 
         for (const line of invoiceData.lines) {
@@ -941,6 +961,9 @@ export async function createPosSale(db: PrismaClient, ctx: RequestContext, input
             taxRate,
             total: r.total,
             available,
+            // Snapshot do custo médio na emissão — base do CMV (S10a). Saídas nunca
+            // recalculam o avgCost, por isso o valor é estável dentro da transacção.
+            unitCost: round2(Number(product.avgCost)),
           });
         }
 
@@ -987,6 +1010,7 @@ export async function createPosSale(db: PrismaClient, ctx: RequestContext, input
               quantity: p.quantity,
               discountPercent: p.discountPercent,
               taxRate: p.taxRate,
+              unitCost: p.unitCost,
               total: p.total,
             },
           });
@@ -1034,6 +1058,19 @@ export async function createPosSale(db: PrismaClient, ctx: RequestContext, input
           lines,
         });
 
+        // CMV (S10a): lançamento SEPARADO ao custo médio do momento da emissão —
+        // mesmas linhas gravadas na factura, fórmula única em inventoryCostTotal.
+        const cogsTotal = inventoryCostTotal(prepared);
+        await postInventoryCostEventTx(tx, ctx, {
+          origin: { sourceType: 'INVOICE', sourceId: invoice.id, accountingEvent: 'COGS_POSTED' },
+          entryDate: invoice.issueDate,
+          dateLabel: 'A data de emissão',
+          description: `Custo das vendas ${number}`,
+          reference: number,
+          items: prepared,
+          direction: 'OUT',
+        });
+
         await writeAudit(tx, ctx, {
           action: 'invoice.issue',
           entity: 'Invoice',
@@ -1046,6 +1083,7 @@ export async function createPosSale(db: PrismaClient, ctx: RequestContext, input
             total: totals.total,
             taxableBase: totals.taxable,
             taxTotal: totals.tax,
+            cogsTotal,
             idempotencyKey: invoiceData.idempotencyKey,
             source: 'POS',
             accounting: { sourceType: 'INVOICE', accountingEvent: 'SALE_ISSUED' },
@@ -1241,6 +1279,8 @@ export interface CancelInvoiceResult {
   cancellationDate: string;
   stockReversalIds: string[];
   accountingReversalId: string | null;
+  /** Estorno do lançamento de CMV (S10a); null em facturas pré-S10/sem CMV. */
+  cogsReversalId: string | null;
 }
 
 function invoiceCancellationFingerprint(companyId: string, invoiceId: string, cancellationDate: Date, cancellationReason: string): string {
@@ -1287,19 +1327,23 @@ async function loadCompletedInvoiceCancellation(tx: Prisma.TransactionClient, co
   if (!invoice) return null;
   if (invoice.status !== 'CANCELLED') throw new ConflictError('Registo de idempotência aponta para uma factura não cancelada (integridade).');
 
-  const [originalMovements, originalEntry] = await Promise.all([
+  const [originalMovements, originalEntry, cogsEntry] = await Promise.all([
     tx.stockMovement.findMany({ where: { companyId, invoiceId: invoice.id, type: 'OUT' }, select: { id: true } }),
     tx.journalEntry.findFirst({ where: { companyId, sourceType: 'INVOICE', sourceId: invoice.id, accountingEvent: 'SALE_ISSUED' }, select: { id: true } }),
+    tx.journalEntry.findFirst({ where: { companyId, sourceType: 'INVOICE', sourceId: invoice.id, accountingEvent: 'COGS_POSTED' }, select: { id: true } }),
   ]);
   if (!originalEntry) throw new ConflictError('Registo de idempotência aponta para um cancelamento sem lançamento contabilístico original (integridade).');
 
-  const [stockReversals, accountingReversal] = await Promise.all([
+  const [stockReversals, accountingReversal, cogsReversal] = await Promise.all([
     originalMovements.length
       ? tx.stockMovement.findMany({ where: { companyId, reversesId: { in: originalMovements.map((m) => m.id) } }, select: { id: true, reversesId: true } })
       : Promise.resolve([]),
     tx.journalEntry.findFirst({ where: { companyId, reversalOfId: originalEntry.id }, select: { id: true } }),
+    cogsEntry
+      ? tx.journalEntry.findFirst({ where: { companyId, reversalOfId: cogsEntry.id }, select: { id: true } })
+      : Promise.resolve(null),
   ]);
-  if (stockReversals.length !== originalMovements.length || !accountingReversal) {
+  if (stockReversals.length !== originalMovements.length || !accountingReversal || (cogsEntry && !cogsReversal)) {
     throw new ConflictError('Registo de idempotência aponta para um cancelamento incompleto (integridade).');
   }
   return {
@@ -1308,6 +1352,7 @@ async function loadCompletedInvoiceCancellation(tx: Prisma.TransactionClient, co
     cancellationDate: formatAccountingDate(cancellationDate),
     stockReversalIds: stockReversals.map((m) => m.id),
     accountingReversalId: accountingReversal.id,
+    cogsReversalId: cogsReversal?.id ?? null,
   };
 }
 
@@ -1430,6 +1475,21 @@ export async function cancelInvoice(db: PrismaClient, ctx: RequestContext, input
           operationalReference: invoice.number,
         });
 
+        // Estorno do CMV (S10a): par simétrico do COGS_POSTED quando existe.
+        // Facturas pré-S10 (data de corte aprovada) não têm CMV — nada a estornar.
+        const cogsEntry = await tx.journalEntry.findFirst({
+          where: { companyId, sourceType: 'INVOICE', sourceId: invoice.id, accountingEvent: 'COGS_POSTED' },
+          select: { id: true },
+        });
+        const cogsReversal = cogsEntry
+          ? await reverseAccountingEventTx(tx, ctx, {
+              origin: { sourceType: 'INVOICE', sourceId: invoice.id, accountingEvent: 'COGS_POSTED' },
+              reversalDate: cancellationDate,
+              reason: cancellationReason,
+              operationalReference: invoice.number,
+            })
+          : null;
+
         await tx.invoice.update({
           where: { id: invoice.id },
           data: {
@@ -1464,6 +1524,8 @@ export async function cancelInvoice(db: PrismaClient, ctx: RequestContext, input
             stockMovementReversalIds: stockReversalIds,
             journalEntryOriginalId: originalEntry.id,
             journalEntryReversalId: accountingReversal.reversalId,
+            cogsEntryOriginalId: cogsEntry?.id ?? null,
+            cogsEntryReversalId: cogsReversal?.reversalId ?? null,
           },
         });
 
@@ -1476,6 +1538,7 @@ export async function cancelInvoice(db: PrismaClient, ctx: RequestContext, input
             cancellationDate: formatAccountingDate(cancellationDate),
             stockReversalIds,
             accountingReversalId: accountingReversal.reversalId,
+            cogsReversalId: cogsReversal?.reversalId ?? null,
           },
         };
       },
@@ -1615,6 +1678,8 @@ export async function saveInvoiceDraft(db: PrismaClient, ctx: RequestContext, in
               quantity: p.quantity,
               discountPercent: p.discountPercent,
               taxRate: p.taxRate,
+              // unitCost fica NULL no rascunho — o snapshot do custo médio é
+              // capturado apenas na emissão (S10a), quando o stock sai.
               total: p.total,
             },
           });
@@ -1816,15 +1881,19 @@ export async function issueInvoiceDraft(db: PrismaClient, ctx: RequestContext, i
         if (!warehouse) throw new NotFoundError('O armazém do rascunho já não está activo.');
 
         // Valida o stock à data da emissão (o rascunho nunca bloqueou stock).
-        const stockChecked: Array<{ productId: string; quantity: number; available: number }> = [];
+        // O snapshot do custo médio (CMV, S10a) também é capturado AQUI — só na
+        // emissão o stock sai; o rascunho gravou unitCost NULL.
+        const stockChecked: Array<{ lineId: string; productId: string; quantity: number; available: number; unitCost: number }> = [];
         for (const line of draft.lines) {
           if (!line.productId) throw new ConflictError('Integridade: linha de rascunho sem produto.');
+          const product = await tx.product.findFirst({ where: { id: line.productId, companyId }, select: { avgCost: true } });
+          if (!product) throw new ConflictError('Integridade: produto da linha do rascunho não encontrado.');
           const level = await tx.stockLevel.findUnique({ where: { productId_warehouseId: { productId: line.productId, warehouseId: warehouse.id } } });
           const available = level?.quantity ?? 0;
           if (available < line.quantity) {
             throw new ValidationError(`Stock insuficiente para ${line.description}: disponível ${available}, pedido ${line.quantity}.`);
           }
-          stockChecked.push({ productId: line.productId, quantity: line.quantity, available });
+          stockChecked.push({ lineId: line.id, productId: line.productId, quantity: line.quantity, available, unitCost: round2(Number(product.avgCost)) });
         }
 
         // Totais recomputados a partir das linhas gravadas (mesma fórmula do rascunho).
@@ -1854,6 +1923,7 @@ export async function issueInvoiceDraft(db: PrismaClient, ctx: RequestContext, i
         });
 
         for (const s of stockChecked) {
+          await tx.invoiceLine.update({ where: { id: s.lineId }, data: { unitCost: s.unitCost } });
           const balanceAfter = s.available - s.quantity;
           await tx.stockLevel.update({
             where: { productId_warehouseId: { productId: s.productId, warehouseId: warehouse.id } },
@@ -1898,6 +1968,19 @@ export async function issueInvoiceDraft(db: PrismaClient, ctx: RequestContext, i
           lines,
         });
 
+        // CMV (S10a): lançamento SEPARADO ao custo médio do momento da emissão —
+        // mesmas linhas gravadas na factura, fórmula única em inventoryCostTotal.
+        const cogsTotal = inventoryCostTotal(stockChecked);
+        await postInventoryCostEventTx(tx, ctx, {
+          origin: { sourceType: 'INVOICE', sourceId: draft.id, accountingEvent: 'COGS_POSTED' },
+          entryDate: issueDate,
+          dateLabel: 'A data de emissão',
+          description: `Custo das vendas ${number}`,
+          reference: number,
+          items: stockChecked,
+          direction: 'OUT',
+        });
+
         await writeAudit(tx, ctx, {
           action: 'invoice.issue',
           entity: 'Invoice',
@@ -1912,6 +1995,7 @@ export async function issueInvoiceDraft(db: PrismaClient, ctx: RequestContext, i
             total: totals.total,
             taxableBase: totals.taxable,
             taxTotal: totals.tax,
+            cogsTotal,
             idempotencyKey: data.idempotencyKey,
             source: 'DRAFT',
             accounting: { sourceType: 'INVOICE', accountingEvent: 'SALE_ISSUED' },
