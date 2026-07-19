@@ -1,14 +1,14 @@
 # MODULE_STATUS — ANTS ERP
 
-_Última actualização: 2026-07-19_
+_Última actualização: 2026-07-19 (S10c)_
 
 Estado vivo do projecto. O conhecimento permanente (arquitectura, regras, comandos) está
 em [`CLAUDE.md`](CLAUDE.md).
 
-**Último commit funcional:** pendente na branch `s10b-anulacao-nc` (Sessão S10b do ROADMAP)
-**Fase concluída:** `S10b — Anulação de NC + ND→Outros proveitos` (ROADMAP; fase anterior: `S10a — Contabilidade: CMV ponta-a-ponta`)
-**UAT interna/demo:** V1 candidata a demo externa apos UAT interna, aprovada com ressalvas em 2026-07-06; P1-04 acrescenta Contabilidade V1 pronta para UAT/demo com limites; P1-05 acrescenta Fecho de Caixa V1 operacional sem persistencia formal; demo final check registado em `docs/DEMO_FINAL_CHECK.md` em 2026-07-08 como pronto com ressalvas menores
-**Próximo passo:** `Sessão S10c — Lançamentos manuais (UI) + regularização retroactiva de existências` (divisão S10a/S10b/S10c aprovada em 2026-07-18; fronteiras no ROADMAP S10) — não iniciar sem instrução explícita, em branch própria (decisões aprovadas: data de corte para o CMV histórico + operação de regularização genérica/idempotente/auditada com valor calculado na execução, primeiro uso na demo; ND histórica em 411 fica documentada, sem reclassificação — nota formalizada na S10b); mantém-se pendente o smoke manual final em browser externo/limpo (logout, clique final POS, Fecho de Caixa V1) antes da demo externa
+**Último commit funcional:** pendente na branch `s10c-manuais-retroactivo` (Sessão S10c do ROADMAP)
+**Fase concluída:** `S10c — Lançamentos manuais (UI) + regularização retroactiva de existências` — **S10 COMPLETA** (fases anteriores: S10a CMV, S10b anulação de NC + ND→422)
+**UAT interna/demo:** V1 candidata a demo externa apos UAT interna, aprovada com ressalvas em 2026-07-06; P1-04 acrescenta Contabilidade V1 pronta para UAT/demo com limites; P1-05 acrescenta Fecho de Caixa V1 operacional sem persistencia formal; demo final check registado em `docs/DEMO_FINAL_CHECK.md` em 2026-07-08 como pronto com ressalvas menores; S10c executa a regularização retroactiva na demo — a conta 131 reconcilia com o stock físico (divergência 0)
+**Próximo passo:** `Sessão S11 — Contabilidade: relatórios` (Balancete sem saldo inicial por omissão + selector de colunas, Demonstração de Resultados, Fluxo de Caixa, Balanço Patrimonial com validação cruzada) — não iniciar sem instrução explícita, em branch própria; mantém-se pendente o smoke manual final em browser externo/limpo (logout, clique final POS, Fecho de Caixa V1) antes da demo externa
 
 ---
 
@@ -59,12 +59,13 @@ em [`CLAUDE.md`](CLAUDE.md).
 | **S9** | **Inventário em duas etapas** (contagem série `CI` em RASCUNHO com snapshot `systemQty` e zero efeitos → validação `stock.adjust` aplica o delta contado sobre o stock corrente sob `FOR UPDATE`; `StockMovement ADJUST` com `stockCountId` + lançamento único `AJ` no `DAJ`: Excedente D 131/C 421, Déficit D 551/C 131 ao avgCost corrente com avgCost intacto; edição com refresh de snapshots e descarte com motivo padrão S6; ajuste directo legado removido; migração aditiva `s9_stock_counts`; suite `test:integration:stock:counts` 14/14) | ✅ |
 | **S10a** | **Contabilidade — CMV ponta-a-ponta** (snapshot `invoice_lines.unitCost` capturado na emissão; evento separado `COGS_POSTED` D 511/C 131 nos 3 pontos de emissão — Nova Factura, POS, emissão de rascunho — com `SALE_ISSUED` intacto; par `CREDIT_NOTE_COGS_REVERSED` D 131/C 511 nas NCs com devolução ao `unitCost` snapshot; `cancelInvoice` estorna também o CMV quando existe; migração aditiva `s10a_invoice_line_unit_cost`; suite `test:integration:accounting:cogs` 14/14 com teste-âncora coerência 131 = stock físico) | ✅ |
 | **S10b** | **Anulação de NC + ND→Outros proveitos** (`cancelCreditNote` gate `invoices.cancel` + motivo ≥ 10 chars + idempotência `CREDIT_NOTE_CANCEL`; OUT compensatórios `reversesId`→IN da devolução com falha TOTAL se a mercadoria entretanto saiu; estorno por verdade histórica dos DOIS eventos (`CREDIT_NOTE_ISSUED` + `CREDIT_NOTE_COGS_REVERSED` quando existe); saldo do cliente reposto; avgCost intacto; factura com NC anulada volta a ser cancelável e o guard indica o número da NC; conta 422 «Outros proveitos operacionais» + mapping `OTHER_INCOME` no seed (45 contas/19 mappings) e `createDebitNote` credita 422 sem fallback; migrações aditivas `s10b_credit_note_cancellation` + backfill `creditNoteId` (COUNT prévio: 2); suite `test:integration:accounting:nc-cancel` 12/12) | ✅ |
+| **S10c** | **Lançamentos manuais (UI) + regularização retroactiva de existências** (UI completa `/contabilidade/lancamentos` sobre o domínio 8b intacto — rascunho/editar/confirmar/eliminar/estornar com gates `accounting.prepare/post/reverse`; operação genérica `executeInventoryRegularization` idempotente (scope `INVENTORY_REGULARIZATION`) D 131/C 312 no `DAB` com valor recalculado na execução; executada na demo: `AB 2026/0002` = 311 411,00 MT, divergência final 0; migração aditiva `s10c_inventory_regularization`; suite `test:integration:accounting:regularization` 11/11; **S10 COMPLETA**) | ✅ |
 | 9 | RH & Salários | 🗺️ futuro |
 | X | RLS forçado em toda a BD (fase transversal, pré-produção) | 🗺️ futuro |
 
 **Validações actuais:** typecheck 6/6 · lint 6/6 · **testes unitários 99** · **security hardening 16/16** · **auth company-selection 7/7** · **reversal all 44/44** · **integração de
-contabilidade 229/229** (8b 32 + 8c.1 30 + 8c.2a 18 + 8c.2b 34 + 8c.3 17 + **S10a/cogs 14** + **S10b/nc-cancel 12** + P1-04 14 + P0-02 5 + P0-03.0 9 + P0-03b 10 + P0-03a 9 + P0-03c 7 + P0-03d 8 + P0-03e 6 + P0-03f 4;
-`pnpm test:integration:accounting`, sub: `…:c1`, `…:c2a`, `…:c2`, `…:c3`, `…:cogs`, `…:nc-cancel`, `…:reports`, `…:reversal:customer-payment`, `…:reversal:invoice`, `…:reversal:supplier-payment`, `…:reversal:purchase-receipt`, `…:reversal:treasury-transfer`, `…:reversal:uat`, `…:reversal:all`) · **POS 7/7** (`pnpm test:integration:pos`) · `prisma validate` OK · `prisma migrate status` OK · `pnpm build` OK
+contabilidade 240/240** (8b 32 + 8c.1 30 + 8c.2a 18 + 8c.2b 34 + 8c.3 17 + **S10a/cogs 14** + **S10b/nc-cancel 12** + **S10c/regularization 11** + P1-04 14 + P0-02 5 + P0-03.0 9 + P0-03b 10 + P0-03a 9 + P0-03c 7 + P0-03d 8 + P0-03e 6 + P0-03f 4;
+`pnpm test:integration:accounting`, sub: `…:c1`, `…:c2a`, `…:c2`, `…:c3`, `…:cogs`, `…:nc-cancel`, `…:regularization`, `…:reports`, `…:reversal:customer-payment`, `…:reversal:invoice`, `…:reversal:supplier-payment`, `…:reversal:purchase-receipt`, `…:reversal:treasury-transfer`, `…:reversal:uat`, `…:reversal:all`) · **POS 7/7** (`pnpm test:integration:pos`) · `prisma validate` OK · `prisma migrate status` OK · `pnpm build` OK
 em Windows nativo (30/30 páginas estaticas + `/api/health` dinamico) e Docker Linux com Node 20 + OpenSSL · imagens Docker de produção
 `web`, `worker` e target `migrate` OK · seed idempotente (2×) · login/contexto
 multiempresa 7/7 · **POS 12/12** (`pnpm test:integration:pos`) · **relatorios 24/24** (`pnpm test:integration:reports`) · **Fecho de Caixa V1 11/11** (`pnpm test:integration:treasury:cash-closing`) · `pnpm build` OK em Windows nativo (31/31 páginas, incluindo `/api/health`, `/relatorios/exportar`, `/contabilidade/exportar` e `/tesouraria/fecho/exportar`) ·
@@ -650,6 +651,56 @@ isolamento A/B, estornos equilibrados), agregado accounting **229/229**, reversa
 documents 14/14 (ND agora assere crédito na 422 e NUNCA na 411), drafts 13/13, POS 12/12,
 relatórios 24/24, purchases approval 9/9, products initial-stock 10/10, stock counts 14/14,
 cash-closing 11/11, company-profile 8/8, auth 7/7, build OK.
+
+**S10c — Lançamentos manuais (UI) + regularização retroactiva de existências (2026-07-19):**
+terceira e última sub-sessão da S10 (**S10 COMPLETA**), na branch `s10c-manuais-retroactivo`, com
+migração aditiva `20260719030000_s10c_inventory_regularization` (um único toque de schema:
+`INVENTORY_REGULARIZATION` no enum `OperationIdempotencyScope` — SQL mostrado antes do migrate,
+regra 🔒). **Lançamentos manuais — zero alterações de domínio/schema**: a UI nova
+`/contabilidade/lancamentos` (tab «Lançamentos manuais» na Contabilidade, visível a quem tem
+`accounting.prepare`/`post`/`reverse`) orquestra o domínio 8b tal-qual — formulário de rascunho
+(diário activo, data, descrição, referência, linhas D/C com `SearchCombobox` de contas de
+movimento da S2, contas inactivas marcadas para a mensagem do domínio ser alcançável, totais ao
+vivo com chip Balanceado/Desbalanceado), lista de rascunhos (Editar com prefill, Confirmar via
+`postJournalEntry`, Eliminar via `deleteJournalEntryDraft` com snapshot na auditoria) e lista de
+manuais confirmados (Estornar via `reverseJournalEntry` com motivo opcional); os erros do domínio
+aparecem tal-qual nos dialogs (desbalanceado, período fechado, conta inactiva). `listJournalEntries`
+ganhou apenas os filtros aditivos `manualOnly` (sourceType null) e `includeLines`. **Regularização
+retroactiva** (decisão aprovada: corte + regularização única, genérica e reutilizável — não script
+da demo): módulo novo `packages/domain/src/inventory-regularization.ts` com
+`getInventoryRegularizationPreview` e `executeInventoryRegularization`, ambas gate
+`accounting.post`; o valor NUNCA vem do cliente — a pré-visualização calcula «stock físico ao
+avgCost corrente − saldo da conta `INVENTORY` (POSTED+REVERSED)» com a fórmula EXACTA do
+teste-âncora S10a (Σ por nível de stock de `round2(qtd × round2(avgCost))`) e detalhe por produto;
+a execução recomputa DENTRO da transacção e falha por inteiro se o valor divergir do confirmado
+(«Os valores mudaram desde a pré-visualização… Nada foi alterado»); lançamento D 131 `INVENTORY` /
+C 312 `OPENING_BALANCE_EQUITY` (ou o inverso se a divergência for negativa) no diário de Abertura
+`DAB` (padrão S8, sem fallback de mapping), evento `sourceType 'INVENTORY_REGULARIZATION'` /
+`INVENTORY_REGULARIZED` com `sourceId` = chave de idempotência (scope próprio, replay devolve o
+mesmo lançamento, mesma chave com payload diferente conflitua, chave nova permite regularizações
+futuras legítimas), auditoria explícita `accounting.inventory_regularization` (divergência, físico,
+saldo, nº de produtos, nota). UI `/contabilidade/regularizacao`: KPIs físico/saldo/divergência,
+detalhe por produto, dialog de confirmação com checkbox obrigatória e nota opcional; labels novos
+no Extrato Diário («Regularização de existências»). **Executada ao vivo na demo**: pré-visualização
+mostrou físico 322 770,00 / saldo 131 11 359,00 / divergência **311 411,00 MT** (o valor esperado,
+calculado — não constante; manteve-se exacto desde 2026-07-18 como previsto) → `AB 2026/0002`
+D 131 / C 312 = 311 411,00 Publicado → divergência final **0,00** e ecrã «Sem divergência»; BD
+confirma saldo 131 = físico = 322 770,00, auditoria e registo de idempotência — **o critério de
+coerência da S10a (131 = stock físico) reconcilia agora também na empresa demo**. Fluxo manual
+verificado ao vivo: rascunho D 111 / C 411 gravado desbalanceado (150 vs 100, chip
+«Desbalanceado») → confirmação bloqueada com «Lançamento desequilibrado: débito 150 ≠ crédito
+100.» → editado para 150/150 → confirmado como `LG 2026/0001` (primeira utilização da série do
+Diário Geral), visível no Extrato Diário como origem «Manual» → estornado (`LG 2026/0002`,
+original «Estornado»). Validado: `prisma validate`/`migrate status` OK, typecheck 6/6, lint 6/6,
+testes unitários verdes, nova suite `pnpm test:integration:accounting:regularization` 11/11
+(preview por produto/fórmula por nível, permissões, mismatch com rollback, execução D131/C312 com
+divergência final 0 + auditoria, replay idempotente, conflito de fingerprint, sem divergência,
+reutilização com nova chave, sentido inverso D312/C131, mapping em falta com rollback total,
+isolamento A/B), agregado accounting **240/240**, reversal all 44/44, POS 12/12, relatórios 24/24,
+documents 14/14, drafts 13/13, purchases approval 9/9, products initial-stock 10/10, stock counts
+14/14, cash-closing 11/11, company-profile 8/8, auth 7/7, security 16/16, build OK (rotas novas
+`/contabilidade/lancamentos` e `/contabilidade/regularizacao`). Próximo: **S11 — Contabilidade:
+relatórios** (não iniciar sem instrução explícita).
 
 **Hardening pré-produção P0-01 (2026-07-02):** seed demo bloqueado em `production`
 antes de criar o Prisma Client; credenciais demo removidas da interface de

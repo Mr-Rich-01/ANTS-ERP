@@ -1558,6 +1558,7 @@ enum OperationIdempotencyScope {
   STOCK_COUNT_CREATE
   STOCK_COUNT_VALIDATE
   CREDIT_NOTE_CANCEL
+  INVENTORY_REGULARIZATION
 }
 
 model OperationIdempotency {

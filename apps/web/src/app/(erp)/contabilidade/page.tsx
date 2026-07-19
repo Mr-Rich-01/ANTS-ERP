@@ -242,6 +242,9 @@ export default async function ContabilidadePage({ searchParams }: { searchParams
           <TabLink href={viewHref('journal', filters, selectedAccountId)} active={view === 'journal'} icon="book-open" label="Extrato Diario" />
           <TabLink href={viewHref('ledger', filters, selectedAccountId)} active={view === 'ledger'} icon="list-tree" label="Razao / Extracto" />
           <TabLink href={viewHref('trial-balance', filters, selectedAccountId)} active={view === 'trial-balance'} icon="scale" label="Balancete" />
+          {hasPermission(ctx, 'accounting.prepare') || hasPermission(ctx, 'accounting.post') || hasPermission(ctx, 'accounting.reverse') ? (
+            <TabLink href="/contabilidade/lancamentos" active={false} icon="pen-line" label="Lançamentos manuais" />
+          ) : null}
         </div>
 
         <form method="get" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(150px,1fr))', gap: 10, alignItems: 'end' }}>

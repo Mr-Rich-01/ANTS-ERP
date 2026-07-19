@@ -66,6 +66,7 @@ export function accountingSourceTypeLabel(value: string | null | undefined): str
     DEBIT_NOTE: 'Nota de debito',
     PRODUCT: 'Stock inicial de produto',
     STOCK_COUNT: 'Contagem de inventário',
+    INVENTORY_REGULARIZATION: 'Regularização de existências',
     REVERSAL: 'Estorno',
   };
   return labels[value] ?? value;
@@ -83,6 +84,7 @@ export function accountingEventLabel(value: string | null | undefined): string {
     CREDIT_NOTE_COGS_REVERSED: 'Devolução — reposição de existências',
     DEBIT_NOTE_ISSUED: 'Nota de debito emitida',
     STOCK_COUNT_VALIDATED: 'Contagem de inventário validada',
+    INVENTORY_REGULARIZED: 'Regularização de existências',
     REVERSAL_POSTED: 'Estorno registado',
   };
   return labels[value] ?? value;
@@ -1014,6 +1016,10 @@ export interface ListEntriesFilter {
   ledgerAccountId?: string;
   sourceType?: string;
   sourceId?: string;
+  /** Apenas lançamentos manuais (sem origem automática). */
+  manualOnly?: boolean;
+  /** Inclui as linhas (com código/nome da conta) em cada lançamento. */
+  includeLines?: boolean;
   limit?: number;
 }
 
@@ -1027,8 +1033,16 @@ export async function listJournalEntries(db: PrismaClient, ctx: RequestContext, 
   if (filter.fiscalYearId) where.fiscalYearId = filter.fiscalYearId;
   if (filter.sourceType) where.sourceType = filter.sourceType;
   if (filter.sourceId) where.sourceId = filter.sourceId;
+  if (filter.manualOnly) where.sourceType = null;
   if (filter.ledgerAccountId) where.lines = { some: { companyId, ledgerAccountId: filter.ledgerAccountId } };
-  const rows = await db.journalEntry.findMany({ where, orderBy: [{ entryDate: 'desc' }, { createdAt: 'desc' }], take: filter.limit ?? 100 });
+  const rows = await db.journalEntry.findMany({
+    where,
+    orderBy: [{ entryDate: 'desc' }, { createdAt: 'desc' }],
+    take: filter.limit ?? 100,
+    ...(filter.includeLines
+      ? { include: { lines: { orderBy: { lineNumber: 'asc' }, include: { ledgerAccount: { select: { code: true, name: true } } } } } }
+      : {}),
+  });
   return rows.map((e) => mapEntry(e));
 }
 
