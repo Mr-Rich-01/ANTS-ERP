@@ -277,9 +277,9 @@ describe('Fase 8b — domínio contabilístico (integração)', () => {
       prisma.accountingMapping.count({ where: { companyId: 'demo-company' } }),
       prisma.fiscalYear.count({ where: { companyId: 'demo-company' } }),
     ]);
-    expect(contas).toBe(44); // 37 base (8a) + 114/115 (8c.1) + 312 (S8) + 42/421/55/551 (inventário, S9)
+    expect(contas).toBe(45); // 37 base (8a) + 114/115 (8c.1) + 312 (S8) + 42/421/55/551 (inventário, S9) + 422 (S10b)
     expect(periodos).toBe(12);
-    expect(mappings).toBe(18); // 15 (8a) + OPENING_BALANCE_EQUITY (S8) + INVENTORY_SURPLUS/INVENTORY_SHORTAGE (S9)
+    expect(mappings).toBe(19); // 15 (8a) + OPENING_BALANCE_EQUITY (S8) + INVENTORY_SURPLUS/INVENTORY_SHORTAGE (S9) + OTHER_INCOME (S10b)
     expect(exercicios).toBe(1);
     expect(await prisma.journalEntry.count({ where: { companyId: 'demo-company' } })).toBe(demoJournalEntriesBaseline);
   });

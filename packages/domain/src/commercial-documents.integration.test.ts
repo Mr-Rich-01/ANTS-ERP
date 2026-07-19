@@ -37,6 +37,7 @@ const bCtx = ctx(CB, ['sales.create', 'sales.view']);
 interface Ids {
   ar: string;
   revenue: string;
+  otherIncome: string;
   vat: string;
   customer: string;
   warehouse: string;
@@ -65,6 +66,8 @@ async function teardown(companyId: string) {
   await prisma.journalEntry.updateMany({ where: { companyId }, data: { reversalOfId: null } });
   await prisma.journalEntry.deleteMany({ where: { companyId } });
   await prisma.creditNoteLine.deleteMany({ where: { companyId } });
+  // S10b: os movimentos da devolução referenciam a NC (FK creditNoteId).
+  await prisma.stockMovement.updateMany({ where: { companyId }, data: { creditNoteId: null } });
   await prisma.creditNote.deleteMany({ where: { companyId } });
   await prisma.debitNoteLine.deleteMany({ where: { companyId } });
   await prisma.debitNote.deleteMany({ where: { companyId } });
@@ -102,6 +105,8 @@ async function provision() {
   // S10a: a emissão passou a lançar CMV e a NC com devolução lança o par 131/511.
   const inventory = await prisma.ledgerAccount.create({ data: { companyId: CA, code: '131', name: 'Mercadorias', accountType: 'ASSET', normalBalance: 'DEBIT', level: 2, parentId: group.id, isPosting: true, isActive: true } });
   const cogs = await prisma.ledgerAccount.create({ data: { companyId: CA, code: '511', name: 'CMV', accountType: 'EXPENSE', normalBalance: 'DEBIT', level: 1, isPosting: true, isActive: true } });
+  // S10b: a ND passou a creditar OTHER_INCOME (422) em vez da 411 Vendas.
+  const otherIncome = await prisma.ledgerAccount.create({ data: { companyId: CA, code: '422', name: 'Outros proveitos operacionais', accountType: 'REVENUE', normalBalance: 'CREDIT', level: 1, isPosting: true, isActive: true } });
 
   await prisma.accountingMapping.createMany({
     data: [
@@ -110,6 +115,7 @@ async function provision() {
       { companyId: CA, systemKey: 'VAT_OUTPUT', ledgerAccountId: vat.id },
       { companyId: CA, systemKey: 'INVENTORY', ledgerAccountId: inventory.id },
       { companyId: CA, systemKey: 'COST_OF_GOODS_SOLD', ledgerAccountId: cogs.id },
+      { companyId: CA, systemKey: 'OTHER_INCOME', ledgerAccountId: otherIncome.id },
     ],
   });
 
@@ -127,7 +133,7 @@ async function provision() {
   await prisma.company.create({ data: { id: CB, legalName: 'Smoke S5 B' } });
   const bCustomer = await prisma.customer.create({ data: { companyId: CB, name: 'Cliente B' } });
 
-  ids = { ar: ar.id, revenue: revenue.id, vat: vat.id, customer: customer.id, warehouse: warehouse.id, taxableProduct: taxableProduct.id, exemptProduct: exemptProduct.id, bCustomer: bCustomer.id };
+  ids = { ar: ar.id, revenue: revenue.id, otherIncome: otherIncome.id, vat: vat.id, customer: customer.id, warehouse: warehouse.id, taxableProduct: taxableProduct.id, exemptProduct: exemptProduct.id, bCustomer: bCustomer.id };
 }
 
 beforeAll(async () => {
@@ -347,7 +353,7 @@ describe('Sessão S5 — Documentos Comerciais', () => {
     await expect(createCreditNote(prisma, bCtx, creditNoteInput(inv.id, line.id, { idempotencyKey: randomUUID() }))).rejects.toBeInstanceOf(NotFoundError);
   });
 
-  it('#9 ND aumenta o saldo e lança D Clientes / C Vendas + C IVA', async () => {
+  it('#9 ND aumenta o saldo e lança D Clientes / C Outros proveitos (422, S10b) + C IVA', async () => {
     const balanceBefore = await customerBalance();
     const movBefore = await prisma.stockMovement.count({ where: { companyId: CA } });
 
@@ -361,7 +367,9 @@ describe('Sessão S5 — Documentos Comerciais', () => {
     expect(entry?.journal.journalType).toBe('SALES');
     expect(entry?.lines).toHaveLength(3);
     expect(entry?.lines.find((l) => l.ledgerAccountId === ids.ar && l.customerId === ids.customer && Number(l.debit) === 232)).toBeTruthy();
-    expect(entry?.lines.find((l) => l.ledgerAccountId === ids.revenue && Number(l.credit) === 200)).toBeTruthy();
+    // S10b: a receita da ND vai a OTHER_INCOME — e NUNCA à 411 Vendas.
+    expect(entry?.lines.find((l) => l.ledgerAccountId === ids.otherIncome && Number(l.credit) === 200)).toBeTruthy();
+    expect(entry?.lines.some((l) => l.ledgerAccountId === ids.revenue)).toBe(false);
     expect(entry?.lines.find((l) => l.ledgerAccountId === ids.vat && Number(l.credit) === 32)).toBeTruthy();
   });
 

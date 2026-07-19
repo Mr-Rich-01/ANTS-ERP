@@ -1,14 +1,14 @@
 # MODULE_STATUS — ANTS ERP
 
-_Última actualização: 2026-07-18_
+_Última actualização: 2026-07-19_
 
 Estado vivo do projecto. O conhecimento permanente (arquitectura, regras, comandos) está
 em [`CLAUDE.md`](CLAUDE.md).
 
-**Último commit funcional:** pendente na branch `s10-contabilidade-lancamentos` (Sessão S10a do ROADMAP)
-**Fase concluída:** `S10a — Contabilidade: CMV ponta-a-ponta` (ROADMAP; fase anterior: `S9 — Inventário em duas etapas`)
+**Último commit funcional:** pendente na branch `s10b-anulacao-nc` (Sessão S10b do ROADMAP)
+**Fase concluída:** `S10b — Anulação de NC + ND→Outros proveitos` (ROADMAP; fase anterior: `S10a — Contabilidade: CMV ponta-a-ponta`)
 **UAT interna/demo:** V1 candidata a demo externa apos UAT interna, aprovada com ressalvas em 2026-07-06; P1-04 acrescenta Contabilidade V1 pronta para UAT/demo com limites; P1-05 acrescenta Fecho de Caixa V1 operacional sem persistencia formal; demo final check registado em `docs/DEMO_FINAL_CHECK.md` em 2026-07-08 como pronto com ressalvas menores
-**Próximo passo:** `Sessão S10b — Anulação de NC + ND→Outros proveitos` (divisão S10a/S10b/S10c aprovada em 2026-07-18; fronteiras no ROADMAP S10) — não iniciar sem instrução explícita, em branch própria; segue-se a `S10c — Lançamentos manuais (UI) + regularização retroactiva de existências` (decisões aprovadas: data de corte para o CMV histórico + operação de regularização genérica/idempotente/auditada com valor calculado na execução; ND histórica em 411 fica documentada, sem reclassificação); mantém-se pendente o smoke manual final em browser externo/limpo (logout, clique final POS, Fecho de Caixa V1) antes da demo externa
+**Próximo passo:** `Sessão S10c — Lançamentos manuais (UI) + regularização retroactiva de existências` (divisão S10a/S10b/S10c aprovada em 2026-07-18; fronteiras no ROADMAP S10) — não iniciar sem instrução explícita, em branch própria (decisões aprovadas: data de corte para o CMV histórico + operação de regularização genérica/idempotente/auditada com valor calculado na execução, primeiro uso na demo; ND histórica em 411 fica documentada, sem reclassificação — nota formalizada na S10b); mantém-se pendente o smoke manual final em browser externo/limpo (logout, clique final POS, Fecho de Caixa V1) antes da demo externa
 
 ---
 
@@ -58,12 +58,13 @@ em [`CLAUDE.md`](CLAUDE.md).
 | **S8** | **Produtos: criação com stock inicial** (secção opcional «Stock inicial» no dialog de criação — quantidade + custo unitário + armazém; `StockMovement IN` normal que inicializa o avgCost = custo informado; lançamento de abertura D 131 / C 312 nova via mapping `OPENING_BALANCE_EQUITY` no diário `DAB`; scope de idempotência `PRODUCT_CREATE`; migração aditiva `s8_product_initial_stock`; suite `test:integration:products:initial-stock` 10/10) | ✅ |
 | **S9** | **Inventário em duas etapas** (contagem série `CI` em RASCUNHO com snapshot `systemQty` e zero efeitos → validação `stock.adjust` aplica o delta contado sobre o stock corrente sob `FOR UPDATE`; `StockMovement ADJUST` com `stockCountId` + lançamento único `AJ` no `DAJ`: Excedente D 131/C 421, Déficit D 551/C 131 ao avgCost corrente com avgCost intacto; edição com refresh de snapshots e descarte com motivo padrão S6; ajuste directo legado removido; migração aditiva `s9_stock_counts`; suite `test:integration:stock:counts` 14/14) | ✅ |
 | **S10a** | **Contabilidade — CMV ponta-a-ponta** (snapshot `invoice_lines.unitCost` capturado na emissão; evento separado `COGS_POSTED` D 511/C 131 nos 3 pontos de emissão — Nova Factura, POS, emissão de rascunho — com `SALE_ISSUED` intacto; par `CREDIT_NOTE_COGS_REVERSED` D 131/C 511 nas NCs com devolução ao `unitCost` snapshot; `cancelInvoice` estorna também o CMV quando existe; migração aditiva `s10a_invoice_line_unit_cost`; suite `test:integration:accounting:cogs` 14/14 com teste-âncora coerência 131 = stock físico) | ✅ |
+| **S10b** | **Anulação de NC + ND→Outros proveitos** (`cancelCreditNote` gate `invoices.cancel` + motivo ≥ 10 chars + idempotência `CREDIT_NOTE_CANCEL`; OUT compensatórios `reversesId`→IN da devolução com falha TOTAL se a mercadoria entretanto saiu; estorno por verdade histórica dos DOIS eventos (`CREDIT_NOTE_ISSUED` + `CREDIT_NOTE_COGS_REVERSED` quando existe); saldo do cliente reposto; avgCost intacto; factura com NC anulada volta a ser cancelável e o guard indica o número da NC; conta 422 «Outros proveitos operacionais» + mapping `OTHER_INCOME` no seed (45 contas/19 mappings) e `createDebitNote` credita 422 sem fallback; migrações aditivas `s10b_credit_note_cancellation` + backfill `creditNoteId` (COUNT prévio: 2); suite `test:integration:accounting:nc-cancel` 12/12) | ✅ |
 | 9 | RH & Salários | 🗺️ futuro |
 | X | RLS forçado em toda a BD (fase transversal, pré-produção) | 🗺️ futuro |
 
 **Validações actuais:** typecheck 6/6 · lint 6/6 · **testes unitários 99** · **security hardening 16/16** · **auth company-selection 7/7** · **reversal all 44/44** · **integração de
-contabilidade 217/217** (8b 32 + 8c.1 30 + 8c.2a 18 + 8c.2b 34 + 8c.3 17 + **S10a/cogs 14** + P1-04 14 + P0-02 5 + P0-03.0 9 + P0-03b 10 + P0-03a 9 + P0-03c 7 + P0-03d 8 + P0-03e 6 + P0-03f 4;
-`pnpm test:integration:accounting`, sub: `…:c1`, `…:c2a`, `…:c2`, `…:c3`, `…:cogs`, `…:reports`, `…:reversal:customer-payment`, `…:reversal:invoice`, `…:reversal:supplier-payment`, `…:reversal:purchase-receipt`, `…:reversal:treasury-transfer`, `…:reversal:uat`, `…:reversal:all`) · **POS 7/7** (`pnpm test:integration:pos`) · `prisma validate` OK · `prisma migrate status` OK · `pnpm build` OK
+contabilidade 229/229** (8b 32 + 8c.1 30 + 8c.2a 18 + 8c.2b 34 + 8c.3 17 + **S10a/cogs 14** + **S10b/nc-cancel 12** + P1-04 14 + P0-02 5 + P0-03.0 9 + P0-03b 10 + P0-03a 9 + P0-03c 7 + P0-03d 8 + P0-03e 6 + P0-03f 4;
+`pnpm test:integration:accounting`, sub: `…:c1`, `…:c2a`, `…:c2`, `…:c3`, `…:cogs`, `…:nc-cancel`, `…:reports`, `…:reversal:customer-payment`, `…:reversal:invoice`, `…:reversal:supplier-payment`, `…:reversal:purchase-receipt`, `…:reversal:treasury-transfer`, `…:reversal:uat`, `…:reversal:all`) · **POS 7/7** (`pnpm test:integration:pos`) · `prisma validate` OK · `prisma migrate status` OK · `pnpm build` OK
 em Windows nativo (30/30 páginas estaticas + `/api/health` dinamico) e Docker Linux com Node 20 + OpenSSL · imagens Docker de produção
 `web`, `worker` e target `migrate` OK · seed idempotente (2×) · login/contexto
 multiempresa 7/7 · **POS 12/12** (`pnpm test:integration:pos`) · **relatorios 24/24** (`pnpm test:integration:reports`) · **Fecho de Caixa V1 11/11** (`pnpm test:integration:treasury:cash-closing`) · `pnpm build` OK em Windows nativo (31/31 páginas, incluindo `/api/health`, `/relatorios/exportar`, `/contabilidade/exportar` e `/tesouraria/fecho/exportar`) ·
@@ -595,6 +596,60 @@ cancelamento + contagem S9, lançamentos CMV sempre equilibrados), agregado acco
 reversal all 44/44, documents 14/14, drafts 13/13, POS 12/12, relatórios 24/24, purchases approval
 9/9, products initial-stock 10/10, stock counts 14/14, cash-closing 11/11, company-profile 8/8,
 auth 7/7, build OK.
+
+**S10b — Anulação de NC + ND→Outros proveitos (2026-07-19):** segunda sub-sessão da S10, na
+branch `s10b-anulacao-nc`, com duas migrações aditivas aprovadas:
+`20260719020000_s10b_credit_note_cancellation` (metadados `cancelledAt`/`cancelledById`/
+`cancellationReason` em `credit_notes`, rastreabilidade `stock_movements.creditNoteId` com FK
+composta + índice — padrão P0-03.0/S9 — e scope `CREDIT_NOTE_CANCEL`) e
+`20260719020001_s10b_credit_note_movement_backfill` (separada, regra S7: liga os movimentos IN
+das devoluções das NCs existentes ao `creditNoteId`; critério conservador `document = número da
+NC` + tipo IN + sem qualquer outra origem; **COUNT prévio em dev: 2 movimentos** — NC 2026/0001
+e NC 2026/0002, 1 cada — confirmados ligados após o migrate; nenhuma linha apagada). Domínio:
+`cancelCreditNote` em `commercial-documents.ts` — gate `invoices.cancel` (o mesmo dos
+cancelamentos de venda; sem RBAC novo), motivo ≥ 10 chars (`validateReversalReason`), data =
+dia actual, idempotência `CREDIT_NOTE_CANCEL` com fingerprint v1 e replay validado
+(`loadCompletedCreditNoteCancellation`). Efeitos numa única transacção com falha total: saldo
+do cliente reposto (incremento simétrico), devolução revertida por `StockMovement OUT`
+compensatórios ligados por `reversesId` aos IN da NC (com `creditNoteId`; **avgCost intacto** —
+saídas nunca recalculam), estorno por verdade histórica do `CREDIT_NOTE_ISSUED` e do
+`CREDIT_NOTE_COGS_REVERSED` quando existe (NCs pré-S10a/sem devolução estornam só o espelho,
+`cogsReversalId` null), NC → `CANCELLED` com quem/quando/porquê (nunca se apaga; documento
+imprimível com bloco de anulação padrão S6) e auditoria `credit_note.cancel`. **Ordem dos locks
+documentada** (determinística, compatível com `cancelInvoice`/`createCreditNote` — qualquer par
+serializa na linha da factura): 1) `fiscal_years`+`accounting_periods`; 2) **`invoices` (factura
+de origem) primeiro**; 3) `credit_notes`; 4) `customers`; 5) `stock_levels` pela ordem
+`createdAt asc` dos movimentos; 6) advisory lock + `journal_entries` (helper de estorno). Caso
+crítico coberto: se a mercadoria devolvida entretanto saiu (ex.: vendida), a anulação **falha
+por inteiro** com mensagem que lista produto, devolvido e disponível («Nada foi alterado»).
+Desbloqueio: o guard do `cancelInvoice` continua a filtrar `status: 'ISSUED'`, pelo que a
+factura com NC anulada volta a ser cancelável (teste explícito) e a mensagem passou a indicar o
+caminho com os números das NCs («Anule primeiro a(s) nota(s) de crédito…»); o tecto de crédito
+também é libertado. ND: conta nova **422 «Outros proveitos operacionais»** (REVENUE, filha do
+grupo 42 da S9) + mapping `OTHER_INCOME` no seed canónico (45 contas / 19 mappings; testes 8b
+`#25`/c1 `#17` actualizados) e `createDebitNote` passou a creditar `OTHER_INCOME` **sem
+fallback** (mapping em falta → falha total com mensagem clara, padrão S8). **Decisão aprovada
+formalizada: a ND histórica em 411 (ND 2026/0001, base 150,00 MT, lançamento LV 2026/0028) fica
+como verdade histórica documentada — não se reclassifica.** UI: `CreditNoteCancellationDialog`
+(padrão S6: motivo obrigatório, data bloqueada, aviso, checkbox) no documento da NC + action
+`cancelCreditNoteAction`. Verificado ao vivo em browser: NC 2026/0002 anulada → estorno duplo
+`LV 2026/0036`/`LV 2026/0037` no Extrato Diário, stock Coca-Cola 301→300 (OUT com `reversesId`),
+saldo do cliente −3 400,00→−3 237,60, avgCost 101,00 intacto, bloco «Anulada — motivo/
+Responsável/Data-hora» no documento; `FT 2026/0028` voltou a ser cancelável e foi cancelada
+(estorno duplo `LV 2026/0038`/`0039`); `ND 2026/0002` nova credita a **422** (`LV 2026/0040`:
+D 121 290,00 / C 422 250,00 + C 221 40,00); caso crítico real: `NC 2026/0003` (devolução de 5
+`S8-DEMO-001`, 3 revendidos → stock 2) falhou por inteiro no dialog com «devolvido 5, disponível
+2. Nada foi alterado» e a BD confirmou zero alterações; guard da `FT 2026/0029` mostra
+«(NC 2026/0003). Anule primeiro…». Teardowns das suites cogs/documents/drafts ganharam o
+desligamento do `creditNoteId` antes de apagar NCs (FK nova). Validado: `prisma validate`/
+`migrate status`/diff BD↔schema vazio, typecheck 6/6, lint 6/6, testes unitários 99, nova suite
+`pnpm test:integration:accounting:nc-cancel` 12/12 (estorno duplo + stock + saldo + auditoria,
+avgCost intacto, NC só de valor, caso crítico com rollback total, desbloqueio do cancelamento +
+guard, tecto libertado, idempotência replay/fingerprint, já-anulada, motivo/data, permissões,
+isolamento A/B, estornos equilibrados), agregado accounting **229/229**, reversal all 44/44,
+documents 14/14 (ND agora assere crédito na 422 e NUNCA na 411), drafts 13/13, POS 12/12,
+relatórios 24/24, purchases approval 9/9, products initial-stock 10/10, stock counts 14/14,
+cash-closing 11/11, company-profile 8/8, auth 7/7, build OK.
 
 **Hardening pré-produção P0-01 (2026-07-02):** seed demo bloqueado em `production`
 antes de criar o Prisma Client; credenciais demo removidas da interface de

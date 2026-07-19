@@ -1,12 +1,14 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { forCompany } from '@ants/database';
+import { civilDateInTimeZone } from '@ants/shared';
 import { creditNoteStatusLabel, DomainError, getCompanyPrintProfile, getCreditNote, hasPermission } from '@ants/domain';
 import { getContext } from '@/lib/session';
 import { Icon } from '@/components/Icon';
 import { PrintButton } from '@/components/PrintButton';
 import { CompanyHeader, DocumentFooter, PrintLayout } from '@/components/print/PrintLayout';
 import { DocumentLinesTable, DocumentMetaRows, DocumentNoteBox, DocumentPartyBlock, DocumentStatusPill, DocumentTotalsBlock } from '@/components/print/DocumentParts';
+import { CreditNoteCancellationDialog } from '@/components/facturas/CreditNoteCancellationDialog';
 
 export const dynamic = 'force-dynamic';
 
@@ -27,6 +29,10 @@ const topBtn: React.CSSProperties = {
 
 function fmtDate(d: Date): string {
   return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
+}
+
+function fmtDateTime(d: Date): string {
+  return `${fmtDate(d)} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
 
 export default async function NotaCreditoDocumentoPage({ searchParams }: { searchParams: { id?: string } }) {
@@ -54,6 +60,8 @@ export default async function NotaCreditoDocumentoPage({ searchParams }: { searc
   }
   const company = await getCompanyPrintProfile(db, ctx);
   const active = nc.status === 'ISSUED';
+  const canCancel = active && hasPermission(ctx, 'invoices.cancel');
+  const cancellationDate = civilDateInTimeZone();
 
   return (
     <div data-screen-label="Nota de crédito (documento)">
@@ -67,6 +75,18 @@ export default async function NotaCreditoDocumentoPage({ searchParams }: { searc
             <Icon name="file-text" size={16} />
             Abrir factura {nc.invoiceNumber}
           </Link>
+          {canCancel && (
+            <CreditNoteCancellationDialog
+              cancellationDate={cancellationDate}
+              note={{ id: nc.id, number: nc.number, invoiceNumber: nc.invoiceNumber, customerName: nc.customerName, total: nc.total, returnStock: nc.returnStock }}
+              trigger={
+                <button style={{ ...topBtn, borderColor: '#f0d0cc', background: '#fff5f3', color: '#8b3a32', cursor: 'pointer' }}>
+                  <Icon name="ban" size={16} />
+                  Anular nota de crédito
+                </button>
+              }
+            />
+          )}
           <PrintButton label="Imprimir / Guardar PDF" />
         </div>
       </div>
@@ -86,6 +106,7 @@ export default async function NotaCreditoDocumentoPage({ searchParams }: { searc
               ['Data de emissão', fmtDate(nc.issueDate)],
               ['Factura de origem', nc.invoiceNumber],
               ['Devolução de stock', nc.returnStock ? `Sim${nc.warehouseName ? ` · ${nc.warehouseName}` : ''}` : 'Não (só valor)'],
+              ...(nc.cancelledAt ? [['Anulação', fmtDateTime(nc.cancelledAt)] as [string, string]] : []),
             ]}
           />
         </div>
@@ -104,13 +125,39 @@ export default async function NotaCreditoDocumentoPage({ searchParams }: { searc
                 <strong style={{ color: '#16282c' }}>Motivo:</strong> {nc.reason}
               </div>
               {nc.notes ? <div style={{ marginTop: 8 }}>{nc.notes}</div> : null}
+              {nc.cancellationReason && (
+                <div style={{ marginTop: 8, padding: '8px 9px', borderRadius: 6, background: '#fff5f3', color: '#8b3a32' }}>
+                  <strong>Anulada — motivo:</strong> {nc.cancellationReason}
+                  {nc.cancelledByName || nc.cancelledById ? (
+                    <>
+                      <br />
+                      <strong>Responsável:</strong> {nc.cancelledByName ?? nc.cancelledById}
+                    </>
+                  ) : null}
+                  {nc.cancelledAt ? (
+                    <>
+                      <br />
+                      <strong>Data/hora:</strong> {fmtDateTime(nc.cancelledAt)}
+                    </>
+                  ) : null}
+                </div>
+              )}
             </div>
           }
         />
 
         <DocumentNoteBox>
-          Nota de crédito emitida contra a factura {nc.invoiceNumber}. O valor foi creditado na conta-corrente do cliente.
-          {nc.returnStock ? ' A mercadoria devolvida deu entrada em armazém.' : ' Sem movimento de mercadoria.'}
+          {nc.status === 'CANCELLED' ? (
+            <>
+              Nota de crédito ANULADA — os efeitos foram integralmente revertidos: saldo do cliente reposto
+              {nc.returnStock ? ', mercadoria devolvida voltou a sair de armazém' : ''} e lançamentos estornados. O documento permanece no histórico sem efeitos.
+            </>
+          ) : (
+            <>
+              Nota de crédito emitida contra a factura {nc.invoiceNumber}. O valor foi creditado na conta-corrente do cliente.
+              {nc.returnStock ? ' A mercadoria devolvida deu entrada em armazém.' : ' Sem movimento de mercadoria.'}
+            </>
+          )}
         </DocumentNoteBox>
 
         <DocumentFooter company={company} />

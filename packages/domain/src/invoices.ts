@@ -1394,9 +1394,17 @@ export async function cancelInvoice(db: PrismaClient, ctx: RequestContext, input
 
         // Bloqueio conservador (S5): a NC já repôs saldo/stock parcialmente — o
         // cancelamento integral duplicaria essa reversão. Simétrico ao dos recibos.
-        const issuedCreditNotes = await tx.creditNote.count({ where: { companyId, invoiceId: invoice.id, status: 'ISSUED' } });
-        if (issuedCreditNotes > 0) {
-          throw new ConflictError('Esta factura possui notas de crédito emitidas. O cancelamento integral não é permitido para não duplicar a reversão.');
+        // S10b: NCs anuladas deixam de contar — a factura volta a ser cancelável.
+        const issuedCreditNotes = await tx.creditNote.findMany({
+          where: { companyId, invoiceId: invoice.id, status: 'ISSUED' },
+          select: { number: true },
+          orderBy: { number: 'asc' },
+        });
+        if (issuedCreditNotes.length > 0) {
+          const numbers = issuedCreditNotes.map((n) => n.number).join(', ');
+          throw new ConflictError(
+            `Esta factura possui notas de crédito emitidas (${numbers}). Anule primeiro a(s) nota(s) de crédito no respectivo documento para depois cancelar a factura.`,
+          );
         }
 
         await tx.$queryRaw`SELECT id FROM customers WHERE id = ${invoice.customerId} AND "companyId" = ${companyId} FOR UPDATE`;

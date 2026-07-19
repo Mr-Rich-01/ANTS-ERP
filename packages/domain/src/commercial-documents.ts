@@ -7,7 +7,10 @@
  *   lança o espelho da venda (D 411 Vendas, D 221 IVA liquidado / C 121 Clientes).
  *   O par 131/CMV da devolução fica para a S10 (decisão aprovada — ver ROADMAP S10).
  * - Nota de Débito (ND): contra um cliente, factura opcional; aumenta o saldo do cliente;
- *   lança D 121 Clientes / C 411 Vendas (+ C 221 IVA). Nunca movimenta stock.
+ *   lança D 121 Clientes / C 422 Outros proveitos operacionais (+ C 221 IVA) — S10b;
+ *   até à S10b creditava a 411 Vendas (a ND histórica fica como verdade histórica).
+ *   Nunca movimenta stock.
+ * - Anulação de NC (S10b): estorno simétrico dos dois eventos + reversão da devolução.
  */
 import { z } from 'zod';
 import type { Prisma, PrismaClient } from '@ants/database';
@@ -18,7 +21,8 @@ import { requirePermission, hasPermission } from './permissions';
 import { ConflictError, NotFoundError, ValidationError } from './errors';
 import { writeAudit } from './audit';
 import { formatAccountingDate, getMappedAccountTx, parseAccountingDate } from './accounting';
-import { inventoryCostTotal, postAccountingEventTx, postInventoryCostEventTx, type InventoryCostItem } from './accounting-events';
+import { inventoryCostTotal, postAccountingEventTx, postInventoryCostEventTx, reverseAccountingEventTx, type InventoryCostItem } from './accounting-events';
+import { validateOpenReversalDateTx, validateReversalReason } from './reversals';
 import {
   FINGERPRINT_VERSION,
   canonicalRequestFingerprint,
@@ -118,6 +122,10 @@ export interface CreditNoteDetail {
   returnStock: boolean;
   warehouseName: string | null;
   status: CreditNoteStatus;
+  cancelledAt: Date | null;
+  cancelledById: string | null;
+  cancelledByName: string | null;
+  cancellationReason: string | null;
   subtotal: number;
   taxableBase: number;
   taxTotal: number;
@@ -392,6 +400,9 @@ export async function getCreditNote(db: PrismaClient, ctx: RequestContext, id: s
     include: { lines: true, invoice: { select: { number: true } }, warehouse: { select: { name: true } } },
   });
   if (!n) throw new NotFoundError('Nota de crédito não encontrada.');
+  const cancelledBy = n.cancelledById
+    ? await db.user.findFirst({ where: { id: n.cancelledById }, select: { name: true, email: true } })
+    : null;
   return {
     id: n.id,
     number: n.number,
@@ -405,6 +416,10 @@ export async function getCreditNote(db: PrismaClient, ctx: RequestContext, id: s
     returnStock: n.returnStock,
     warehouseName: n.warehouse?.name ?? null,
     status: n.status as CreditNoteStatus,
+    cancelledAt: n.cancelledAt,
+    cancelledById: n.cancelledById,
+    cancelledByName: cancelledBy ? cancelledBy.name || cancelledBy.email : null,
+    cancellationReason: n.cancellationReason,
     subtotal: Number(n.subtotal),
     taxableBase: Number(n.taxableBase),
     taxTotal: Number(n.taxTotal),
@@ -663,6 +678,7 @@ export async function createCreditNote(db: PrismaClient, ctx: RequestContext, in
                 companyId,
                 productId: p.productId,
                 warehouseId: invoice.warehouseId,
+                creditNoteId: creditNote.id,
                 type: 'IN',
                 quantity: p.quantity,
                 balanceAfter,
@@ -734,6 +750,329 @@ export async function createCreditNote(db: PrismaClient, ctx: RequestContext, in
         });
 
         return { resourceType: 'CreditNote', resourceId: creditNote.id, result: { id: creditNote.id, number } };
+      },
+    });
+    return op.result;
+  });
+}
+
+// ─────────────────────────── Notas de Crédito — anulação (S10b) ───────────────────────────
+
+const cancelCreditNoteInput = z.object({
+  creditNoteId: z.string().min(1, 'Nota de crédito inválida.'),
+  idempotencyKey: z.string().min(1, 'Chave de idempotência obrigatória.'),
+  cancellationReason: z.string(),
+  cancellationDate: z.string().min(1, 'Data da anulação obrigatória.'),
+});
+
+export type CancelCreditNoteInput = z.input<typeof cancelCreditNoteInput>;
+
+export interface CancelCreditNoteResult {
+  id: string;
+  number: string;
+  cancellationDate: string;
+  /** Movimentos OUT compensatórios dos IN da devolução (vazio em NC só de valor). */
+  stockReversalIds: string[];
+  /** Estorno do lançamento espelho CREDIT_NOTE_ISSUED. */
+  accountingReversalId: string;
+  /** Estorno do par CREDIT_NOTE_COGS_REVERSED; null quando a NC não o lançou. */
+  cogsReversalId: string | null;
+}
+
+function creditNoteCancellationFingerprint(companyId: string, creditNoteId: string, cancellationDate: Date, cancellationReason: string): string {
+  return canonicalRequestFingerprint(FINGERPRINT_VERSION, {
+    companyId,
+    creditNoteId,
+    cancellationDate: fpDate(cancellationDate),
+    cancellationReason,
+  });
+}
+
+function resolveAllowedCancellationDate(value: string): Date {
+  const requestedDate = parseAccountingDate(value);
+  const currentDate = civilDateInTimeZone();
+  if (formatAccountingDate(requestedDate) !== currentDate) {
+    throw new ValidationError('A data da anulação deve ser a data actual em Africa/Maputo.');
+  }
+  return parseAccountingDate(currentDate);
+}
+
+/** Replay idempotente: valida que a anulação registada está completa e devolve-a. */
+async function loadCompletedCreditNoteCancellation(tx: Prisma.TransactionClient, companyId: string, creditNoteId: string, cancellationDate: Date): Promise<CancelCreditNoteResult | null> {
+  const note = await tx.creditNote.findFirst({ where: { companyId, id: creditNoteId }, select: { id: true, number: true, status: true } });
+  if (!note) return null;
+  if (note.status !== 'CANCELLED') throw new ConflictError('Registo de idempotência aponta para uma nota de crédito não anulada (integridade).');
+
+  const [originalMovements, originalEntry, cogsEntry] = await Promise.all([
+    tx.stockMovement.findMany({ where: { companyId, creditNoteId: note.id, type: 'IN' }, select: { id: true } }),
+    tx.journalEntry.findFirst({ where: { companyId, sourceType: 'CREDIT_NOTE', sourceId: note.id, accountingEvent: 'CREDIT_NOTE_ISSUED' }, select: { id: true } }),
+    tx.journalEntry.findFirst({ where: { companyId, sourceType: 'CREDIT_NOTE', sourceId: note.id, accountingEvent: 'CREDIT_NOTE_COGS_REVERSED' }, select: { id: true } }),
+  ]);
+  if (!originalEntry) throw new ConflictError('Registo de idempotência aponta para uma anulação sem lançamento contabilístico original (integridade).');
+
+  const [stockReversals, accountingReversal, cogsReversal] = await Promise.all([
+    originalMovements.length
+      ? tx.stockMovement.findMany({ where: { companyId, reversesId: { in: originalMovements.map((m) => m.id) } }, select: { id: true } })
+      : Promise.resolve([]),
+    tx.journalEntry.findFirst({ where: { companyId, reversalOfId: originalEntry.id }, select: { id: true } }),
+    cogsEntry
+      ? tx.journalEntry.findFirst({ where: { companyId, reversalOfId: cogsEntry.id }, select: { id: true } })
+      : Promise.resolve(null),
+  ]);
+  if (stockReversals.length !== originalMovements.length || !accountingReversal || (cogsEntry && !cogsReversal)) {
+    throw new ConflictError('Registo de idempotência aponta para uma anulação incompleta (integridade).');
+  }
+  return {
+    id: note.id,
+    number: note.number,
+    cancellationDate: formatAccountingDate(cancellationDate),
+    stockReversalIds: stockReversals.map((m) => m.id),
+    accountingReversalId: accountingReversal.id,
+    cogsReversalId: cogsReversal?.id ?? null,
+  };
+}
+
+/**
+ * Anula integralmente uma nota de crédito emitida (S10b). A NC nunca se apaga:
+ * fica CANCELLED com quem/quando/porquê, consultável e imprimível.
+ *
+ * Efeitos (transacção única, falha total):
+ * - saldo do cliente reposto (incremento simétrico do decremento da emissão);
+ * - devolução de stock revertida por movimentos OUT compensatórios ligados por
+ *   `reversesId` aos IN da NC (custo médio intacto — saídas nunca recalculam);
+ *   se a mercadoria devolvida entretanto saiu (vendida), falha por inteiro;
+ * - estorno contabilístico histórico do espelho CREDIT_NOTE_ISSUED e, quando
+ *   existir, do par CREDIT_NOTE_COGS_REVERSED (via reverseAccountingEventTx);
+ * - auditoria `credit_note.cancel` e idempotência CREDIT_NOTE_CANCEL.
+ *
+ * ORDEM DOS LOCKS (determinística, compatível com cancelInvoice/P0-03a e com
+ * createCreditNote — qualquer par destas operações sobre a mesma factura
+ * serializa na linha da factura, o primeiro lock de linha comum):
+ *   1. fiscal_years + accounting_periods (validateOpenReversalDateTx);
+ *   2. invoices (factura de origem da NC) FOR UPDATE;
+ *   3. credit_notes (a própria NC) FOR UPDATE;
+ *   4. customers FOR UPDATE;
+ *   5. stock_levels FOR UPDATE (pela ordem createdAt asc dos movimentos IN,
+ *      como cancelInvoice);
+ *   6. advisory lock + journal_entries FOR UPDATE (reverseAccountingEventTx).
+ * O cancelInvoice usa 1 → 2 → (4 → 5 → 6) sem o passo 3; como ambos adquirem
+ * primeiro a factura (2), nunca se cruzam nos locks seguintes da mesma factura.
+ */
+export async function cancelCreditNote(db: PrismaClient, ctx: RequestContext, input: CancelCreditNoteInput): Promise<CancelCreditNoteResult> {
+  requirePermission(ctx, 'invoices.cancel');
+  const companyId = requireCompany(ctx);
+  const parsed = cancelCreditNoteInput.safeParse(input);
+  if (!parsed.success) throw new ValidationError(parsed.error.issues[0]?.message ?? 'Dados inválidos.');
+  const data = parsed.data;
+  const cancellationReason = validateReversalReason(data.cancellationReason);
+  const cancellationDate = resolveAllowedCancellationDate(data.cancellationDate);
+  const requestFingerprint = creditNoteCancellationFingerprint(companyId, data.creditNoteId, cancellationDate, cancellationReason);
+
+  return db.$transaction(async (tx) => {
+    const op = await runIdempotentOperation<CancelCreditNoteResult>(tx, ctx, {
+      scope: 'CREDIT_NOTE_CANCEL',
+      idempotencyKey: data.idempotencyKey,
+      requestFingerprint,
+      expectedResourceType: 'CreditNote',
+      loadExisting: (resourceId) => loadCompletedCreditNoteCancellation(tx, companyId, resourceId, cancellationDate),
+      run: async () => {
+        // Leitura sem lock (não afecta a ordem de locks) só para o isolamento
+        // multiempresa e para conhecer a factura de origem (invoiceId é imutável);
+        // o estado da NC é revalidado adiante, já sob lock.
+        const preview = await tx.creditNote.findFirst({ where: { companyId, id: data.creditNoteId }, select: { id: true, invoiceId: true } });
+        if (!preview) throw new NotFoundError('Nota de crédito não encontrada.');
+
+        // 1. Período/exercício abertos (locks de fiscal_years/accounting_periods).
+        await validateOpenReversalDateTx(tx, companyId, cancellationDate);
+
+        // 2. Factura primeiro (o MESMO primeiro lock de cancelInvoice/createCreditNote).
+        await tx.$queryRaw`SELECT id FROM invoices WHERE id = ${preview.invoiceId} AND "companyId" = ${companyId} FOR UPDATE`;
+        // 3. A própria NC.
+        await tx.$queryRaw`SELECT id FROM credit_notes WHERE id = ${data.creditNoteId} AND "companyId" = ${companyId} FOR UPDATE`;
+
+        const note = await tx.creditNote.findFirst({ where: { companyId, id: data.creditNoteId }, include: { lines: true } });
+        if (!note) throw new NotFoundError('Nota de crédito não encontrada.');
+        if (note.status === 'CANCELLED') throw new ConflictError('Esta nota de crédito já foi anulada.');
+        if (note.status !== 'ISSUED') throw new ConflictError('Só é possível anular notas de crédito emitidas.');
+
+        const invoice = await tx.invoice.findFirst({ where: { companyId, id: note.invoiceId }, select: { id: true, number: true } });
+        if (!invoice) throw new NotFoundError('Factura de origem da nota de crédito não encontrada.');
+
+        // 4. Cliente.
+        await tx.$queryRaw`SELECT id FROM customers WHERE id = ${note.customerId} AND "companyId" = ${companyId} FOR UPDATE`;
+        const customer = await tx.customer.findFirst({ where: { companyId, id: note.customerId } });
+        if (!customer) throw new NotFoundError('Cliente da nota de crédito não encontrado.');
+
+        // Movimentos IN da devolução (rastreados por creditNoteId — backfill S10b).
+        const stockMovements = await tx.stockMovement.findMany({
+          where: { companyId, creditNoteId: note.id, type: 'IN' },
+          orderBy: { createdAt: 'asc' },
+        });
+        if (note.returnStock) {
+          const lineQuantities = new Map<string, number>();
+          for (const l of note.lines) {
+            if (!l.productId) continue;
+            lineQuantities.set(l.productId, (lineQuantities.get(l.productId) ?? 0) + l.quantity);
+          }
+          const movementQuantities = new Map<string, number>();
+          for (const m of stockMovements) {
+            if (m.quantity <= 0) throw new ConflictError('Integridade: movimento de devolução da NC não é uma entrada.');
+            movementQuantities.set(m.productId, (movementQuantities.get(m.productId) ?? 0) + m.quantity);
+          }
+          for (const [productId, quantity] of lineQuantities) {
+            if ((movementQuantities.get(productId) ?? 0) !== quantity) {
+              throw new ConflictError('Esta nota de crédito foi criada antes da rastreabilidade necessária para anulação automática. Requer revisão administrativa.');
+            }
+          }
+          for (const m of stockMovements) {
+            if (!lineQuantities.has(m.productId)) throw new ConflictError('Integridade: movimento de devolução não corresponde às linhas da nota de crédito.');
+          }
+        } else if (stockMovements.length > 0) {
+          throw new ConflictError('Integridade: nota de crédito sem devolução com movimentos de stock associados.');
+        }
+
+        const existingStockReversal = stockMovements.length
+          ? await tx.stockMovement.findFirst({ where: { companyId, reversesId: { in: stockMovements.map((m) => m.id) } }, select: { id: true } })
+          : null;
+        if (existingStockReversal) throw new ConflictError('Esta nota de crédito já possui movimentos de stock compensatórios.');
+
+        // 5. Níveis de stock, pela ordem dos movimentos (createdAt asc — cancelInvoice).
+        for (const movement of stockMovements) {
+          await tx.$queryRaw`
+            SELECT id
+            FROM stock_levels
+            WHERE "companyId" = ${companyId}
+              AND "productId" = ${movement.productId}
+              AND "warehouseId" = ${movement.warehouseId}
+            FOR UPDATE
+          `;
+        }
+
+        // Validação prévia COMPLETA do stock: ou reverte tudo, ou nada. Se a
+        // mercadoria devolvida entretanto saiu (ex.: foi vendida), falha por inteiro.
+        const insufficient: string[] = [];
+        for (const movement of stockMovements) {
+          const level = await tx.stockLevel.findUnique({ where: { productId_warehouseId: { productId: movement.productId, warehouseId: movement.warehouseId } } });
+          const available = level && level.companyId === companyId ? level.quantity : 0;
+          if (available < movement.quantity) {
+            const product = await tx.product.findFirst({ where: { companyId, id: movement.productId }, select: { name: true, sku: true } });
+            const label = product ? `${product.name} (${product.sku})` : movement.productId;
+            insufficient.push(`${label}: devolvido ${movement.quantity}, disponível ${available}`);
+          }
+        }
+        if (insufficient.length > 0) {
+          throw new ConflictError(
+            `Não é possível anular a nota de crédito ${note.number}: a mercadoria devolvida já saiu de armazém (ex.: foi vendida) — ${insufficient.join('; ')}. Nada foi alterado.`,
+          );
+        }
+
+        // OUT compensatórios ligados por reversesId. Saídas nunca recalculam o
+        // custo médio — avgCost fica intacto (regra S9/S10a).
+        const stockReversalIds: string[] = [];
+        for (const movement of stockMovements) {
+          const level = await tx.stockLevel.findUnique({ where: { productId_warehouseId: { productId: movement.productId, warehouseId: movement.warehouseId } } });
+          if (!level || level.companyId !== companyId) throw new ConflictError('Integridade: nível de stock da devolução não encontrado.');
+          const balanceAfter = level.quantity - movement.quantity;
+          await tx.stockLevel.update({
+            where: { productId_warehouseId: { productId: movement.productId, warehouseId: movement.warehouseId } },
+            data: { quantity: balanceAfter },
+          });
+          const reversal = await tx.stockMovement.create({
+            data: {
+              companyId,
+              productId: movement.productId,
+              warehouseId: movement.warehouseId,
+              creditNoteId: note.id,
+              reversesId: movement.id,
+              type: 'OUT',
+              quantity: -movement.quantity,
+              balanceAfter,
+              document: note.number,
+              reason: `Anulação da nota de crédito ${note.number}`,
+              createdBy: ctx.userId,
+            },
+          });
+          stockReversalIds.push(reversal.id);
+        }
+
+        // Saldo do cliente: a emissão decrementou pelo total — a anulação repõe.
+        const total = round2(Number(note.total));
+        const customerBalanceBefore = round2(Number(customer.balance));
+        const updatedCustomer = await tx.customer.update({ where: { id: customer.id }, data: { balance: { increment: total } } });
+        const customerBalanceAfter = round2(Number(updatedCustomer.balance));
+
+        // 6. Estornos contabilísticos por verdade histórica (advisory + FOR UPDATE).
+        const accountingReversal = await reverseAccountingEventTx(tx, ctx, {
+          origin: { sourceType: 'CREDIT_NOTE', sourceId: note.id, accountingEvent: 'CREDIT_NOTE_ISSUED' },
+          reversalDate: cancellationDate,
+          reason: cancellationReason,
+          operationalReference: note.number,
+        });
+        const cogsEntry = await tx.journalEntry.findFirst({
+          where: { companyId, sourceType: 'CREDIT_NOTE', sourceId: note.id, accountingEvent: 'CREDIT_NOTE_COGS_REVERSED' },
+          select: { id: true },
+        });
+        const cogsReversal = cogsEntry
+          ? await reverseAccountingEventTx(tx, ctx, {
+              origin: { sourceType: 'CREDIT_NOTE', sourceId: note.id, accountingEvent: 'CREDIT_NOTE_COGS_REVERSED' },
+              reversalDate: cancellationDate,
+              reason: cancellationReason,
+              operationalReference: note.number,
+            })
+          : null;
+
+        await tx.creditNote.update({
+          where: { id: note.id },
+          data: {
+            status: 'CANCELLED',
+            cancelledAt: new Date(),
+            cancelledById: ctx.userId,
+            cancellationReason,
+          },
+        });
+
+        await writeAudit(tx, ctx, {
+          action: 'credit_note.cancel',
+          entity: 'CreditNote',
+          entityId: note.id,
+          oldValues: {
+            status: note.status,
+            customerBalance: customerBalanceBefore,
+          },
+          newValues: {
+            status: 'CANCELLED',
+            creditNoteId: note.id,
+            creditNoteNumber: note.number,
+            invoiceId: invoice.id,
+            invoiceNumber: invoice.number,
+            customerId: note.customerId,
+            total,
+            returnStock: note.returnStock,
+            cancellationReason,
+            cancellationDate: formatAccountingDate(cancellationDate),
+            idempotencyKey: data.idempotencyKey,
+            customerBalanceBefore,
+            customerBalanceAfter,
+            stockMovementOriginalIds: stockMovements.map((m) => m.id),
+            stockMovementReversalIds: stockReversalIds,
+            journalEntryReversalId: accountingReversal.reversalId,
+            cogsEntryOriginalId: cogsEntry?.id ?? null,
+            cogsEntryReversalId: cogsReversal?.reversalId ?? null,
+          },
+        });
+
+        return {
+          resourceType: 'CreditNote',
+          resourceId: note.id,
+          result: {
+            id: note.id,
+            number: note.number,
+            cancellationDate: formatAccountingDate(cancellationDate),
+            stockReversalIds,
+            accountingReversalId: accountingReversal.reversalId,
+            cogsReversalId: cogsReversal?.reversalId ?? null,
+          },
+        };
       },
     });
     return op.result;
@@ -819,8 +1158,8 @@ function debitNoteFingerprint(data: ParsedDebitNoteInput, issueDate: Date): stri
 
 /**
  * Emite uma nota de débito contra um cliente (factura opcional).
- * Efeitos: saldo do cliente (incremento) + lançamento D Clientes / C Vendas (+ C IVA).
- * NUNCA movimenta stock.
+ * Efeitos: saldo do cliente (incremento) + lançamento D Clientes / C Outros
+ * proveitos operacionais (+ C IVA). NUNCA movimenta stock.
  */
 export async function createDebitNote(db: PrismaClient, ctx: RequestContext, input: DebitNoteInput): Promise<{ id: string; number: string }> {
   requirePermission(ctx, 'sales.create');
@@ -897,10 +1236,11 @@ export async function createDebitNote(db: PrismaClient, ctx: RequestContext, inp
 
         await tx.customer.update({ where: { id: customer.id }, data: { balance: { increment: totals.total } } });
 
-        // D Clientes (total) / C Vendas (base) + C IVA liquidado (IVA).
-        // Limitação V1 declarada: sem conta mapeada de «Outros proveitos», credita Vendas.
+        // D Clientes (total) / C Outros proveitos (base) + C IVA liquidado (IVA).
+        // S10b: a ND credita OTHER_INCOME (422) — sem fallback: mapping em falta
+        // faz a operação falhar por inteiro com a mensagem do getMappedAccountTx.
         const ar = await getMappedAccountTx(tx, companyId, 'ACCOUNTS_RECEIVABLE');
-        const revenue = await getMappedAccountTx(tx, companyId, 'SALES_REVENUE');
+        const revenue = await getMappedAccountTx(tx, companyId, 'OTHER_INCOME');
         const lines = [
           { ledgerAccountId: ar.id, debit: totals.total, customerId: customer.id, description: `Nota de débito ${number}` },
           { ledgerAccountId: revenue.id, credit: totals.tax > 0 ? totals.taxable : totals.total, description: `Nota de débito ${number}` },

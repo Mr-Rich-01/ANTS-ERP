@@ -67,6 +67,8 @@ async function teardown(companyId: string) {
   await prisma.journalEntry.updateMany({ where: { companyId }, data: { reversalOfId: null } });
   await prisma.journalEntry.deleteMany({ where: { companyId } });
   await prisma.creditNoteLine.deleteMany({ where: { companyId } });
+  // S10b: os movimentos da devolução referenciam a NC (FK creditNoteId).
+  await prisma.stockMovement.updateMany({ where: { companyId }, data: { creditNoteId: null } });
   await prisma.creditNote.deleteMany({ where: { companyId } });
   await prisma.treasuryMovement.deleteMany({ where: { companyId } });
   await prisma.payment.deleteMany({ where: { companyId } });

@@ -540,6 +540,8 @@ async function seedDemo(prisma: PrismaClient) {
     { code: '411', name: 'Vendas de mercadorias', type: 'REVENUE', normal: 'CREDIT', parent: '41', level: 3, posting: true, provisioningKey: 'SALES_REVENUE' },
     // S9: contrapartida da entrada por excedente na validação de contagem de inventário.
     { code: '421', name: 'Excedentes de inventário', type: 'REVENUE', normal: 'CREDIT', parent: '42', level: 3, posting: true, provisioningKey: 'INVENTORY_SURPLUS' },
+    // S10b: proveitos das Notas de Débito (juros, portes…) — deixa de creditar a 411 Vendas.
+    { code: '422', name: 'Outros proveitos operacionais', type: 'REVENUE', normal: 'CREDIT', parent: '42', level: 3, posting: true, provisioningKey: 'OTHER_INCOME' },
     { code: '511', name: 'Custo das mercadorias vendidas', type: 'EXPENSE', normal: 'DEBIT', parent: '51', level: 3, posting: true, provisioningKey: 'COST_OF_GOODS_SOLD' },
     { code: '521', name: 'Compras de mercadorias', type: 'EXPENSE', normal: 'DEBIT', parent: '52', level: 3, posting: true, provisioningKey: 'PURCHASES_EXPENSE' },
     { code: '531', name: 'Despesas gerais', type: 'EXPENSE', normal: 'DEBIT', parent: '53', level: 3, posting: true, provisioningKey: 'GENERAL_EXPENSE' },
@@ -598,7 +600,7 @@ async function seedDemo(prisma: PrismaClient) {
     'CASH_MAIN', 'BANK_MAIN', 'MOBILE_MONEY', 'ACCOUNTS_RECEIVABLE', 'INVENTORY', 'VAT_INPUT',
     'ACCOUNTS_PAYABLE', 'VAT_OUTPUT', 'SALARIES_PAYABLE', 'SALES_REVENUE', 'COST_OF_GOODS_SOLD',
     'PURCHASES_EXPENSE', 'GENERAL_EXPENSE', 'CASH_DIFFERENCE', 'SALARIES_EXPENSE',
-    'OPENING_BALANCE_EQUITY', 'INVENTORY_SURPLUS', 'INVENTORY_SHORTAGE',
+    'OPENING_BALANCE_EQUITY', 'INVENTORY_SURPLUS', 'INVENTORY_SHORTAGE', 'OTHER_INCOME',
   ];
   for (const key of systemKeys) {
     const acct = await prisma.ledgerAccount.findUnique({

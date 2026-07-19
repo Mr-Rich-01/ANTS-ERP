@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 import { forContext } from '@ants/database';
-import { cancelInvoice, createCreditNote, createDebitNote, createInvoice, createPayment, discardInvoiceDraft, issueInvoiceDraft, reverseCustomerPayment, saveInvoiceDraft, updateInvoiceDraft, DomainError, type CancelInvoiceInput, type CreditNoteInput, type DebitNoteInput, type DiscardInvoiceDraftInput, type InvoiceDraftUpdateInput, type InvoiceInput, type IssueInvoiceDraftInput, type PaymentInput, type ReverseCustomerPaymentInput } from '@ants/domain';
+import { cancelCreditNote, cancelInvoice, createCreditNote, createDebitNote, createInvoice, createPayment, discardInvoiceDraft, issueInvoiceDraft, reverseCustomerPayment, saveInvoiceDraft, updateInvoiceDraft, DomainError, type CancelCreditNoteInput, type CancelInvoiceInput, type CreditNoteInput, type DebitNoteInput, type DiscardInvoiceDraftInput, type InvoiceDraftUpdateInput, type InvoiceInput, type IssueInvoiceDraftInput, type PaymentInput, type ReverseCustomerPaymentInput } from '@ants/domain';
 import { getContext } from '@/lib/session';
 
 export interface InvoiceActionResult {
@@ -144,6 +144,25 @@ export async function createDebitNoteAction(input: DebitNoteInput): Promise<Invo
     revalidatePath('/facturas');
     revalidatePath('/facturas/notas');
     revalidatePath('/contas/perfil');
+    revalidatePath('/contabilidade');
+    return { ok: true, id, number };
+  } catch (e) {
+    if (e instanceof DomainError) return { error: e.message };
+    throw e;
+  }
+}
+
+export async function cancelCreditNoteAction(input: CancelCreditNoteInput): Promise<InvoiceActionResult> {
+  const ctx = await getContext();
+  if (!ctx.companyId) return { error: 'Sem empresa activa.' };
+  try {
+    const { id, number } = await cancelCreditNote(forContext(ctx), ctx, input);
+    revalidatePath('/facturas');
+    revalidatePath('/facturas/notas');
+    revalidatePath('/facturas/nota-credito');
+    revalidatePath('/contas/perfil');
+    revalidatePath('/produtos');
+    revalidatePath('/inventario');
     revalidatePath('/contabilidade');
     return { ok: true, id, number };
   } catch (e) {

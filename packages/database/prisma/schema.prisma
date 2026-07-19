@@ -493,6 +493,9 @@ model StockMovement {
   /// Contagem de inventário que originou o ajuste (S9 — rastreabilidade).
   stockCountId      String?
   stockCount        StockCount?       @relation(fields: [companyId, stockCountId], references: [companyId, id], onDelete: Restrict)
+  /// Nota de crédito que originou a devolução IN — e os OUT compensatórios da anulação (S10b).
+  creditNoteId      String?
+  creditNote        CreditNote?       @relation(fields: [companyId, creditNoteId], references: [companyId, id], onDelete: Restrict)
   reversesId        String?
   reverses          StockMovement?    @relation("StockMovementReversal", fields: [companyId, reversesId], references: [companyId, id], onDelete: Restrict)
   reversedBy        StockMovement?    @relation("StockMovementReversal")
@@ -513,6 +516,7 @@ model StockMovement {
   @@index([companyId, invoiceId])
   @@index([companyId, purchaseReceiptId])
   @@index([companyId, stockCountId])
+  @@index([companyId, creditNoteId])
   @@map("stock_movements")
 }
 
@@ -795,6 +799,10 @@ model CreditNote {
   warehouseId  String?
   warehouse    Warehouse?       @relation(fields: [companyId, warehouseId], references: [companyId, id], onDelete: Restrict)
   status       CreditNoteStatus @default(ISSUED)
+  /// Anulação (S10b) — padrão Invoice/P0-03a: quem, quando e porquê. NC nunca se apaga.
+  cancelledAt        DateTime?
+  cancelledById      String?
+  cancellationReason String?
   subtotal     Decimal          @db.Decimal(14, 2)
   taxableBase  Decimal          @db.Decimal(14, 2)
   taxTotal     Decimal          @db.Decimal(14, 2)
@@ -804,7 +812,8 @@ model CreditNote {
   createdAt    DateTime         @default(now())
   updatedAt    DateTime         @updatedAt
 
-  lines CreditNoteLine[]
+  lines     CreditNoteLine[]
+  movements StockMovement[]
 
   @@unique([companyId, number])
   @@unique([companyId, id])
@@ -1548,6 +1557,7 @@ enum OperationIdempotencyScope {
   PRODUCT_CREATE
   STOCK_COUNT_CREATE
   STOCK_COUNT_VALIDATE
+  CREDIT_NOTE_CANCEL
 }
 
 model OperationIdempotency {
