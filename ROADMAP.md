@@ -178,13 +178,13 @@ Quick wins primeiro (validar o fluxo de trabalho), depois fundações (dados da 
 
 *(Prioridade 1, parte B)*
 
-- [ ] Balancete:
+- [x] Balancete:
   - remover **Saldo Inicial** da visualização padrão (mantém-se disponível como coluna opcional);
-  - selector de colunas para impressão/exportação.
-- [ ] Demonstração de Resultados.
-- [ ] Demonstração do Fluxo de Caixa.
-- [ ] Balanço Patrimonial.
-- [ ] Validação cruzada: Balanço fecha (Activo = Passivo + Capital); Resultado do exercício consistente entre DR e Balanço.
+  - selector de colunas para impressão/exportação. *(Colunas no URL `cols=…` — comandam ecrã, impressão e CSV de uma vez; Conta/Nome sempre presentes; `parseTrialBalanceColumns` com ordem canónica.)*
+- [x] Demonstração de Resultados. *(Por naturezas, grupos de nível 2 do plano via `parentId` — 41 líquida de NC, 42 = 421 Excedentes + 422 Outros proveitos, 51 CMV líquido da devolução, 53/54/55; Excedente/Déficit da S1.)*
+- [x] Demonstração do Fluxo de Caixa. *(Método **directo sobre o razão** — decisão aprovada 2026-07-19: os movimentos manuais de Tesouraria não lançam na contabilidade, pelo que só o razão fecha com o Balanço; rubricas por `accountingEvent`, estornos na rubrica do original via `reversalOf`, manuais pela contrapartida (EQUITY → financiamento), transferências caixa↔caixa excluídas; nota de reconciliação com a Tesouraria no rodapé.)*
+- [x] Balanço Patrimonial. *(Posição «à data de»; secções por `accountType` + grupos por `parentId`; 312 no grupo 31 Capital; resultado por apurar em DUAS linhas calculadas — exercícios anteriores vs. exercício corrente, corte no início do exercício que contém a data — por `groupBy` próprio das classes 4/5, nunca copiado da DR.)*
+- [x] Validação cruzada: Balanço fecha (Activo = Passivo + Capital); Resultado do exercício consistente entre DR e Balanço. *(Teste-âncora a TRÊS pontas na suite `test:integration:accounting:statements` 14/14: valor calculado à mão a partir do cenário == DR == linha do Capital do Balanço, com secções também verificadas contra valores à mão e DFC com caixa final = grupo 11; badges de validação ao vivo na página.)*
 
 ---
 
@@ -225,6 +225,7 @@ Quick wins primeiro (validar o fluxo de trabalho), depois fundações (dados da 
 - [ ] Rever validações (client + server).
 - [ ] 🔒 Rever permissões — qualquer alteração a RBAC é aprovada antes.
 - [ ] Desempenho: identificar queries lentas primeiro (medir antes de optimizar), depois propor correcções.
+- [ ] 🔒 **Integração tesouraria↔razão dos movimentos manuais** (pendência registada na S11): depósitos, levantamentos, despesas/receitas manuais e transferências de Tesouraria não geram lançamentos contabilísticos, pelo que a reconciliação da DFC mostra divergência (na demo: 6 280,64 MT em 2026-07-19). Ligar estes movimentos ao razão pelo mecanismo idempotente da 8c (mapa D/C aprovado antes de código — mesma regra da S10); quando fechar, a nota de reconciliação da DFC deve passar a 0 nos períodos novos.
 
 ---
 

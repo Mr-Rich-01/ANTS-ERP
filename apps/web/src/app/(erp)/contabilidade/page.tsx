@@ -1,6 +1,8 @@
 import Link from 'next/link';
 import { forCompany } from '@ants/database';
 import {
+  DEFAULT_TRIAL_BALANCE_COLUMNS,
+  TRIAL_BALANCE_COLUMNS,
   accountingEventLabel,
   accountingJournalTypeLabel,
   accountingSourceTypeLabel,
@@ -13,11 +15,15 @@ import {
   journalEntryStatusLabel,
   ledgerAccountTypeLabel,
   normalBalanceLabel,
+  parseTrialBalanceColumns,
+  trialBalanceColumnLabel,
   type AccountingJournalType,
   type AccountingReportFilters,
   type AccountingReportStatusFilter,
   type JournalEntryStatus,
   type NormalBalance,
+  type TrialBalanceColumnKey,
+  type TrialBalanceReportRow,
 } from '@ants/domain';
 import { Icon } from '@/components/Icon';
 import { NoPermission } from '@/components/NoPermission';
@@ -25,6 +31,7 @@ import { PrintButton } from '@/components/PrintButton';
 import { CompanyHeader, DocumentFooter } from '@/components/print/PrintLayout';
 import { KpiCard, KpiGrid } from '@/components/ui/KpiCard';
 import { SearchCombobox } from '@/components/ui/SearchCombobox';
+import { TrialBalanceColumnSelector } from './TrialBalanceColumnSelector';
 import { ACCENT } from '@/lib/erp-nav';
 import { fmt, fmtNoSymbol } from '@/lib/format';
 import { getContext } from '@/lib/session';
@@ -86,7 +93,7 @@ function filtersFromSearch(searchParams: Search): AccountingReportFilters {
   };
 }
 
-function appendFilters(qs: URLSearchParams, view: View, filters: AccountingReportFilters, selectedAccountId?: string) {
+function appendFilters(qs: URLSearchParams, view: View, filters: AccountingReportFilters, selectedAccountId?: string, cols?: string) {
   qs.set('view', view);
   if (filters.from) qs.set('from', filters.from);
   if (filters.to) qs.set('to', filters.to);
@@ -96,18 +103,19 @@ function appendFilters(qs: URLSearchParams, view: View, filters: AccountingRepor
   if (filters.journalType) qs.set('type', filters.journalType);
   if (filters.status) qs.set('status', filters.status);
   if (filters.q) qs.set('q', filters.q);
+  if (cols) qs.set('cols', cols);
 }
 
-function viewHref(view: View, filters: AccountingReportFilters, selectedAccountId?: string): string {
+function viewHref(view: View, filters: AccountingReportFilters, selectedAccountId?: string, cols?: string): string {
   const qs = new URLSearchParams();
-  appendFilters(qs, view, filters, selectedAccountId);
+  appendFilters(qs, view, filters, selectedAccountId, cols);
   return `/contabilidade?${qs.toString()}`;
 }
 
-function exportHref(kind: ReportView, filters: AccountingReportFilters, selectedAccountId?: string): string {
+function exportHref(kind: ReportView, filters: AccountingReportFilters, selectedAccountId?: string, cols?: string): string {
   const qs = new URLSearchParams();
   qs.set('kind', kind);
-  appendFilters(qs, kind, filters, selectedAccountId);
+  appendFilters(qs, kind, filters, selectedAccountId, cols);
   return `/contabilidade/exportar?${qs.toString()}`;
 }
 
@@ -144,6 +152,25 @@ function balanceValue(value: number, normalBalance?: NormalBalance) {
   );
 }
 
+function trialBalanceCell(row: TrialBalanceReportRow, key: TrialBalanceColumnKey) {
+  switch (key) {
+    case 'type':
+      return <td key={key} style={td}>{ledgerAccountTypeLabel(row.accountType)}</td>;
+    case 'nature':
+      return <td key={key} style={td}>{normalBalanceLabel(row.normalBalance)}</td>;
+    case 'opening':
+      return <td key={key} className="tnum" style={{ ...td, textAlign: 'right' }}>{balanceValue(row.openingBalance, row.normalBalance)}</td>;
+    case 'debit':
+      return <td key={key} className="tnum" style={{ ...td, textAlign: 'right', fontWeight: 700 }}>{fmtNoSymbol(row.debit)}</td>;
+    case 'credit':
+      return <td key={key} className="tnum" style={{ ...td, textAlign: 'right', fontWeight: 700 }}>{fmtNoSymbol(row.credit)}</td>;
+    case 'closingDebit':
+      return <td key={key} className="tnum" style={{ ...td, textAlign: 'right', fontWeight: 700 }}>{row.closingDebit ? fmtNoSymbol(row.closingDebit) : '-'}</td>;
+    case 'closingCredit':
+      return <td key={key} className="tnum" style={{ ...td, textAlign: 'right', fontWeight: 700 }}>{row.closingCredit ? fmtNoSymbol(row.closingCredit) : '-'}</td>;
+  }
+}
+
 function generatedAt(): string {
   const d = new Date();
   return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
@@ -175,6 +202,8 @@ export default async function ContabilidadePage({ searchParams }: { searchParams
   const db = forCompany(ctx.companyId);
   const filters = filtersFromSearch(searchParams);
   const view = viewFromSearch(searchParams);
+  const colsParam = clean(one(searchParams.cols));
+  const trialColumns = parseTrialBalanceColumns(colsParam);
   const [options, journal, trial, company] = await Promise.all([
     getAccountingReportOptions(db, ctx),
     getAccountingJournalReport(db, ctx, filters),
@@ -225,7 +254,7 @@ export default async function ContabilidadePage({ searchParams }: { searchParams
           </div>
           <PrintButton label="Imprimir / Guardar PDF" />
           {canExport && view !== 'chart' ? (
-            <Link href={exportHref(view, filters, selectedAccountId)} style={actionBtn}>
+            <Link href={exportHref(view, filters, selectedAccountId, colsParam)} style={actionBtn}>
               <Icon name="download" size={14} />
               CSV
             </Link>
@@ -238,10 +267,11 @@ export default async function ContabilidadePage({ searchParams }: { searchParams
         </div>
 
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          <TabLink href={viewHref('chart', filters, selectedAccountId)} active={view === 'chart'} icon="landmark" label="Plano de contas" />
-          <TabLink href={viewHref('journal', filters, selectedAccountId)} active={view === 'journal'} icon="book-open" label="Extrato Diario" />
-          <TabLink href={viewHref('ledger', filters, selectedAccountId)} active={view === 'ledger'} icon="list-tree" label="Razao / Extracto" />
-          <TabLink href={viewHref('trial-balance', filters, selectedAccountId)} active={view === 'trial-balance'} icon="scale" label="Balancete" />
+          <TabLink href={viewHref('chart', filters, selectedAccountId, colsParam)} active={view === 'chart'} icon="landmark" label="Plano de contas" />
+          <TabLink href={viewHref('journal', filters, selectedAccountId, colsParam)} active={view === 'journal'} icon="book-open" label="Extrato Diario" />
+          <TabLink href={viewHref('ledger', filters, selectedAccountId, colsParam)} active={view === 'ledger'} icon="list-tree" label="Razao / Extracto" />
+          <TabLink href={viewHref('trial-balance', filters, selectedAccountId, colsParam)} active={view === 'trial-balance'} icon="scale" label="Balancete" />
+          <TabLink href={`/contabilidade/demonstracoes?from=${filters.from ?? ''}&to=${filters.to ?? ''}`} active={false} icon="bar-chart-3" label="Demonstrações" />
           {hasPermission(ctx, 'accounting.prepare') || hasPermission(ctx, 'accounting.post') || hasPermission(ctx, 'accounting.reverse') ? (
             <TabLink href="/contabilidade/lancamentos" active={false} icon="pen-line" label="Lançamentos manuais" />
           ) : null}
@@ -249,6 +279,7 @@ export default async function ContabilidadePage({ searchParams }: { searchParams
 
         <form method="get" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(150px,1fr))', gap: 10, alignItems: 'end' }}>
           <input type="hidden" name="view" value={view} />
+          {colsParam ? <input type="hidden" name="cols" value={colsParam} /> : null}
           <label style={labelStyle}>
             Data inicial
             <input type="date" name="from" defaultValue={journal.filters.from} style={field} />
@@ -460,6 +491,13 @@ export default async function ContabilidadePage({ searchParams }: { searchParams
                 {trial.isGlobalBalanceCheckAvailable ? trialStatus.label : 'Balancete filtrado'}
               </span>
             </div>
+            <div style={{ padding: '10px 16px', borderBottom: '1px solid var(--bd-soft)' }} className="ants-noprint">
+              <TrialBalanceColumnSelector
+                options={TRIAL_BALANCE_COLUMNS.map((key) => ({ key, label: trialBalanceColumnLabel(key) }))}
+                selected={trialColumns}
+                defaultKeys={DEFAULT_TRIAL_BALANCE_COLUMNS}
+              />
+            </div>
             {trial.movementCount === 0 ? (
               <div style={{ padding: '11px 16px', borderBottom: '1px solid var(--bd-soft)', background: 'var(--card2)', color: 'var(--text3)', fontSize: 12.5 }}>
                 Sem movimentos no periodo seleccionado{trial.rows.length ? '; saldos iniciais apresentados quando existem.' : '.'}
@@ -471,32 +509,37 @@ export default async function ContabilidadePage({ searchParams }: { searchParams
               </div>
             ) : null}
             <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', minWidth: 920, borderCollapse: 'collapse' }}>
+              <table style={{ width: '100%', minWidth: 460 + trialColumns.length * 110, borderCollapse: 'collapse' }}>
                 <thead>
-                  <tr>{['Conta', 'Nome', 'Tipo', 'Natureza', 'Saldo inicial', 'Debito', 'Credito', 'Saldo devedor', 'Saldo credor'].map((h) => <th key={h} style={{ ...th, textAlign: ['Saldo inicial', 'Debito', 'Credito', 'Saldo devedor', 'Saldo credor'].includes(h) ? 'right' : 'left' }}>{h}</th>)}</tr>
+                  <tr>
+                    <th style={th}>Conta</th>
+                    <th style={th}>Nome</th>
+                    {trialColumns.map((key) => (
+                      <th key={key} style={{ ...th, textAlign: key === 'type' || key === 'nature' ? 'left' : 'right' }}>{trialBalanceColumnLabel(key)}</th>
+                    ))}
+                  </tr>
                 </thead>
                 <tbody>
                   {trial.rows.length === 0 ? (
-                    <EmptyRow colSpan={9} message="Sem movimentos contabilisticos no periodo seleccionado." />
+                    <EmptyRow colSpan={2 + trialColumns.length} message="Sem movimentos contabilisticos no periodo seleccionado." />
                   ) : trial.rows.map((row) => (
                     <tr key={row.accountId} className="ants-row">
                       <td className="font-mono" style={{ ...td, color: 'var(--accent-fg)', fontWeight: 700 }}>{row.code}</td>
                       <td style={td}>{row.name}</td>
-                      <td style={td}>{ledgerAccountTypeLabel(row.accountType)}</td>
-                      <td style={td}>{normalBalanceLabel(row.normalBalance)}</td>
-                      <td className="tnum" style={{ ...td, textAlign: 'right' }}>{balanceValue(row.openingBalance, row.normalBalance)}</td>
-                      <td className="tnum" style={{ ...td, textAlign: 'right', fontWeight: 700 }}>{fmtNoSymbol(row.debit)}</td>
-                      <td className="tnum" style={{ ...td, textAlign: 'right', fontWeight: 700 }}>{fmtNoSymbol(row.credit)}</td>
-                      <td className="tnum" style={{ ...td, textAlign: 'right', fontWeight: 700 }}>{row.closingDebit ? fmtNoSymbol(row.closingDebit) : '-'}</td>
-                      <td className="tnum" style={{ ...td, textAlign: 'right', fontWeight: 700 }}>{row.closingCredit ? fmtNoSymbol(row.closingCredit) : '-'}</td>
+                      {trialColumns.map((key) => trialBalanceCell(row, key))}
                     </tr>
                   ))}
                   <tr>
-                    <td colSpan={5} style={{ ...td, fontWeight: 800, color: 'var(--text)' }}>Totais</td>
-                    <td className="tnum" style={{ ...td, textAlign: 'right', fontWeight: 800 }}>{fmtNoSymbol(trial.totalDebit)}</td>
-                    <td className="tnum" style={{ ...td, textAlign: 'right', fontWeight: 800 }}>{fmtNoSymbol(trial.totalCredit)}</td>
-                    <td className="tnum" style={{ ...td, textAlign: 'right', fontWeight: 800 }}>{fmtNoSymbol(trial.totalClosingDebit)}</td>
-                    <td className="tnum" style={{ ...td, textAlign: 'right', fontWeight: 800 }}>{fmtNoSymbol(trial.totalClosingCredit)}</td>
+                    <td colSpan={2} style={{ ...td, fontWeight: 800, color: 'var(--text)' }}>Totais</td>
+                    {trialColumns.map((key) => (
+                      <td key={key} className="tnum" style={{ ...td, textAlign: 'right', fontWeight: 800 }}>
+                        {key === 'debit' ? fmtNoSymbol(trial.totalDebit)
+                          : key === 'credit' ? fmtNoSymbol(trial.totalCredit)
+                            : key === 'closingDebit' ? fmtNoSymbol(trial.totalClosingDebit)
+                              : key === 'closingCredit' ? fmtNoSymbol(trial.totalClosingCredit)
+                                : ''}
+                      </td>
+                    ))}
                   </tr>
                 </tbody>
               </table>

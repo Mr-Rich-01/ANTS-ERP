@@ -4,7 +4,11 @@ import {
   DomainError,
   exportAccountLedgerCsv,
   exportAccountingJournalCsv,
+  exportBalanceSheetCsv,
+  exportCashFlowStatementCsv,
+  exportIncomeStatementCsv,
   exportTrialBalanceCsv,
+  parseTrialBalanceColumns,
   type AccountingJournalType,
   type AccountingReportFilters,
   type AccountingReportStatusFilter,
@@ -55,8 +59,14 @@ export async function GET(request: Request) {
       kind === 'ledger'
         ? await exportAccountLedgerCsv(db, ctx, filters.ledgerAccountId ?? '', filters)
         : kind === 'trial-balance'
-          ? await exportTrialBalanceCsv(db, ctx, filters)
-          : await exportAccountingJournalCsv(db, ctx, filters);
+          ? await exportTrialBalanceCsv(db, ctx, filters, parseTrialBalanceColumns(url.searchParams.get('cols')))
+          : kind === 'income-statement'
+            ? await exportIncomeStatementCsv(db, ctx, { from: filters.from, to: filters.to })
+            : kind === 'balance-sheet'
+              ? await exportBalanceSheetCsv(db, ctx, { to: filters.to })
+              : kind === 'cash-flow'
+                ? await exportCashFlowStatementCsv(db, ctx, { from: filters.from, to: filters.to })
+                : await exportAccountingJournalCsv(db, ctx, filters);
     return new NextResponse(exported.content, {
       status: 200,
       headers: {

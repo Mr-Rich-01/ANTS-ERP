@@ -1554,7 +1554,7 @@ function accountingCsvEscape(value: string): string {
   return value;
 }
 
-function accountingCsvLine(values: Array<string | number | null | undefined>): string {
+export function accountingCsvLine(values: Array<string | number | null | undefined>): string {
   return values.map((v) => accountingCsvEscape(v === null || v === undefined ? '' : String(v))).join(';');
 }
 
@@ -1602,15 +1602,69 @@ export async function exportAccountLedgerCsv(db: PrismaClient, ctx: RequestConte
   return { filename: `contabilidade-razao-${code}-${report.filters.from}-${report.filters.to}.csv`, content: lines.join('\n') };
 }
 
-export async function exportTrialBalanceCsv(db: PrismaClient, ctx: RequestContext, filters: AccountingReportFilters = {}): Promise<{ filename: string; content: string }> {
+/**
+ * Colunas opcionais do balancete (S11). «Conta» e «Nome da conta» são sempre
+ * apresentadas; a ordem canónica é a desta lista. Por omissão, o Saldo inicial
+ * fica fora — mantém-se disponível como coluna opcional.
+ */
+export const TRIAL_BALANCE_COLUMNS = ['type', 'nature', 'opening', 'debit', 'credit', 'closingDebit', 'closingCredit'] as const;
+export type TrialBalanceColumnKey = (typeof TRIAL_BALANCE_COLUMNS)[number];
+export const DEFAULT_TRIAL_BALANCE_COLUMNS: TrialBalanceColumnKey[] = ['type', 'nature', 'debit', 'credit', 'closingDebit', 'closingCredit'];
+
+export function trialBalanceColumnLabel(key: TrialBalanceColumnKey): string {
+  const labels: Record<TrialBalanceColumnKey, string> = {
+    type: 'Tipo',
+    nature: 'Natureza',
+    opening: 'Saldo inicial',
+    debit: 'Débito',
+    credit: 'Crédito',
+    closingDebit: 'Saldo devedor',
+    closingCredit: 'Saldo credor',
+  };
+  return labels[key];
+}
+
+/**
+ * Interpreta `cols=a,b,c` preservando a ordem canónica; ausente/inválido →
+ * colunas por omissão; o valor literal `none` significa «só Conta/Nome».
+ */
+export function parseTrialBalanceColumns(value: string | null | undefined): TrialBalanceColumnKey[] {
+  if (!value?.trim()) return DEFAULT_TRIAL_BALANCE_COLUMNS;
+  if (value.trim() === 'none') return [];
+  const requested = new Set(value.split(',').map((p) => p.trim()));
+  const cols = TRIAL_BALANCE_COLUMNS.filter((c) => requested.has(c));
+  return cols.length ? cols : DEFAULT_TRIAL_BALANCE_COLUMNS;
+}
+
+export async function exportTrialBalanceCsv(db: PrismaClient, ctx: RequestContext, filters: AccountingReportFilters = {}, columns: TrialBalanceColumnKey[] = DEFAULT_TRIAL_BALANCE_COLUMNS): Promise<{ filename: string; content: string }> {
   requirePermission(ctx, 'reports.export');
   const report = await getTrialBalanceReport(db, ctx, filters);
+  const cellFor = (r: TrialBalanceReportRow, key: TrialBalanceColumnKey): string => {
+    switch (key) {
+      case 'type': return ledgerAccountTypeLabel(r.accountType);
+      case 'nature': return normalBalanceLabel(r.normalBalance);
+      case 'opening': return accountingMoneyLabel(Math.abs(r.openingBalance));
+      case 'debit': return accountingMoneyLabel(r.debit);
+      case 'credit': return accountingMoneyLabel(r.credit);
+      case 'closingDebit': return accountingMoneyLabel(r.closingDebit);
+      case 'closingCredit': return accountingMoneyLabel(r.closingCredit);
+    }
+  };
+  const totalFor = (key: TrialBalanceColumnKey): string => {
+    switch (key) {
+      case 'debit': return accountingMoneyLabel(report.totalDebit);
+      case 'credit': return accountingMoneyLabel(report.totalCredit);
+      case 'closingDebit': return accountingMoneyLabel(report.totalClosingDebit);
+      case 'closingCredit': return accountingMoneyLabel(report.totalClosingCredit);
+      default: return '';
+    }
+  };
   const lines = [
     accountingCsvLine(['Balancete']),
     accountingCsvLine(['Período', `${report.filters.from} a ${report.filters.to}`]),
-    accountingCsvLine(['Conta', 'Nome da conta', 'Tipo', 'Natureza', 'Saldo inicial', 'Débito', 'Crédito', 'Saldo devedor', 'Saldo credor']),
-    ...report.rows.map((r) => accountingCsvLine([r.code, r.name, ledgerAccountTypeLabel(r.accountType), normalBalanceLabel(r.normalBalance), accountingMoneyLabel(Math.abs(r.openingBalance)), accountingMoneyLabel(r.debit), accountingMoneyLabel(r.credit), accountingMoneyLabel(r.closingDebit), accountingMoneyLabel(r.closingCredit)])),
-    accountingCsvLine(['Totais', '', '', '', '', accountingMoneyLabel(report.totalDebit), accountingMoneyLabel(report.totalCredit), accountingMoneyLabel(report.totalClosingDebit), accountingMoneyLabel(report.totalClosingCredit)]),
+    accountingCsvLine(['Conta', 'Nome da conta', ...columns.map(trialBalanceColumnLabel)]),
+    ...report.rows.map((r) => accountingCsvLine([r.code, r.name, ...columns.map((c) => cellFor(r, c))])),
+    accountingCsvLine(['Totais', '', ...columns.map(totalFor)]),
     accountingCsvLine([
       'Validacao',
       report.isGlobalBalanceCheckAvailable

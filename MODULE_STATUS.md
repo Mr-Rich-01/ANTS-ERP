@@ -1,14 +1,14 @@
 # MODULE_STATUS — ANTS ERP
 
-_Última actualização: 2026-07-19 (S10c)_
+_Última actualização: 2026-07-19 (S11)_
 
 Estado vivo do projecto. O conhecimento permanente (arquitectura, regras, comandos) está
 em [`CLAUDE.md`](CLAUDE.md).
 
-**Último commit funcional:** pendente na branch `s10c-manuais-retroactivo` (Sessão S10c do ROADMAP)
-**Fase concluída:** `S10c — Lançamentos manuais (UI) + regularização retroactiva de existências` — **S10 COMPLETA** (fases anteriores: S10a CMV, S10b anulação de NC + ND→422)
+**Último commit funcional:** pendente na branch `s11-relatorios-financeiros` (Sessão S11 do ROADMAP)
+**Fase concluída:** `S11 — Contabilidade: relatórios financeiros` (Balancete sem saldo inicial por omissão + selector de colunas; Demonstração de Resultados; Balanço Patrimonial; Demonstração do Fluxo de Caixa pelo método directo; validação cruzada com teste-âncora — fases anteriores: S10 completa)
 **UAT interna/demo:** V1 candidata a demo externa apos UAT interna, aprovada com ressalvas em 2026-07-06; P1-04 acrescenta Contabilidade V1 pronta para UAT/demo com limites; P1-05 acrescenta Fecho de Caixa V1 operacional sem persistencia formal; demo final check registado em `docs/DEMO_FINAL_CHECK.md` em 2026-07-08 como pronto com ressalvas menores; S10c executa a regularização retroactiva na demo — a conta 131 reconcilia com o stock físico (divergência 0)
-**Próximo passo:** `Sessão S11 — Contabilidade: relatórios` (Balancete sem saldo inicial por omissão + selector de colunas, Demonstração de Resultados, Fluxo de Caixa, Balanço Patrimonial com validação cruzada) — não iniciar sem instrução explícita, em branch própria; mantém-se pendente o smoke manual final em browser externo/limpo (logout, clique final POS, Fecho de Caixa V1) antes da demo externa
+**Próximo passo:** `Sessão S12 — Módulo de Produção` (ordem de produção, consumo a custo médio ponderado, entrada de produto acabado, integração contabilística idempotente via mecanismo da S10, fluxo do cliente KOKO; modelo de custeio 🔒 aprovado antes de código) — não iniciar sem instrução explícita, em branch própria; mantém-se pendente o smoke manual final em browser externo/limpo (logout, clique final POS, Fecho de Caixa V1) antes da demo externa
 
 ---
 
@@ -60,12 +60,13 @@ em [`CLAUDE.md`](CLAUDE.md).
 | **S10a** | **Contabilidade — CMV ponta-a-ponta** (snapshot `invoice_lines.unitCost` capturado na emissão; evento separado `COGS_POSTED` D 511/C 131 nos 3 pontos de emissão — Nova Factura, POS, emissão de rascunho — com `SALE_ISSUED` intacto; par `CREDIT_NOTE_COGS_REVERSED` D 131/C 511 nas NCs com devolução ao `unitCost` snapshot; `cancelInvoice` estorna também o CMV quando existe; migração aditiva `s10a_invoice_line_unit_cost`; suite `test:integration:accounting:cogs` 14/14 com teste-âncora coerência 131 = stock físico) | ✅ |
 | **S10b** | **Anulação de NC + ND→Outros proveitos** (`cancelCreditNote` gate `invoices.cancel` + motivo ≥ 10 chars + idempotência `CREDIT_NOTE_CANCEL`; OUT compensatórios `reversesId`→IN da devolução com falha TOTAL se a mercadoria entretanto saiu; estorno por verdade histórica dos DOIS eventos (`CREDIT_NOTE_ISSUED` + `CREDIT_NOTE_COGS_REVERSED` quando existe); saldo do cliente reposto; avgCost intacto; factura com NC anulada volta a ser cancelável e o guard indica o número da NC; conta 422 «Outros proveitos operacionais» + mapping `OTHER_INCOME` no seed (45 contas/19 mappings) e `createDebitNote` credita 422 sem fallback; migrações aditivas `s10b_credit_note_cancellation` + backfill `creditNoteId` (COUNT prévio: 2); suite `test:integration:accounting:nc-cancel` 12/12) | ✅ |
 | **S10c** | **Lançamentos manuais (UI) + regularização retroactiva de existências** (UI completa `/contabilidade/lancamentos` sobre o domínio 8b intacto — rascunho/editar/confirmar/eliminar/estornar com gates `accounting.prepare/post/reverse`; operação genérica `executeInventoryRegularization` idempotente (scope `INVENTORY_REGULARIZATION`) D 131/C 312 no `DAB` com valor recalculado na execução; executada na demo: `AB 2026/0002` = 311 411,00 MT, divergência final 0; migração aditiva `s10c_inventory_regularization`; suite `test:integration:accounting:regularization` 11/11; **S10 COMPLETA**) | ✅ |
+| **S11** | **Contabilidade — relatórios financeiros** (domínio novo `accounting-statements.ts` só de LEITURA — DR por grupos de nível 2 via `parentId`, Balanço «à data de» com resultado por apurar em duas linhas calculadas (exercícios anteriores/exercício corrente) por `groupBy` próprio das classes 4/5, DFC método directo sobre o razão com rubricas por `accountingEvent` e reconciliação com a Tesouraria; página `/contabilidade/demonstracoes` com exercício/intervalo, PrintLayout e CSV; Balancete sem saldo inicial por omissão + selector de colunas no URL `cols` que comanda ecrã/impressão/CSV; sem schema, sem dependências, sem permissões novas; suite `test:integration:accounting:statements` 14/14 com teste-âncora a três pontas) | ✅ |
 | 9 | RH & Salários | 🗺️ futuro |
 | X | RLS forçado em toda a BD (fase transversal, pré-produção) | 🗺️ futuro |
 
 **Validações actuais:** typecheck 6/6 · lint 6/6 · **testes unitários 99** · **security hardening 16/16** · **auth company-selection 7/7** · **reversal all 44/44** · **integração de
-contabilidade 240/240** (8b 32 + 8c.1 30 + 8c.2a 18 + 8c.2b 34 + 8c.3 17 + **S10a/cogs 14** + **S10b/nc-cancel 12** + **S10c/regularization 11** + P1-04 14 + P0-02 5 + P0-03.0 9 + P0-03b 10 + P0-03a 9 + P0-03c 7 + P0-03d 8 + P0-03e 6 + P0-03f 4;
-`pnpm test:integration:accounting`, sub: `…:c1`, `…:c2a`, `…:c2`, `…:c3`, `…:cogs`, `…:nc-cancel`, `…:regularization`, `…:reports`, `…:reversal:customer-payment`, `…:reversal:invoice`, `…:reversal:supplier-payment`, `…:reversal:purchase-receipt`, `…:reversal:treasury-transfer`, `…:reversal:uat`, `…:reversal:all`) · **POS 7/7** (`pnpm test:integration:pos`) · `prisma validate` OK · `prisma migrate status` OK · `pnpm build` OK
+contabilidade 254/254** (8b 32 + 8c.1 30 + 8c.2a 18 + 8c.2b 34 + 8c.3 17 + **S10a/cogs 14** + **S10b/nc-cancel 12** + **S10c/regularization 11** + **S11/statements 14** + P1-04 14 + P0-02 5 + P0-03.0 9 + P0-03b 10 + P0-03a 9 + P0-03c 7 + P0-03d 8 + P0-03e 6 + P0-03f 4;
+`pnpm test:integration:accounting`, sub: `…:c1`, `…:c2a`, `…:c2`, `…:c3`, `…:cogs`, `…:nc-cancel`, `…:regularization`, `…:reports`, `…:statements`, `…:reversal:customer-payment`, `…:reversal:invoice`, `…:reversal:supplier-payment`, `…:reversal:purchase-receipt`, `…:reversal:treasury-transfer`, `…:reversal:uat`, `…:reversal:all`) · **POS 7/7** (`pnpm test:integration:pos`) · `prisma validate` OK · `prisma migrate status` OK · `pnpm build` OK
 em Windows nativo (30/30 páginas estaticas + `/api/health` dinamico) e Docker Linux com Node 20 + OpenSSL · imagens Docker de produção
 `web`, `worker` e target `migrate` OK · seed idempotente (2×) · login/contexto
 multiempresa 7/7 · **POS 12/12** (`pnpm test:integration:pos`) · **relatorios 24/24** (`pnpm test:integration:reports`) · **Fecho de Caixa V1 11/11** (`pnpm test:integration:treasury:cash-closing`) · `pnpm build` OK em Windows nativo (31/31 páginas, incluindo `/api/health`, `/relatorios/exportar`, `/contabilidade/exportar` e `/tesouraria/fecho/exportar`) ·
@@ -701,6 +702,56 @@ documents 14/14, drafts 13/13, purchases approval 9/9, products initial-stock 10
 14/14, cash-closing 11/11, company-profile 8/8, auth 7/7, security 16/16, build OK (rotas novas
 `/contabilidade/lancamentos` e `/contabilidade/regularizacao`). Próximo: **S11 — Contabilidade:
 relatórios** (não iniciar sem instrução explícita).
+
+**S11 — Contabilidade: relatórios financeiros (2026-07-19):** décima primeira sessão do ROADMAP,
+na branch `s11-relatorios-financeiros` — **relatórios de LEITURA pura**: zero alterações a
+lançamentos, domínio de escrita, schema, RBAC ou dependências. **Desenho aprovado (🔒) antes de
+código**, com quatro decisões explícitas: (1) **DFC pelo método directo sobre o razão** — o
+levantamento mostrou que os movimentos manuais de Tesouraria (depósitos, levantamentos, despesas,
+transferências) não geram lançamentos contabilísticos, pelo que só a DFC construída sobre as
+contas de caixa do razão fecha com o Balanço (Caixa inicial + fluxos = Caixa final = grupo 11);
+a página mostra a **nota de reconciliação com a Tesouraria** e assume a divergência como limitação
+V1 conhecida; rubricas por `accountingEvent` (`RECEIPT_POSTED` → Recebimentos de clientes,
+`SUPPLIER_PAYMENT_POSTED` → Pagamentos a fornecedores), estornos na rubrica do original via
+`reversalOf`, manuais classificados pela contrapartida (EQUITY → financiamento; resto → outros
+operacionais) e transferências caixa↔caixa excluídas como movimento interno; (2) **secções sempre
+derivadas do plano** — `accountType` decide a secção e o antepassado de nível 2 via `parentId`
+decide a linha (nunca listas de códigos hardcoded; conta bancária nova criada por um cliente
+aparece sem tocar no código); contas de caixa identificadas funcionalmente (ligação
+Tesouraria↔razão + mappings `CASH_MAIN`/`BANK_MAIN`/`MOBILE_MONEY`); (3) **resultado do Balanço
+anti-circular** — como não há fecho de exercício, o resultado das classes 4/5 aparece em DUAS
+linhas calculadas («Resultados de exercícios anteriores (por apurar)» e «Resultado líquido do
+exercício (por apurar)», corte no início do exercício que contém a data) por um `groupBy` PRÓPRIO
+— `getBalanceSheetReport` nunca chama a DR; a 312 entra pelo razão dentro do grupo 31 Capital;
+(4) **teste-âncora a três pontas** — valor calculado à mão a partir do cenário == DR == linha do
+Capital do Balanço, com as secções também verificadas contra valores à mão (131 = stock físico,
+121, caixa, IVA, 211, 312) e DFC com caixa final = grupo 11. Domínio novo
+`packages/domain/src/accounting-statements.ts` (`getIncomeStatementReport`,
+`getBalanceSheetReport`, `getCashFlowStatementReport` + 3 exports CSV padrão «;» do Extrato
+Diário); Balancete: coluna Saldo inicial FORA da vista padrão (disponível como opcional) e
+**selector de colunas** no URL (`cols=…`, `parseTrialBalanceColumns` com ordem canónica, `none` =
+só Conta/Nome) que comanda ecrã, impressão e CSV de uma vez — o client component recebe as colunas
+por props (nunca importa o barrel `@ants/domain`, que arrasta módulos server-only; bug real
+apanhado e corrigido na verificação ao vivo). Página nova `/contabilidade/demonstracoes` (tab
+«Demonstrações» em `/contabilidade`): sub-tabs DR/Balanço/Fluxo, período por exercício (dropdown
+com precedência) ou datas livres, Balanço só com «à data de», badges de validação («Activo =
+Passivo + Capital Próprio», «Resultado do exercício = DR» com DR recalculada independentemente,
+«Caixa inicial + variação = caixa final»), PrintLayout/CompanyHeader da S4 e CSV via kinds novos
+em `/contabilidade/exportar` (`income-statement`, `balance-sheet`, `cash-flow`, `cols` no
+balancete). Verificado ao vivo na demo (que reconcilia desde a S10c): Balanço fecha —
+370 451,76 = 15 197,76 + 355 254,00 — com «Resultado líquido do exercício» 42 879,00 = Excedente
+da DR 42 879,00; Fluxo de Caixa com caixa final 42 299,40 = grupo 11 do Balanço e nota de
+reconciliação a explicar a diferença de 6 280,64 MT face à Tesouraria (movimentos manuais);
+Balancete padrão sem Saldo inicial, toggle da coluna a reflectir-se no ecrã, no URL e no CSV.
+Validado: typecheck 6/6, lint 6/6, testes unitários 99, nova suite
+`pnpm test:integration:accounting:statements` **14/14** (âncora do fecho com totais à mão,
+três pontas do resultado, DR por grupos, secções à mão com 131 = stock físico, Balanço a data
+intermédia sem misturar exercícios, DFC directo + sub-período + reconciliação, estorno na rubrica
+do original, transferência interna excluída, colunas do balancete, permissões
+`accounting.view`/`reports.export`, isolamento A/B, CSVs), agregado accounting **254/254**,
+reversal all 44/44, POS 12/12, relatórios 24/24, cash-closing 11/11, auth 7/7, security 16/16,
+build OK (rota nova `/contabilidade/demonstracoes`). Próximo: **S12 — Módulo de Produção** (não
+iniciar sem instrução explícita).
 
 **Hardening pré-produção P0-01 (2026-07-02):** seed demo bloqueado em `production`
 antes de criar o Prisma Client; credenciais demo removidas da interface de

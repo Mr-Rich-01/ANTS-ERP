@@ -18,6 +18,7 @@ export * from './commercial-documents';
 export * from './purchases';
 export * from './treasury';
 export * from './accounting';
+export * from './accounting-statements';
 export * from './inventory-regularization';
 export * from './reversals';
 export * from './reports';
