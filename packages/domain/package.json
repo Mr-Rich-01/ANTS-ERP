@@ -30,6 +30,7 @@
     "test:integration:auth-company-selection": "vitest run --config vitest.integration.config.ts auth.company-selection.integration",
     "test:integration:pos": "vitest run --config vitest.integration.config.ts pos.integration",
     "test:integration:reports": "vitest run --config vitest.integration.config.ts reports.integration",
+    "test:integration:reports-sales": "vitest run --config vitest.integration.config.ts reports.sales.integration",
     "test:integration:company-profile": "vitest run --config vitest.integration.config.ts company-profile.integration",
     "test:integration:treasury-cash-closing": "vitest run --config vitest.integration.config.ts treasury.cash-closing.integration",
     "test:integration:documents": "vitest run --config vitest.integration.config.ts commercial-documents.integration",
@@ -44,6 +45,7 @@
     "@ants/database": "workspace:*",
     "@ants/shared": "workspace:*",
     "@node-rs/argon2": "^2.0.2",
+    "exceljs": "^4.4.0",
     "zod": "^3.23.8"
   },
   "devDependencies": {

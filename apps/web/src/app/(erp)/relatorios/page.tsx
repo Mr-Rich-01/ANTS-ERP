@@ -353,6 +353,22 @@ export default async function RelatoriosPage({ searchParams }: { searchParams: S
         </div>
       </div>
 
+      {hasPermission(ctx, 'sales.view') ? (
+        <div className="ants-noprint" style={{ ...panel, padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+          <span style={{ color: 'var(--accent-fg)', background: 'var(--accent-bg)', padding: 9, borderRadius: 10, display: 'inline-flex' }}>
+            <Icon name="trending-up" size={18} />
+          </span>
+          <div style={{ flex: 1, minWidth: 220 }}>
+            <div style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--text)' }}>Relatório de Vendas</div>
+            <div style={{ fontSize: 11.5, color: 'var(--text3)', marginTop: 3 }}>VD e Facturas com sub-totais e TOTAL GERAL, filtros por período/tipo/cliente/vendedor/estado e exportação para Excel.</div>
+          </div>
+          <Link href="/relatorios/vendas" style={{ ...actionBtn, background: ACCENT, color: '#fff', border: 'none' }}>
+            <Icon name="play" size={13} />
+            Abrir
+          </Link>
+        </div>
+      ) : null}
+
       <div className="ants-noprint">
         <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text)', marginBottom: 4 }}>Biblioteca de relatorios</div>
         <div style={{ fontSize: 12.5, color: 'var(--text3)', marginBottom: 14 }}>Relatorios V1 usam dados reais, exportam CSV e podem ser impressos/guardados em PDF pelo navegador. PDF e Excel avancados ficam para fase futura.</div>

@@ -39,6 +39,7 @@
     "test:integration:security:production-hardening": "pnpm --filter @ants/shared test -- production-hardening && pnpm --filter @ants/database test -- production-hardening",
     "test:integration:pos": "pnpm --filter @ants/domain test:integration:pos",
     "test:integration:reports": "pnpm --filter @ants/domain test:integration:reports",
+    "test:integration:reports:sales": "pnpm --filter @ants/domain test:integration:reports-sales",
     "test:integration:treasury:cash-closing": "pnpm --filter @ants/domain test:integration:treasury-cash-closing",
     "test:integration:company-profile": "pnpm --filter @ants/domain test:integration:company-profile",
     "test:integration:documents": "pnpm --filter @ants/domain test:integration:documents",

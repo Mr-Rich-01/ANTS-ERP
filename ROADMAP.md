@@ -35,8 +35,8 @@ Quick wins primeiro (validar o fluxo de trabalho), depois fundações (dados da 
 
 `S1 → S2 → S3 → S4 → S5 → S6 → S7 → S8 → S9 → S10 → S11` concluídas.
 
-**Ordem actual (2026-07-22):** `S15 → S16 → S17 → S18` (backlog do cliente, prioridades 1–4)
-→ depois `S12 ⏸ (quando a KOKO responder) → S13 → S14`.
+**Ordem actual (2026-07-22):** `S15 ✅ → S16 ✅ → S17 → S18` (backlog do cliente,
+prioridades 1–4) → depois `S12 ⏸ (quando a KOKO responder) → S13 → S14`.
 
 ---
 
@@ -268,19 +268,42 @@ eventos idempotentes `SALE_ISSUED` + `COGS_POSTED` + `RECEIPT_POSTED`); migraç�
 
 ## Sessão S16 — Relatório de Vendas + Exportação Excel 🟡
 
-*(Backlog Prioridade 2)*
+*(Backlog Prioridade 2 — ✅ concluída em 2026-07-22 na branch `s16-relatorio-vendas`;
+fica em aberto apenas a adopção incremental do XLSX nas restantes tabelas, ver última
+checkbox)*
 
-🔒 **Aprovação:** dependência nova de geração XLSX (exceljs ou similar) antes de código.
+🔒 **Aprovação (dada em 2026-07-22, com o plano da sessão):** dependência nova **exceljs**,
+instalada apenas no workspace server (`@ants/domain`); geração XLSX server-side; IVA dos
+valores reais por documento (não `total ÷ 1,16`); zero migrações, zero RBAC novo.
 
-- [ ] Relatório de vendas conforme o modelo «Relatório de Venda.xlsx»: colunas Data /
+- [x] Relatório de vendas conforme o modelo «Relatório de Venda.xlsx»: colunas Data /
       Descrição (ex.: «VD 2026/0001», «Factura 2026/0098») / Total / IVA / Valor Líquido;
       Grupo 1 VD + Sub-Total, Grupo 2 Facturas + Sub-Total, TOTAL GERAL; cancelados fora
-      dos totais por omissão, com opção de os mostrar identificados.
-- [ ] Filtros: período, tipo de documento, nº, cliente, vendedor/utilizador, estado.
-- [ ] Exportação para Excel do relatório de vendas no formato do modelo.
+      dos totais por omissão, com opção de os mostrar identificados. *(Página nova
+      `/relatorios/vendas` — domínio `getSalesReport` gate `sales.view`; IVA/líquido dos
+      valores REAIS por documento (`taxTotal`/`taxableBase` das linhas na emissão), nunca
+      `total ÷ 1,16`; invariante `total = IVA + líquido` verificado em teste por linha e
+      agregados; rascunhos nunca aparecem; cancelados rasurados + badge, fora de todos os
+      subtotais e do total geral; ordenação clicável Data/Descrição/Total asc/desc.)*
+- [x] Filtros: período, tipo de documento, nº, cliente, vendedor/utilizador, estado.
+      *(Default mês corrente; tipo Todos/VD/Facturas; pesquisa por nº case-insensitive;
+      cliente via `SearchCombobox`; vendedor = `Invoice.createdBy`; estado Activos
+      default/Cancelados/Todos. Loja/filial fica pendente: `Invoice.branchId` existe mas
+      só é preenchido quando a sessão tem filial activa — decidir semântica antes de
+      expor o filtro, sem inventar schema.)*
+- [x] Exportação para Excel do relatório de vendas no formato do modelo. *(Route handler
+      GET `/relatorios/vendas/exportar` com os mesmos query params da página → mesma
+      fonte de dados, zero divergência sistema/Excel; gate `reports.export`;
+      `Content-Disposition` `relatorio-vendas-{de}-{até}.xlsx`.)*
 - [ ] «Exportar para Excel» em todas as tabelas de relatórios (respeita filtros, período,
       ordenação e empresa; título/empresa/período/data/utilizador no cabeçalho; valores
-      monetários como números).
+      monetários como números). *(Infra-estrutura CONCLUÍDA na S16: helper genérico
+      `exportTableToXlsx` em `@ants/domain` — colunas tipadas text/money/number/date,
+      money como NÚMERO com `numFmt '#,##0.00'`, datas como célula de data, cabeçalho
+      título/empresa/período/utilizador/data, grupos com sub-totais e total geral
+      destacados, testado isoladamente com reabertura exceljs. A adopção nas restantes
+      tabelas é incremental — a S18 já a reutiliza para as listagens de stock e
+      contabilidade.)*
 
 ## Sessão S17 — Notas, Adiantamentos e Devoluções 🔴
 

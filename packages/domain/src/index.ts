@@ -22,3 +22,5 @@ export * from './accounting-statements';
 export * from './inventory-regularization';
 export * from './reversals';
 export * from './reports';
+export * from './sales-report';
+export * from './xlsx-export';
