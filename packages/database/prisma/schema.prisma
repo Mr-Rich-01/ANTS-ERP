@@ -614,6 +614,10 @@ model Invoice {
   issueDate          DateTime       @default(now())
   dueDate            DateTime
   status             InvoiceStatus  @default(ISSUED)
+  /// Tipo do documento de venda (S15): FACTURA série FT, VD série VD (venda a dinheiro no POS ao Cliente Geral).
+  documentType       InvoiceDocumentType @default(FACTURA)
+  /// Contador de vias adicionais emitidas (S15) — 0 = só o original foi impresso.
+  viaCount           Int            @default(0)
   /// Número da série RASC enquanto rascunho, preservado após a emissão (S6).
   draftNumber        String?
   cancelledAt        DateTime?
@@ -1197,6 +1201,12 @@ enum InvoiceStatus {
   PARTIAL
   PAID
   CANCELLED
+}
+
+/// Tipo do documento de venda (S15). VD = Venda a Dinheiro (POS, Cliente Geral).
+enum InvoiceDocumentType {
+  FACTURA
+  VD
 }
 
 enum PaymentStatus {

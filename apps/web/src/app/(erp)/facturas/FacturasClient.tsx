@@ -10,6 +10,8 @@ export type DisplayStatus = 'rascunho' | 'pago' | 'parcial' | 'pendente' | 'venc
 export interface InvoiceRow {
   id: string;
   number: string;
+  /** FT ou VD (S15). */
+  documentType: 'FACTURA' | 'VD';
   customerName: string;
   customerNuit: string;
   dateStr: string;
@@ -33,7 +35,10 @@ const STATUS: Record<DisplayStatus, [string, string, string]> = {
   cancelado: ['Cancelado', 'var(--text3)', 'var(--bd-soft)'],
 };
 
-const FILTERS = ['Todas', 'Rascunhos', 'Pendentes', 'Pagas', 'Vencidas'] as const;
+// S15: chips do backlog do cliente — Activas agrupa tudo o que tem efeitos
+// (pendente/parcial/vencido/pago); Canceladas ganhou filtro próprio e as
+// canceladas nunca entram nos totais (invoiceKpis já usa ACTIVE_INVOICE_STATUSES).
+const FILTERS = ['Todas', 'Activas', 'Pendentes', 'Parciais', 'Pagas', 'Vencidas', 'Canceladas', 'Rascunhos'] as const;
 
 const th: React.CSSProperties = {
   padding: '11px 14px',
@@ -54,14 +59,21 @@ export function FacturasClient({ stats, rows, totalStr, canCreate }: { stats: St
   const filtered = useMemo(() => {
     const term = q.trim().toLowerCase();
     return rows.filter((r) => {
+      if (filter === 'Activas' && (r.status === 'cancelado' || r.status === 'rascunho')) return false;
       if (filter === 'Rascunhos' && r.status !== 'rascunho') return false;
       if (filter === 'Pendentes' && !(r.status === 'pendente' || r.status === 'parcial' || r.status === 'vencido')) return false;
+      if (filter === 'Parciais' && r.status !== 'parcial') return false;
       if (filter === 'Pagas' && r.status !== 'pago') return false;
       if (filter === 'Vencidas' && r.status !== 'vencido') return false;
+      if (filter === 'Canceladas' && r.status !== 'cancelado') return false;
       if (term && !(r.number.toLowerCase().includes(term) || r.customerName.toLowerCase().includes(term))) return false;
       return true;
     });
   }, [rows, filter, q]);
+
+  // Rodapé coerente com o valor: «Total facturado» vem dos KPIs (só documentos com
+  // efeitos), por isso a contagem também exclui cancelados e rascunhos (S15).
+  const activeCount = useMemo(() => rows.filter((r) => r.status !== 'cancelado' && r.status !== 'rascunho').length, [rows]);
 
   return (
     <div style={{ padding: '14px 26px 30px', display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -96,6 +108,10 @@ export function FacturasClient({ stats, rows, totalStr, canCreate }: { stats: St
             })}
           </div>
           <div style={{ flex: 1 }} />
+          <button onClick={() => router.push('/facturas/recibos')} style={{ display: 'flex', alignItems: 'center', gap: 7, height: 36, padding: '0 13px', borderRadius: 9, border: '1px solid var(--border)', background: 'var(--card)', color: 'var(--text2)', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>
+            <Icon name="receipt" size={15} />
+            Recibos
+          </button>
           <button onClick={() => router.push('/facturas/notas')} style={{ display: 'flex', alignItems: 'center', gap: 7, height: 36, padding: '0 13px', borderRadius: 9, border: '1px solid var(--border)', background: 'var(--card)', color: 'var(--text2)', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>
             <Icon name="file-minus-2" size={15} />
             Notas de crédito/débito
@@ -131,10 +147,16 @@ export function FacturasClient({ stats, rows, totalStr, canCreate }: { stats: St
               ) : (
                 filtered.map((inv) => {
                   const [label, color, bg] = STATUS[inv.status];
+                  const cancelled = inv.status === 'cancelado';
                   return (
-                    <tr key={inv.id} onClick={() => router.push(`/facturas/documento?id=${inv.id}`)} className="ants-row" style={{ borderBottom: '1px solid var(--bd-soft2)', cursor: 'pointer' }}>
-                      <td className="font-mono" style={{ padding: '12px 14px', fontSize: 12.5, fontWeight: 600, color: 'var(--accent-fg)', whiteSpace: 'nowrap' }}>
+                    <tr key={inv.id} onClick={() => router.push(`/facturas/documento?id=${inv.id}`)} className="ants-row" style={{ borderBottom: '1px solid var(--bd-soft2)', cursor: 'pointer', opacity: cancelled ? 0.62 : undefined }}>
+                      <td className="font-mono" style={{ padding: '12px 14px', fontSize: 12.5, fontWeight: 600, color: 'var(--accent-fg)', whiteSpace: 'nowrap', textDecoration: cancelled ? 'line-through' : undefined }}>
                         {inv.number}
+                        {inv.documentType === 'VD' && (
+                          <span style={{ marginLeft: 7, fontSize: 10, fontWeight: 700, letterSpacing: '.5px', color: 'var(--info)', background: 'var(--info-bg)', padding: '2px 6px', borderRadius: 6, verticalAlign: 'middle' }}>
+                            VD
+                          </span>
+                        )}
                       </td>
                       <td style={{ padding: '12px 14px', fontSize: 13, fontWeight: 500, color: 'var(--text)', whiteSpace: 'nowrap' }}>
                         {inv.customerName}
@@ -170,7 +192,7 @@ export function FacturasClient({ stats, rows, totalStr, canCreate }: { stats: St
             <tfoot>
               <tr style={{ background: 'var(--card2)' }}>
                 <td colSpan={4} style={{ padding: '13px 14px', fontSize: 12.5, fontWeight: 600, color: 'var(--text)' }}>
-                  Total facturado · {rows.length} {rows.length === 1 ? 'documento' : 'documentos'}
+                  Total facturado · {activeCount} {activeCount === 1 ? 'documento activo' : 'documentos activos'}
                 </td>
                 <td className="tnum" style={{ padding: '13px 14px', textAlign: 'right', fontSize: 13.5, fontWeight: 700, color: 'var(--text)', whiteSpace: 'nowrap' }}>
                   {totalStr}

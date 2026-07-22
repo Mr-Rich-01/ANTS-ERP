@@ -30,10 +30,16 @@ export type InvoiceDisplayStatus = 'rascunho' | 'pago' | 'parcial' | 'pendente' 
  */
 export const ACTIVE_INVOICE_STATUSES: InvoiceStatus[] = ['ISSUED', 'PARTIAL', 'PAID'];
 export type PaymentMethod = 'CASH' | 'MPESA' | 'EMOLA' | 'CARD' | 'TRANSFER';
+/** Tipo do documento de venda (S15): factura série FT ou VD — Venda a Dinheiro (POS ao Cliente Geral). */
+export type InvoiceDocumentType = 'FACTURA' | 'VD';
+
+/** Nome do cliente operacional do POS (S15 — antes «Cliente final»). */
+export const POS_GENERAL_CUSTOMER_NAME = 'Cliente Geral';
 
 export interface InvoiceListItem {
   id: string;
   number: string;
+  documentType: InvoiceDocumentType;
   customerName: string;
   customerNuit: string | null;
   issueDate: Date;
@@ -90,6 +96,9 @@ export interface CustomerPaymentReceipt {
 export interface InvoiceDetail {
   id: string;
   number: string;
+  documentType: InvoiceDocumentType;
+  /** Vias adicionais já emitidas (0 = só o original). */
+  viaCount: number;
   customerId: string;
   customerName: string;
   customerNuit: string | null;
@@ -157,6 +166,7 @@ export async function listInvoices(db: PrismaClient, ctx: RequestContext): Promi
   return rows.map((i) => ({
     id: i.id,
     number: i.number,
+    documentType: i.documentType as InvoiceDocumentType,
     customerName: i.customerName,
     customerNuit: i.customerNuit,
     issueDate: i.issueDate,
@@ -196,6 +206,8 @@ export async function getInvoice(db: PrismaClient, ctx: RequestContext, id: stri
   return {
     id: i.id,
     number: i.number,
+    documentType: i.documentType as InvoiceDocumentType,
+    viaCount: i.viaCount,
     customerId: i.customerId,
     customerName: i.customerName,
     customerNuit: i.customerNuit,
@@ -283,6 +295,80 @@ export async function getCustomerPaymentReceipt(db: PrismaClient, ctx: RequestCo
   };
 }
 
+// ───────────────────── Lista de recibos (S15) ─────────────────────
+
+export interface CustomerPaymentListFilters {
+  /** Pesquisa pelo número do recibo. */
+  q?: string;
+  customerId?: string;
+  /** Pesquisa pelo número do documento liquidado (FT/VD). */
+  invoiceNumber?: string;
+  method?: PaymentMethod;
+  status?: 'ACTIVE' | 'REVERSED';
+  /** Datas pt-MZ (YYYY-MM-DD) sobre paidAt. */
+  from?: string;
+  to?: string;
+}
+
+export interface CustomerPaymentListItem {
+  id: string;
+  number: string;
+  customerName: string;
+  invoiceId: string | null;
+  invoiceNumber: string | null;
+  amount: number;
+  method: PaymentMethod;
+  paidAt: Date;
+  status: 'ACTIVE' | 'REVERSED';
+}
+
+/** Lista de recibos de cliente com filtros (S15) — cada recibo é um documento independente. */
+export async function listCustomerPayments(
+  db: PrismaClient,
+  ctx: RequestContext,
+  filters: CustomerPaymentListFilters = {},
+): Promise<CustomerPaymentListItem[]> {
+  requirePermission(ctx, 'sales.view');
+  requireCompany(ctx);
+
+  const where: Prisma.PaymentWhereInput = {};
+  if (filters.q?.trim()) where.number = { contains: filters.q.trim(), mode: 'insensitive' };
+  if (filters.customerId) where.customerId = filters.customerId;
+  if (filters.invoiceNumber?.trim()) {
+    where.invoice = { number: { contains: filters.invoiceNumber.trim(), mode: 'insensitive' } };
+  }
+  if (filters.method) where.method = filters.method;
+  if (filters.status) where.status = filters.status;
+  if (filters.from || filters.to) {
+    where.paidAt = {};
+    if (filters.from) where.paidAt.gte = parseAccountingDate(filters.from);
+    // Fim do dia inclusivo: < dia seguinte.
+    if (filters.to) where.paidAt.lt = new Date(parseAccountingDate(filters.to).getTime() + 86_400_000);
+  }
+
+  const rows = await db.payment.findMany({
+    where,
+    orderBy: [{ paidAt: 'desc' }, { number: 'desc' }],
+    take: 300,
+    include: {
+      customer: { select: { name: true } },
+      invoice: { select: { id: true, number: true, customerName: true } },
+    },
+  });
+
+  return rows.map((p) => ({
+    id: p.id,
+    number: p.number,
+    customerName: p.invoice?.customerName ?? p.customer.name,
+    invoiceId: p.invoice?.id ?? null,
+    invoiceNumber: p.invoice?.number ?? null,
+    amount: Number(p.amount),
+    method: p.method as PaymentMethod,
+    paidAt: p.paidAt,
+    status: p.status as 'ACTIVE' | 'REVERSED',
+  }));
+}
+
 export async function invoiceKpis(db: PrismaClient, ctx: RequestContext): Promise<InvoiceKpis> {
   requirePermission(ctx, 'sales.view');
   requireCompany(ctx);
@@ -317,7 +403,7 @@ export async function getCustomerStatement(db: PrismaClient, ctx: RequestContext
   if (!customer) throw new NotFoundError('Cliente não encontrado.');
 
   const [invoices, payments, creditNotes, debitNotes] = await Promise.all([
-    db.invoice.findMany({ where: { customerId, status: { in: ACTIVE_INVOICE_STATUSES } }, select: { number: true, issueDate: true, total: true } }),
+    db.invoice.findMany({ where: { customerId, status: { in: ACTIVE_INVOICE_STATUSES } }, select: { number: true, issueDate: true, total: true, documentType: true } }),
     db.payment.findMany({ where: { customerId, status: 'ACTIVE' }, select: { number: true, paidAt: true, amount: true } }),
     db.creditNote.findMany({ where: { customerId, status: 'ISSUED' }, select: { number: true, issueDate: true, total: true } }),
     db.debitNote.findMany({ where: { customerId, status: 'ISSUED' }, select: { number: true, issueDate: true, total: true } }),
@@ -325,7 +411,7 @@ export async function getCustomerStatement(db: PrismaClient, ctx: RequestContext
 
   type Ev = { date: Date; doc: string; description: string; debit: number; credit: number };
   const events: Ev[] = [
-    ...invoices.map((i) => ({ date: i.issueDate, doc: i.number, description: 'Factura de venda', debit: Number(i.total), credit: 0 })),
+    ...invoices.map((i) => ({ date: i.issueDate, doc: i.number, description: i.documentType === 'VD' ? 'Venda a Dinheiro' : 'Factura de venda', debit: Number(i.total), credit: 0 })),
     ...payments.map((p) => ({ date: p.paidAt, doc: p.number, description: 'Recibo de pagamento', debit: 0, credit: Number(p.amount) })),
     ...creditNotes.map((n) => ({ date: n.issueDate, doc: n.number, description: 'Nota de crédito', debit: 0, credit: Number(n.total) })),
     ...debitNotes.map((n) => ({ date: n.issueDate, doc: n.number, description: 'Nota de débito', debit: Number(n.total), credit: 0 })),
@@ -862,7 +948,7 @@ async function resolvePosCustomerTx(
   }
 
   const existing = await tx.customer.findFirst({
-    where: { companyId, name: 'Cliente final', status: 'ACTIVE' },
+    where: { companyId, name: POS_GENERAL_CUSTOMER_NAME, status: 'ACTIVE' },
     orderBy: { createdAt: 'asc' },
   });
   if (existing) return { id: existing.id, name: existing.name, nuit: existing.nuit, paymentTermDays: existing.paymentTermDays };
@@ -870,7 +956,7 @@ async function resolvePosCustomerTx(
   const created = await tx.customer.create({
     data: {
       companyId,
-      name: 'Cliente final',
+      name: POS_GENERAL_CUSTOMER_NAME,
       type: 'INDIVIDUAL',
       paymentTermDays: 0,
       creditLimit: 0,
@@ -900,6 +986,13 @@ export async function createPosSale(db: PrismaClient, ctx: RequestContext, input
   if (data.lines.some((l) => l.discountPercent > 0) && !hasPermission(ctx, 'sales.approve_discount')) {
     throw new ForbiddenError('Sem permissão para aplicar descontos.');
   }
+
+  // S15: venda POS ao Cliente Geral emite VD — Venda a Dinheiro (série própria);
+  // cliente identificado no POS continua a receber factura FT. A contabilidade é
+  // idêntica nos dois casos (SALE_ISSUED + COGS_POSTED + RECEIPT_POSTED).
+  const isVd = data.customerId === POS_FINAL_CUSTOMER_ID;
+  const documentType: InvoiceDocumentType = isVd ? 'VD' : 'FACTURA';
+  const docLabel = isVd ? 'VD' : 'Factura';
 
   return db.$transaction(async (tx) => {
     const customer = await resolvePosCustomerTx(tx, ctx, companyId, data.customerId);
@@ -973,12 +1066,13 @@ export async function createPosSale(db: PrismaClient, ctx: RequestContext, input
         assertConsistentTotals(totals);
 
         const dueDate = new Date(issueDate.getTime() + customer.paymentTermDays * 86_400_000);
-        const number = await nextDocNumber(tx, companyId, 'FT', issueDate.getUTCFullYear());
+        const number = await nextDocNumber(tx, companyId, isVd ? 'VD' : 'FT', issueDate.getUTCFullYear());
         const invoice = await tx.invoice.create({
           data: {
             companyId,
             branchId: ctx.branchId ?? null,
             number,
+            documentType,
             customerId: customer.id,
             customerName: customer.name,
             customerNuit: customer.nuit,
@@ -1040,19 +1134,19 @@ export async function createPosSale(db: PrismaClient, ctx: RequestContext, input
         const ar = await getMappedAccountTx(tx, companyId, 'ACCOUNTS_RECEIVABLE');
         const revenue = await getMappedAccountTx(tx, companyId, 'SALES_REVENUE');
         const lines = [
-          { ledgerAccountId: ar.id, debit: totals.total, customerId: customer.id, description: `Factura POS ${number}` },
-          { ledgerAccountId: revenue.id, credit: totals.tax > 0 ? totals.taxable : totals.total, description: `Factura POS ${number}` },
+          { ledgerAccountId: ar.id, debit: totals.total, customerId: customer.id, description: `${docLabel} POS ${number}` },
+          { ledgerAccountId: revenue.id, credit: totals.tax > 0 ? totals.taxable : totals.total, description: `${docLabel} POS ${number}` },
         ];
         if (totals.tax > 0) {
           const vat = await getMappedAccountTx(tx, companyId, 'VAT_OUTPUT');
-          lines.push({ ledgerAccountId: vat.id, credit: totals.tax, description: `Factura POS ${number}` });
+          lines.push({ ledgerAccountId: vat.id, credit: totals.tax, description: `${docLabel} POS ${number}` });
         }
 
         await postAccountingEventTx(tx, ctx, {
           journalType: 'SALES',
           entryDate: invoice.issueDate,
           dateLabel: 'A data de emissão',
-          description: `Factura POS ${number}`,
+          description: `${docLabel} POS ${number}`,
           reference: number,
           origin: { sourceType: 'INVOICE', sourceId: invoice.id, accountingEvent: 'SALE_ISSUED' },
           lines,
@@ -1077,6 +1171,7 @@ export async function createPosSale(db: PrismaClient, ctx: RequestContext, input
           entityId: invoice.id,
           newValues: {
             number,
+            documentType,
             customerId: customer.id,
             customer: customer.name,
             issueDate: formatAccountingDate(invoice.issueDate),
@@ -2134,7 +2229,24 @@ const INVOICE_HISTORY_LABELS: Record<string, string> = {
   'invoice.draft.discard': 'Rascunho descartado',
   'invoice.issue': 'Factura emitida',
   'invoice.cancel': 'Factura cancelada',
+  'invoice.via_print': 'Via adicional emitida',
 };
+
+/** Nome ordinal da via em pt (via 2 = «SEGUNDA VIA»). */
+export function invoiceViaLabel(via: number): string {
+  const ordinals: Record<number, string> = {
+    2: 'SEGUNDA VIA',
+    3: 'TERCEIRA VIA',
+    4: 'QUARTA VIA',
+    5: 'QUINTA VIA',
+    6: 'SEXTA VIA',
+    7: 'SÉTIMA VIA',
+    8: 'OITAVA VIA',
+    9: 'NONA VIA',
+    10: 'DÉCIMA VIA',
+  };
+  return ordinals[via] ?? `${via}.ª VIA`;
+}
 
 function historyDetails(action: string, oldValues: unknown, newValues: unknown): string | null {
   const oldV = (oldValues ?? {}) as Record<string, unknown>;
@@ -2158,9 +2270,73 @@ function historyDetails(action: string, oldValues: unknown, newValues: unknown):
       return typeof newV.cancellationReason === 'string' ? `Motivo: ${newV.cancellationReason}` : null;
     case 'invoice.draft.discard':
       return typeof newV.reason === 'string' ? `Motivo: ${newV.reason}` : null;
+    case 'invoice.via_print': {
+      const via = typeof newV.via === 'number' ? invoiceViaLabel(newV.via) : null;
+      const reason = typeof newV.reason === 'string' && newV.reason ? ` · Motivo: ${newV.reason}` : '';
+      return via ? `${via}${reason}` : null;
+    }
     default:
       return null;
   }
+}
+
+// ───────────────────── Vias adicionais (S15) ─────────────────────
+
+const emitInvoiceViaInput = z.object({
+  invoiceId: z.string().min(1, 'Factura inválida.'),
+  reason: z.string().trim().max(500).optional(),
+});
+
+export type EmitInvoiceViaInput = z.input<typeof emitInvoiceViaInput>;
+
+export interface EmitInvoiceViaResult {
+  /** Número da via emitida (2 = segunda via). */
+  via: number;
+  number: string;
+}
+
+/**
+ * Emite uma via adicional do documento (S15): incrementa o contador atomicamente e
+ * regista no histórico (via, utilizador, data/hora, motivo). NÃO altera número,
+ * valores, datas, produtos nem estado — a via é apenas uma reimpressão identificada.
+ */
+export async function emitInvoiceVia(db: PrismaClient, ctx: RequestContext, input: EmitInvoiceViaInput): Promise<EmitInvoiceViaResult> {
+  requirePermission(ctx, 'sales.view');
+  const companyId = requireCompany(ctx);
+  const parsed = emitInvoiceViaInput.safeParse(input);
+  if (!parsed.success) throw new ValidationError(parsed.error.issues[0]?.message ?? 'Dados inválidos.');
+  const data = parsed.data;
+
+  return db.$transaction(async (tx) => {
+    const invoice = await tx.invoice.findFirst({
+      where: { companyId, id: data.invoiceId },
+      select: { id: true, number: true, status: true, documentType: true },
+    });
+    if (!invoice) throw new NotFoundError('Factura não encontrada.');
+    if (invoice.status === 'DRAFT') throw new ConflictError('Um rascunho não tem vias — emita o documento primeiro.');
+
+    // Incremento atómico: duas emissões concorrentes recebem vias distintas.
+    const updated = await tx.invoice.update({
+      where: { id: invoice.id },
+      data: { viaCount: { increment: 1 } },
+      select: { viaCount: true },
+    });
+    const via = updated.viaCount + 1; // original = 1.ª via; viaCount conta as adicionais
+
+    await writeAudit(tx, ctx, {
+      action: 'invoice.via_print',
+      entity: 'Invoice',
+      entityId: invoice.id,
+      newValues: {
+        number: invoice.number,
+        documentType: invoice.documentType,
+        via,
+        reason: data.reason ?? null,
+      },
+    });
+
+    return { via, number: invoice.number };
+  });
 }
 
 /** Histórico de alterações da factura, lido do AuditLog (edições de rascunho e transições de estado). */

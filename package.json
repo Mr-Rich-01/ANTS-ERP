@@ -43,6 +43,7 @@
     "test:integration:company-profile": "pnpm --filter @ants/domain test:integration:company-profile",
     "test:integration:documents": "pnpm --filter @ants/domain test:integration:documents",
     "test:integration:invoices:drafts": "pnpm --filter @ants/domain test:integration:invoice-drafts",
+    "test:integration:invoices:vd": "pnpm --filter @ants/domain test:integration:invoices-vd",
     "test:integration:purchases:approval": "pnpm --filter @ants/domain test:integration:purchases-approval",
     "test:integration:products:initial-stock": "pnpm --filter @ants/domain test:integration:products-initial-stock",
     "test:integration:stock:counts": "pnpm --filter @ants/domain test:integration:stock-counts",

@@ -28,6 +28,7 @@ export default async function FacturasPage() {
   const rows: InvoiceRow[] = invoices.map((i) => ({
     id: i.id,
     number: i.number,
+    documentType: i.documentType,
     customerName: i.customerName,
     customerNuit: i.customerNuit ?? '—',
     dateStr: fmtDate(i.issueDate),

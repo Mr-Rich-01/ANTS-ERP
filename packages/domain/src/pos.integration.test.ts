@@ -245,11 +245,13 @@ describe('POS V1', () => {
     await prisma.ledgerAccount.delete({ where: { id: duplicate.id } });
   });
 
-  it('permite Cliente final criando o cliente operacional quando necessario', async () => {
+  it('permite Cliente Geral criando o cliente operacional quando necessario (emite VD, S15)', async () => {
     const result = await createPosSale(prisma, posCtx, input({ customerId: POS_FINAL_CUSTOMER_ID, lines: [{ productId: ids.product, quantity: 1, discountPercent: 0 }] }));
     const invoice = await prisma.invoice.findUniqueOrThrow({ where: { id: result.invoiceId } });
     const customer = await prisma.customer.findUniqueOrThrow({ where: { id: invoice.customerId } });
-    expect(customer.name).toBe('Cliente final');
+    expect(customer.name).toBe('Cliente Geral');
+    expect(invoice.documentType).toBe('VD');
+    expect(invoice.number.startsWith('VD ')).toBe(true);
     expect(await prisma.auditLog.count({ where: { companyId: CA, action: 'customer.final_create', entityId: customer.id } })).toBeGreaterThanOrEqual(1);
   });
 

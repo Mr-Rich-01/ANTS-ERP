@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 import { forContext } from '@ants/database';
-import { cancelCreditNote, cancelInvoice, createCreditNote, createDebitNote, createInvoice, createPayment, discardInvoiceDraft, issueInvoiceDraft, reverseCustomerPayment, saveInvoiceDraft, updateInvoiceDraft, DomainError, type CancelCreditNoteInput, type CancelInvoiceInput, type CreditNoteInput, type DebitNoteInput, type DiscardInvoiceDraftInput, type InvoiceDraftUpdateInput, type InvoiceInput, type IssueInvoiceDraftInput, type PaymentInput, type ReverseCustomerPaymentInput } from '@ants/domain';
+import { cancelCreditNote, cancelInvoice, createCreditNote, createDebitNote, createInvoice, createPayment, discardInvoiceDraft, emitInvoiceVia, issueInvoiceDraft, reverseCustomerPayment, saveInvoiceDraft, updateInvoiceDraft, DomainError, type CancelCreditNoteInput, type CancelInvoiceInput, type CreditNoteInput, type DebitNoteInput, type DiscardInvoiceDraftInput, type EmitInvoiceViaInput, type InvoiceDraftUpdateInput, type InvoiceInput, type IssueInvoiceDraftInput, type PaymentInput, type ReverseCustomerPaymentInput } from '@ants/domain';
 import { getContext } from '@/lib/session';
 
 export interface InvoiceActionResult {
@@ -165,6 +165,24 @@ export async function cancelCreditNoteAction(input: CancelCreditNoteInput): Prom
     revalidatePath('/inventario');
     revalidatePath('/contabilidade');
     return { ok: true, id, number };
+  } catch (e) {
+    if (e instanceof DomainError) return { error: e.message };
+    throw e;
+  }
+}
+
+export interface InvoiceViaActionResult extends InvoiceActionResult {
+  via?: number;
+}
+
+/** Emite uma via adicional (S15): regista no histórico e devolve o número da via. */
+export async function emitInvoiceViaAction(input: EmitInvoiceViaInput): Promise<InvoiceViaActionResult> {
+  const ctx = await getContext();
+  if (!ctx.companyId) return { error: 'Sem empresa activa.' };
+  try {
+    const { via, number } = await emitInvoiceVia(forContext(ctx), ctx, input);
+    revalidatePath('/facturas/documento');
+    return { ok: true, via, number };
   } catch (e) {
     if (e instanceof DomainError) return { error: e.message };
     throw e;

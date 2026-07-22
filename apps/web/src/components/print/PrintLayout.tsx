@@ -51,8 +51,6 @@ export function CompanyHeader({
   meta?: ReactNode;
 }) {
   const initial = (company?.tradeName ?? company?.legalName ?? 'A').charAt(0).toUpperCase();
-  const accounts = company?.bankAccounts?.filter((a) => a.reference) ?? [];
-  const wallets = company?.mobileWallets ?? [];
   return (
     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 24, paddingBottom: 22, borderBottom: '2px solid #13343b' }}>
       <div style={{ display: 'flex', gap: 14, minWidth: 0 }}>
@@ -86,20 +84,6 @@ export function CompanyHeader({
             <br />
             <strong style={{ color: '#16282c' }}>NUIT:</strong> {company?.nuit ?? '-'}
           </div>
-          {accounts.length || wallets.length ? (
-            <div style={{ marginTop: 8, fontSize: 10.8, color: '#5f7378', lineHeight: 1.5 }}>
-              {accounts.map((a) => (
-                <div key={`${a.name}-${a.reference}`}>
-                  <strong style={{ color: '#16282c' }}>{a.name}:</strong> {a.reference}
-                </div>
-              ))}
-              {wallets.map((w) => (
-                <div key={`${w.provider}-${w.number}`}>
-                  <strong style={{ color: '#16282c' }}>{w.provider}:</strong> {w.number}
-                </div>
-              ))}
-            </div>
-          ) : null}
         </div>
       </div>
       <div style={{ textAlign: 'right', flex: 'none' }}>
@@ -107,6 +91,36 @@ export function CompanyHeader({
         {documentNumber ? <div className="font-mono" style={{ fontSize: 12.5, color: '#5f7378', marginTop: 6 }}>{documentNumber}</div> : null}
         {status ? <div style={{ marginTop: 8 }}>{status}</div> : null}
         {meta ? <div style={{ marginTop: 10 }}>{meta}</div> : null}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Dados bancários da empresa (S15) — aparecem APENAS na factura, depois das linhas,
+ * totais, IVA e valor líquido. Os restantes documentos (recibo, VD, NC, ND, cotação,
+ * OC) não mostram referências bancárias, por decisão do cliente.
+ */
+export function BankDetailsBlock({ company }: { company: PrintableCompany | null }) {
+  const accounts = company?.bankAccounts?.filter((a) => a.reference) ?? [];
+  const wallets = company?.mobileWallets ?? [];
+  if (!accounts.length && !wallets.length) return null;
+  return (
+    <div style={{ marginTop: 26, paddingTop: 14, borderTop: '1px solid #e6eaea' }}>
+      <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.6px', color: '#13343b', marginBottom: 6 }}>
+        Dados bancários
+      </div>
+      <div style={{ fontSize: 11, color: '#5f7378', lineHeight: 1.6, columnCount: accounts.length + wallets.length > 3 ? 2 : 1, columnGap: 32 }}>
+        {accounts.map((a) => (
+          <div key={`${a.name}-${a.reference}`} style={{ breakInside: 'avoid' }}>
+            <strong style={{ color: '#16282c' }}>{a.name}:</strong> {a.reference}
+          </div>
+        ))}
+        {wallets.map((w) => (
+          <div key={`${w.provider}-${w.number}`} style={{ breakInside: 'avoid' }}>
+            <strong style={{ color: '#16282c' }}>{w.provider}:</strong> {w.number}
+          </div>
+        ))}
       </div>
     </div>
   );

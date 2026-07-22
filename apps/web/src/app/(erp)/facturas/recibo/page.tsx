@@ -77,7 +77,7 @@ export default async function ReciboPage({ searchParams }: { searchParams: { id?
           {receipt.invoiceId ? (
             <Link href={`/facturas/documento?id=${receipt.invoiceId}`} style={topBtn}>
               <Icon name="file-text" size={16} />
-              Abrir factura normal
+              {receipt.invoiceNumber?.startsWith('VD') ? 'Abrir VD' : 'Abrir factura normal'}
             </Link>
           ) : null}
           <PrintButton label="Imprimir / Guardar PDF" />
@@ -107,7 +107,7 @@ export default async function ReciboPage({ searchParams }: { searchParams: { id?
           </div>
           <div>
             <Row label="Data" value={fmtDate(receipt.paidAt)} />
-            <Row label="Factura relacionada" value={receipt.invoiceNumber ?? '-'} />
+            <Row label="Documento liquidado" value={receipt.invoiceNumber ?? '-'} />
             <Row label="Método" value={METHOD_LABEL[receipt.method]} />
             <Row label="Conta de tesouraria" value={receipt.treasuryAccountName ?? '-'} />
             <Row label="Caixa / emissor" value={receipt.emittedBy ?? '-'} />
@@ -121,7 +121,10 @@ export default async function ReciboPage({ searchParams }: { searchParams: { id?
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 160px', borderTop: '1px solid #eef2f2' }}>
             <div style={{ padding: '14px', color: '#16282c' }}>
-              Pagamento de cliente{receipt.invoiceNumber ? ` referente à factura ${receipt.invoiceNumber}` : ''}
+              Pagamento de cliente
+              {receipt.invoiceNumber
+                ? ` referente ${receipt.invoiceNumber.startsWith('VD') ? `à ${receipt.invoiceNumber}` : `à factura ${receipt.invoiceNumber}`}`
+                : ''}
             </div>
             <div className="tnum" style={{ padding: '14px', textAlign: 'right', fontWeight: 800, color: '#16282c', whiteSpace: 'nowrap' }}>{fmt(receipt.amount)}</div>
           </div>

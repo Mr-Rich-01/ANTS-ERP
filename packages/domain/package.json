@@ -34,6 +34,7 @@
     "test:integration:treasury-cash-closing": "vitest run --config vitest.integration.config.ts treasury.cash-closing.integration",
     "test:integration:documents": "vitest run --config vitest.integration.config.ts commercial-documents.integration",
     "test:integration:invoice-drafts": "vitest run --config vitest.integration.config.ts invoices.drafts.integration",
+    "test:integration:invoices-vd": "vitest run --config vitest.integration.config.ts invoices.vd.integration",
     "test:integration:purchases-approval": "vitest run --config vitest.integration.config.ts purchases.approval.integration",
     "test:integration:products-initial-stock": "vitest run --config vitest.integration.config.ts products.initial-stock.integration",
     "test:integration:stock-counts": "vitest run --config vitest.integration.config.ts stock-counts.integration",

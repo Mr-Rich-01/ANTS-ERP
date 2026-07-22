@@ -93,7 +93,7 @@ export function PosClient({ customers, warehouses, products, canSelectCustomer }
     () => customers.map((c) => ({ value: c.id, label: c.name, sublabel: c.nuit ? `NUIT ${c.nuit}` : undefined })),
     [customers],
   );
-  const finalCustomerOption = useMemo<ComboOption[]>(() => [{ value: FINAL_CUSTOMER_ID, label: 'Cliente final' }], []);
+  const finalCustomerOption = useMemo<ComboOption[]>(() => [{ value: FINAL_CUSTOMER_ID, label: 'Cliente Geral' }], []);
   const visibleProducts = useMemo(() => {
     const q = query.trim().toLowerCase();
     return products
@@ -244,7 +244,7 @@ export function PosClient({ customers, warehouses, products, canSelectCustomer }
               pinnedOptions={finalCustomerOption}
               value={customerId}
               onChange={(v) => setCustomerId(v || FINAL_CUSTOMER_ID)}
-              placeholder="Cliente final"
+              placeholder="Cliente Geral"
               searchPlaceholder="Pesquisar por nome ou NUIT…"
               emptyText="Sem clientes para a pesquisa."
               triggerStyle={{ height: 38, borderRadius: 10, padding: '0 11px', fontSize: 12.5 }}
@@ -302,10 +302,10 @@ export function PosClient({ customers, warehouses, products, canSelectCustomer }
             <div style={{ marginTop: 11, border: '1px solid var(--ok)', background: 'var(--ok-bg)', color: 'var(--ok)', borderRadius: 8, padding: 10, fontSize: 12.5, display: 'grid', gap: 7 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 7, fontWeight: 800 }}>
                 <Icon name="check-circle-2" size={15} />
-                {success.invoiceNumber} criada · recibo {success.paymentNumber}
+                {success.invoiceNumber.startsWith('VD') ? `${success.invoiceNumber} emitida` : `${success.invoiceNumber} criada`} · recibo {success.paymentNumber}
               </div>
               <Link href={`/facturas/documento?id=${success.invoiceId}`} style={{ color: 'var(--ok)', fontWeight: 800, textDecoration: 'underline' }}>
-                Abrir factura
+                {success.invoiceNumber.startsWith('VD') ? 'Abrir VD' : 'Abrir factura'}
               </Link>
             </div>
           )}

@@ -33,7 +33,10 @@ Parar e pedir aprovação antes de:
 
 Quick wins primeiro (validar o fluxo de trabalho), depois fundações (dados da empresa, documentos), por fim os módulos críticos (contabilidade, produção).
 
-`S1 → S2 → S3 → S4 → S5 → S6 → S7 → S8 → S9 → S10 → S11 → S12 → S13 → S14`
+`S1 → S2 → S3 → S4 → S5 → S6 → S7 → S8 → S9 → S10 → S11` concluídas.
+
+**Ordem actual (2026-07-22):** `S15 → S16 → S17 → S18` (backlog do cliente, prioridades 1–4)
+→ depois `S12 ⏸ (quando a KOKO responder) → S13 → S14`.
 
 ---
 
@@ -188,9 +191,12 @@ Quick wins primeiro (validar o fluxo de trabalho), depois fundações (dados da 
 
 ---
 
-## Sessão S12 — Módulo de Produção 🔴
+## Sessão S12 — Módulo de Produção 🔴 ⏸ EM ESPERA
 
-*(Prioridade 2)*
+*(Prioridade 2 — **em espera desde 2026-07-22**: aguarda as respostas do cliente KOKO ao
+questionário `docs/REQUISITOS_KOKO.md`; desenho aprovado registado em
+`docs/S12_0_RELATORIO_TECNICO.md`; trabalho em curso parqueado na branch `s12-producao`
+— catálogo demo KOKO + filtro ACTIVE no catálogo. Não retomar sem instrução explícita.)*
 
 🔒 **Aprovação:** modelo de custeio da produção (consumo a custo médio ponderado → custo do produto acabado) e respectivos lançamentos contabilísticos aprovados antes de código.
 
@@ -226,6 +232,84 @@ Quick wins primeiro (validar o fluxo de trabalho), depois fundações (dados da 
 - [ ] 🔒 Rever permissões — qualquer alteração a RBAC é aprovada antes.
 - [ ] Desempenho: identificar queries lentas primeiro (medir antes de optimizar), depois propor correcções.
 - [ ] 🔒 **Integração tesouraria↔razão dos movimentos manuais** (pendência registada na S11): depósitos, levantamentos, despesas/receitas manuais e transferências de Tesouraria não geram lançamentos contabilísticos, pelo que a reconciliação da DFC mostra divergência (na demo: 6 280,64 MT em 2026-07-19). Ligar estes movimentos ao razão pelo mecanismo idempotente da 8c (mapa D/C aprovado antes de código — mesma regra da S10); quando fechar, a nota de reconciliação da DFC deve passar a 0 nos períodos novos.
+
+---
+
+# Backlog do cliente (2026-07-22) — Sessões S15–S18
+
+Requisitos entregues pelo cliente em 2026-07-22, organizados nas 4 prioridades
+recomendadas por ele. Estas sessões passam à frente de S12 (em espera), S13 e S14.
+
+## Sessão S15 — Documentos de Venda 🔴
+
+*(Backlog Prioridade 1 — em curso na branch `s15-documentos-venda`)*
+
+🔒 **Aprovação (dada em 2026-07-22, com o plano da sessão):** a VD é uma `Invoice` com
+`documentType = 'VD'` e série própria `VD`; contabilidade idêntica à factura (mesmos
+eventos idempotentes `SALE_ISSUED` + `COGS_POSTED` + `RECEIPT_POSTED`); migração aditiva
+única (`documentType`, `viaCount`, backfill «Cliente final» → «Cliente Geral»); zero RBAC.
+
+- [ ] POS: venda ao **Cliente Geral** emite **VD — Venda a Dinheiro** (série e numeração
+      próprias); venda a cliente identificado no POS continua a emitir FT (decisão 2026-07-22).
+- [ ] Renomear o cliente padrão do POS: «Cliente final» → «Cliente Geral».
+- [ ] Dados bancários da empresa **apenas na factura**, no fundo do documento (depois de
+      linhas, totais, IVA e líquido); removidos do cabeçalho de todos os outros documentos
+      (recibo, VD, NC, ND, cotação, OC).
+- [ ] Separação factura/recibo: a impressão da factura mostra os recibos apenas como
+      referências (número, data, valor); cada recibo é documento independente; **lista de
+      recibos** nova com filtros (nº, cliente, data, factura, método, estado).
+- [ ] Segunda/terceira/demais vias da factura: banner «SEGUNDA VIA»/«TERCEIRA VIA»/… no
+      topo, sem nova numeração/valores/datas/estado; registo no histórico (via, data/hora,
+      utilizador, motivo quando informado).
+- [ ] Lista de facturas: filtros Activas / Pagas / Parciais / Pendentes / Canceladas /
+      Todas; canceladas com identificação visual e fora dos totais (KPIs já as excluem).
+- [ ] Testes: série VD independente da FT; contabilidade da VD balanceada e igual à FT;
+      vias sem efeitos no documento; lista de recibos com isolamento e permissões.
+
+## Sessão S16 — Relatório de Vendas + Exportação Excel 🟡
+
+*(Backlog Prioridade 2)*
+
+🔒 **Aprovação:** dependência nova de geração XLSX (exceljs ou similar) antes de código.
+
+- [ ] Relatório de vendas conforme o modelo «Relatório de Venda.xlsx»: colunas Data /
+      Descrição (ex.: «VD 2026/0001», «Factura 2026/0098») / Total / IVA / Valor Líquido;
+      Grupo 1 VD + Sub-Total, Grupo 2 Facturas + Sub-Total, TOTAL GERAL; cancelados fora
+      dos totais por omissão, com opção de os mostrar identificados.
+- [ ] Filtros: período, tipo de documento, nº, cliente, vendedor/utilizador, estado.
+- [ ] Exportação para Excel do relatório de vendas no formato do modelo.
+- [ ] «Exportar para Excel» em todas as tabelas de relatórios (respeita filtros, período,
+      ordenação e empresa; título/empresa/período/data/utilizador no cabeçalho; valores
+      monetários como números).
+
+## Sessão S17 — Notas, Adiantamentos e Devoluções 🔴
+
+*(Backlog Prioridade 3)*
+
+🔒 **Aprovação:** mapa D/C contabilístico do adiantamento e da devolução antes de código.
+
+- [ ] Verificar NC (item já coberto pela S5: linhas da factura em tabela com tectos por
+      linha) e estender a NC sobre VD; descrição composta a partir dos produtos.
+- [ ] **Recibo de Adiantamento**: pagamento sem factura (`Payment.invoiceId` já é opcional
+      no schema; falta o caminho de domínio), registado na conta corrente do cliente e
+      utilizável depois para liquidar facturas total/parcialmente.
+- [ ] **Devolução ao Cliente**: documento próprio que justifica a devolução de dinheiro —
+      movimento de tesouraria, conta corrente, contabilidade e stock quando houver
+      devolução física; distinguir devolução de produtos/dinheiro, parcial/total.
+
+## Sessão S18 — Stock e Contabilidade (backlog) 🟡
+
+*(Backlog Prioridade 4)*
+
+- [ ] Lista de produtos sem stock, imprimível como folha de contagem física: Código /
+      Produto / Categoria / Armazém / Stock no Sistema / Quantidade Contada (vazia no
+      impresso) / Diferença / Observações; filtros por armazém, categoria, produto, sem
+      stock, negativos, inactivos, todos.
+- [ ] Balancete: filtro por classe contabilística; opção contas com/sem movimento (já tem
+      Saldo Inicial/Débito/Crédito/Saldo Final e selector de colunas da S11).
+- [ ] Razão Geral: variante «todas as contas» (hoje só uma conta de cada vez; saldo
+      inicial/acumulado/totais já existem).
+- [ ] Impressão + exportação Excel destas listagens (reutiliza a infra-estrutura da S16).
 
 ---
 

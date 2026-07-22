@@ -1,14 +1,14 @@
 # MODULE_STATUS — ANTS ERP
 
-_Última actualização: 2026-07-19 (S11)_
+_Última actualização: 2026-07-22 (S15)_
 
 Estado vivo do projecto. O conhecimento permanente (arquitectura, regras, comandos) está
 em [`CLAUDE.md`](CLAUDE.md).
 
-**Último commit funcional:** pendente na branch `s11-relatorios-financeiros` (Sessão S11 do ROADMAP)
-**Fase concluída:** `S11 — Contabilidade: relatórios financeiros` (Balancete sem saldo inicial por omissão + selector de colunas; Demonstração de Resultados; Balanço Patrimonial; Demonstração do Fluxo de Caixa pelo método directo; validação cruzada com teste-âncora — fases anteriores: S10 completa)
+**Último commit funcional:** pendente na branch `s15-documentos-venda` (Sessão S15 — backlog do cliente, Prioridade 1)
+**Fase concluída:** `S15 — Documentos de Venda` (VD no POS ao Cliente Geral, Cliente final → Cliente Geral, dados bancários só na factura e no fundo, lista de recibos com filtros, 2.ª/3.ª/demais vias com histórico, filtros de facturas incl. Canceladas — fases anteriores: S11 completa; **S12 Produção ⏸ EM ESPERA** a aguardar respostas KOKO, trabalho parqueado na branch `s12-producao`)
 **UAT interna/demo:** V1 candidata a demo externa apos UAT interna, aprovada com ressalvas em 2026-07-06; P1-04 acrescenta Contabilidade V1 pronta para UAT/demo com limites; P1-05 acrescenta Fecho de Caixa V1 operacional sem persistencia formal; demo final check registado em `docs/DEMO_FINAL_CHECK.md` em 2026-07-08 como pronto com ressalvas menores; S10c executa a regularização retroactiva na demo — a conta 131 reconcilia com o stock físico (divergência 0)
-**Próximo passo:** `Sessão S12 — Módulo de Produção` (ordem de produção, consumo a custo médio ponderado, entrada de produto acabado, integração contabilística idempotente via mecanismo da S10, fluxo do cliente KOKO; modelo de custeio 🔒 aprovado antes de código) — não iniciar sem instrução explícita, em branch própria; mantém-se pendente o smoke manual final em browser externo/limpo (logout, clique final POS, Fecho de Caixa V1) antes da demo externa
+**Próximo passo:** `Sessão S16 — Relatório de Vendas + Exportação Excel` (backlog do cliente, Prioridade 2: relatório VD/Facturas com subtotais e TOTAL GERAL conforme o modelo «Relatório de Venda.xlsx»; exportação XLSX de todos os relatórios — 🔒 dependência nova exceljs/similar a aprovar antes de código) — não iniciar sem instrução explícita, em branch própria. A `S12 — Produção` fica ⏸ EM ESPERA (respostas KOKO pendentes; docs e catálogo demo parqueados na branch `s12-producao`, commit 5698277); mantém-se pendente o smoke manual final em browser externo/limpo (logout, clique final POS, Fecho de Caixa V1) antes da demo externa
 
 ---
 
@@ -61,7 +61,12 @@ em [`CLAUDE.md`](CLAUDE.md).
 | **S10b** | **Anulação de NC + ND→Outros proveitos** (`cancelCreditNote` gate `invoices.cancel` + motivo ≥ 10 chars + idempotência `CREDIT_NOTE_CANCEL`; OUT compensatórios `reversesId`→IN da devolução com falha TOTAL se a mercadoria entretanto saiu; estorno por verdade histórica dos DOIS eventos (`CREDIT_NOTE_ISSUED` + `CREDIT_NOTE_COGS_REVERSED` quando existe); saldo do cliente reposto; avgCost intacto; factura com NC anulada volta a ser cancelável e o guard indica o número da NC; conta 422 «Outros proveitos operacionais» + mapping `OTHER_INCOME` no seed (45 contas/19 mappings) e `createDebitNote` credita 422 sem fallback; migrações aditivas `s10b_credit_note_cancellation` + backfill `creditNoteId` (COUNT prévio: 2); suite `test:integration:accounting:nc-cancel` 12/12) | ✅ |
 | **S10c** | **Lançamentos manuais (UI) + regularização retroactiva de existências** (UI completa `/contabilidade/lancamentos` sobre o domínio 8b intacto — rascunho/editar/confirmar/eliminar/estornar com gates `accounting.prepare/post/reverse`; operação genérica `executeInventoryRegularization` idempotente (scope `INVENTORY_REGULARIZATION`) D 131/C 312 no `DAB` com valor recalculado na execução; executada na demo: `AB 2026/0002` = 311 411,00 MT, divergência final 0; migração aditiva `s10c_inventory_regularization`; suite `test:integration:accounting:regularization` 11/11; **S10 COMPLETA**) | ✅ |
 | **S11** | **Contabilidade — relatórios financeiros** (domínio novo `accounting-statements.ts` só de LEITURA — DR por grupos de nível 2 via `parentId`, Balanço «à data de» com resultado por apurar em duas linhas calculadas (exercícios anteriores/exercício corrente) por `groupBy` próprio das classes 4/5, DFC método directo sobre o razão com rubricas por `accountingEvent` e reconciliação com a Tesouraria; página `/contabilidade/demonstracoes` com exercício/intervalo, PrintLayout e CSV; Balancete sem saldo inicial por omissão + selector de colunas no URL `cols` que comanda ecrã/impressão/CSV; sem schema, sem dependências, sem permissões novas; suite `test:integration:accounting:statements` 14/14 com teste-âncora a três pontas) | ✅ |
-| 9 | RH & Salários | 🗺️ futuro |
+| **S12** | **Módulo de Produção** (desenho aprovado em docs; aguarda respostas do cliente KOKO; branch `s12-producao` parqueada com catálogo demo KOKO Boxes) | ⏸ em espera |
+| **S15** | **Documentos de Venda** (VD série própria no POS ao Cliente Geral com contabilidade igual à FT; «Cliente final» → «Cliente Geral» com backfill; migração aditiva `s15_sale_documents` — enum `InvoiceDocumentType`, `documentType`, `viaCount`; dados bancários removidos do cabeçalho de todos os documentos e movidos para `BankDetailsBlock` só na factura após os totais; lista nova `/facturas/recibos` com filtros nº/cliente/documento/método/estado/período; vias adicionais `emitInvoiceVia` com banner «SEGUNDA VIA…» e registo no histórico; chips Todas/Activas/Pendentes/Parciais/Pagas/Vencidas/Canceladas/Rascunhos com canceladas rasuradas e fora dos totais; suite `test:integration:invoices:vd` 12/12) | ✅ |
+| S16 | Relatório de Vendas + Exportação Excel (backlog cliente P2) | 🗺️ próximo |
+| S17 | Notas, Adiantamentos e Devoluções (backlog cliente P3) | 🗺️ futuro |
+| S18 | Stock e Contabilidade — folha de contagem, balancete, razão (backlog cliente P4) | 🗺️ futuro |
+| 9 | RH & Salários (S13) | 🗺️ futuro |
 | X | RLS forçado em toda a BD (fase transversal, pré-produção) | 🗺️ futuro |
 
 **Validações actuais:** typecheck 6/6 · lint 6/6 · **testes unitários 99** · **security hardening 16/16** · **auth company-selection 7/7** · **reversal all 44/44** · **integração de
@@ -752,6 +757,56 @@ do original, transferência interna excluída, colunas do balancete, permissões
 reversal all 44/44, POS 12/12, relatórios 24/24, cash-closing 11/11, auth 7/7, security 16/16,
 build OK (rota nova `/contabilidade/demonstracoes`). Próximo: **S12 — Módulo de Produção** (não
 iniciar sem instrução explícita).
+
+**S12 ⏸ EM ESPERA (2026-07-22):** a sessão de Produção ficou em fase documental por decisão
+explícita — o desenho aprovado (single-step, sem WIP, contas 131/132/133, diário DPR, RBAC
+`production.*`, divisão S12a/b/c) está em `docs/S12_0_RELATORIO_TECNICO.md` e o questionário ao
+cliente em `docs/REQUISITOS_KOKO.md` (Blocos A/B/C bloqueiam S12a/b/c respectivamente). O único
+código produzido — catálogo demo KOKO Boxes no seed (14 produtos `KOKO-*`, `ANTS-*` desactivados
+sem apagar) e filtro `status: 'ACTIVE'` no catálogo de produtos — ficou parqueado na branch
+`s12-producao` (commit `5698277`), fora de `main`. Zero migrações, zero modelos de produção no
+schema. Não retomar sem instrução explícita. Entretanto o cliente entregou um backlog de 12 áreas
+em 4 prioridades, registado no ROADMAP como **S15–S18**, que passam à frente de S12/S13/S14.
+
+**S15 — Documentos de Venda (2026-07-22):** primeira sessão do backlog do cliente (Prioridade 1),
+na branch `s15-documentos-venda`, com migração aditiva aprovada `20260722090000_s15_sale_documents`:
+enum novo `InvoiceDocumentType { FACTURA, VD }`, colunas `invoices.documentType`
+(default FACTURA) e `invoices.viaCount` (default 0), e backfill `customers` «Cliente final» →
+«Cliente Geral». **Decisão contabilística aprovada com o plano:** a VD é uma `Invoice` com
+`documentType='VD'` e série própria `VD` no `DocumentCounter` (texto livre — sem migração de
+séries); a contabilidade é EXACTAMENTE a da factura (eventos idempotentes `SALE_ISSUED` +
+`COGS_POSTED` + `RECEIPT_POSTED`, mesmas contas e diários), só mudam série, numeração e título.
+Zero alterações a RBAC. Domínio (`invoices.ts`): `createPosSale` emite **VD para o Cliente Geral**
+e mantém **FT para cliente identificado** (decisão 2026-07-22); `resolvePosCustomerTx` procura/cria
+`POS_GENERAL_CUSTOMER_NAME = 'Cliente Geral'`; `emitInvoiceVia` novo (gate `sales.view`, incremento
+atómico de `viaCount`, `AuditLog invoice.via_print` com via/motivo, bloqueia rascunhos, nada mais
+muda no documento); `listCustomerPayments` novo (filtros nº, cliente, documento liquidado, método,
+estado, período; `take` 300); `listInvoices`/`getInvoice` devolvem `documentType`/`viaCount`;
+extracto do cliente descreve a VD como «Venda a Dinheiro». UI/impressão: contas bancárias/carteiras
+**removidas do `CompanyHeader`** (deixam de aparecer em recibo, VD, NC, ND, cotação e OC) e movidas
+para o componente novo `BankDetailsBlock`, renderizado **apenas na factura, depois dos totais**
+(requisito 2.1); documento com título «VD — Venda a Dinheiro», label «Cliente» em vez de
+«Facturar a», banner de via em destaque («SEGUNDA VIA», … via `invoiceViaLabel`, validado contra o
+`viaCount` real) e dialog «Emitir 2.ª via» com motivo opcional; página nova `/facturas/recibos`
+(lista com filtros GET, combobox de cliente, total de activos no rodapé, 300 mais recentes);
+lista de facturas com chips `Todas/Activas/Pendentes/Parciais/Pagas/Vencidas/Canceladas/Rascunhos`,
+chip «VD» no número, canceladas rasuradas/esbatidas e rodapé coerente («N documentos activos» =
+critério do valor); POS com labels «Cliente Geral» e resultado «VD … emitida». Verificado ao vivo
+em browser: venda POS ao Cliente Geral → `VD 2026/0001` + `REC 2026/0024` (stock 3200→3199), título
+e número correctos, sem dados bancários; 2.ª via com banner e histórico («SEGUNDA VIA · Motivo: …»,
+utilizador e hora); FT com «DADOS BANCÁRIOS» no fundo após os totais; recibo sem dados bancários e
+com «Documento liquidado»; `/facturas/recibos` filtra por documento («VD 2026» → 1 recibo); chips
+«Canceladas» só mostra canceladas com totais intactos. Nota de ambiente: para o smoke local, o
+`next dev` corre no porto 3211 com `apps/web/.env.development.local` (git-ignorado) a apontar
+`AUTH_URL` para 3211 — o `next start` local esbarra deliberadamente no hardening P0-08. Validado:
+`prisma migrate status` OK (25 migrações), typecheck 6/6, lint 6/6, testes unitários 99, **suite
+nova `pnpm test:integration:invoices:vd` 12/12** (VD série própria e contadores independentes,
+FT para identificado, SALE_ISSUED/COGS balanceados com descrição «VD POS», replay idempotente,
+KPIs/extracto, vias sequenciais com auditoria e documento intacto, rascunho bloqueado, lista de
+recibos com filtros/isolamento A/B/permissões, backfill), regressões POS 12/12 + drafts 13/13 +
+**agregado accounting 254/254** + relatórios 24/24, build OK (46/46 páginas, rota nova
+`/facturas/recibos`). Próximo: **S16 — Relatório de Vendas + Excel** (não iniciar sem instrução
+explícita; 🔒 dependência XLSX a aprovar).
 
 **Hardening pré-produção P0-01 (2026-07-02):** seed demo bloqueado em `production`
 antes de criar o Prisma Client; credenciais demo removidas da interface de

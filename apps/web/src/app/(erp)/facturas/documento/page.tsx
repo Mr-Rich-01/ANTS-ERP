@@ -2,15 +2,16 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { forCompany } from '@ants/database';
 import { civilDateInTimeZone } from '@ants/shared';
-import { getCompanyPrintProfile, getInvoice, getInvoiceHistory, hasPermission, listAccounts, DomainError, type InvoiceDisplayStatus, type InvoiceHistoryEntry, type PaymentMethod } from '@ants/domain';
+import { getCompanyPrintProfile, getInvoice, getInvoiceHistory, hasPermission, invoiceViaLabel, listAccounts, DomainError, type InvoiceDisplayStatus, type InvoiceHistoryEntry, type PaymentMethod } from '@ants/domain';
 import { getContext } from '@/lib/session';
 import { Icon } from '@/components/Icon';
 import { PrintButton } from '@/components/PrintButton';
-import { CompanyHeader, DocumentFooter, PrintLayout } from '@/components/print/PrintLayout';
+import { BankDetailsBlock, CompanyHeader, DocumentFooter, PrintLayout } from '@/components/print/PrintLayout';
 import { fmt } from '@/lib/format';
 import { PaymentDialog } from '@/components/facturas/PaymentDialog';
 import { PaymentReversalDialog } from '@/components/facturas/PaymentReversalDialog';
 import { InvoiceCancellationDialog } from '@/components/facturas/InvoiceCancellationDialog';
+import { InvoiceViaDialog } from '@/components/facturas/InvoiceViaDialog';
 import { DraftIssueDialog } from '@/components/facturas/DraftIssueDialog';
 import { DraftDiscardDialog } from '@/components/facturas/DraftDiscardDialog';
 
@@ -48,7 +49,7 @@ function fmtDateTime(d: Date): string {
   return `${fmtDate(d)} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
 
-export default async function DocumentoPage({ searchParams }: { searchParams: { id?: string } }) {
+export default async function DocumentoPage({ searchParams }: { searchParams: { id?: string; via?: string } }) {
   const ctx = await getContext();
   if (!ctx.companyId || !hasPermission(ctx, 'sales.view')) redirect('/facturas');
   if (!searchParams.id) redirect('/facturas');
@@ -82,6 +83,11 @@ export default async function DocumentoPage({ searchParams }: { searchParams: { 
 
   const [statusLabel, statusColor, statusBg] = STATUS[inv.displayStatus];
   const isDraft = inv.status === 'DRAFT';
+  const isVd = inv.documentType === 'VD';
+  const docTitle = isVd ? 'VD — Venda a Dinheiro' : 'Factura';
+  // Banner de via (S15): só quando a URL pede uma via já registada pelo domínio.
+  const viaParam = Number(searchParams.via ?? '');
+  const via = Number.isInteger(viaParam) && viaParam >= 2 && viaParam <= inv.viaCount + 1 ? viaParam : null;
   const canCreate = hasPermission(ctx, 'sales.create');
   const canReceive = hasPermission(ctx, 'payments.receive') && inv.outstanding > 0 && inv.status !== 'CANCELLED' && !isDraft;
   const canCancelPayment = hasPermission(ctx, 'payments.cancel');
@@ -102,7 +108,7 @@ export default async function DocumentoPage({ searchParams }: { searchParams: { 
   ];
 
   return (
-    <div data-screen-label="Factura (documento)">
+    <div data-screen-label={isVd ? 'VD (documento)' : 'Factura (documento)'}>
       <div className="ants-noprint" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', padding: '6px 26px 0' }}>
         <Link href="/facturas" style={topBtn}>
           <Icon name="arrow-left" size={16} />
@@ -179,15 +185,33 @@ export default async function DocumentoPage({ searchParams }: { searchParams: { 
               }
             />
           )}
+          {!isDraft && (
+            <InvoiceViaDialog
+              invoice={{ id: inv.id, number: inv.number, customerName: inv.customerName, viaCount: inv.viaCount, isVd }}
+              trigger={
+                <button style={{ ...topBtn, cursor: 'pointer' }}>
+                  <Icon name="copy" size={16} />
+                  Emitir {inv.viaCount === 0 ? '2.ª via' : 'nova via'}
+                </button>
+              }
+            />
+          )}
           <PrintButton label="Imprimir / Guardar PDF" />
         </div>
       </div>
 
       <PrintLayout>
+          {/* Banner de via (S15) — em destaque no topo do documento */}
+          {via && (
+            <div style={{ marginBottom: 18, padding: '10px 14px', border: '2px solid #13343b', borderRadius: 8, textAlign: 'center', fontSize: 15, fontWeight: 800, letterSpacing: '2px', color: '#13343b' }}>
+              {invoiceViaLabel(via)}
+            </div>
+          )}
+
           {/* Cabeçalho */}
           <CompanyHeader
             company={company}
-            title="Factura"
+            title={docTitle}
             documentNumber={inv.number}
             status={
               <>
@@ -212,7 +236,7 @@ export default async function DocumentoPage({ searchParams }: { searchParams: { 
           {/* Facturar a + datas */}
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: 24, marginTop: 22 }}>
             <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: '.6px', color: '#8aa0a3', textTransform: 'uppercase', marginBottom: 7 }}>Facturar a</div>
+              <div style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: '.6px', color: '#8aa0a3', textTransform: 'uppercase', marginBottom: 7 }}>{isVd ? 'Cliente' : 'Facturar a'}</div>
               <div style={{ fontSize: 14, fontWeight: 700, color: '#16282c' }}>{inv.customerName}</div>
               <div style={{ fontSize: 12, color: '#5f7378', lineHeight: 1.6, marginTop: 3 }}>
                 <strong style={{ color: '#16282c' }}>NUIT:</strong> {inv.customerNuit ?? '—'}
@@ -359,6 +383,9 @@ export default async function DocumentoPage({ searchParams }: { searchParams: { 
               )}
             </div>
           </div>
+
+          {/* Dados bancários (S15): apenas na factura, depois dos totais — nunca na VD. */}
+          {!isVd && !isDraft && <BankDetailsBlock company={company} />}
 
           <DocumentFooter company={company} />
       </PrintLayout>
