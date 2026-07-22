@@ -29,7 +29,8 @@ export type InvoiceDisplayStatus = 'rascunho' | 'pago' | 'parcial' | 'pendente' 
  * facturas e o detalhe os mostram, marcados como rascunho.
  */
 export const ACTIVE_INVOICE_STATUSES: InvoiceStatus[] = ['ISSUED', 'PARTIAL', 'PAID'];
-export type PaymentMethod = 'CASH' | 'MPESA' | 'EMOLA' | 'CARD' | 'TRANSFER';
+/** ADVANCE (S17): REC gerado pela aplicação de um Recibo de Adiantamento — sem movimento de tesouraria próprio. */
+export type PaymentMethod = 'CASH' | 'MPESA' | 'EMOLA' | 'CARD' | 'TRANSFER' | 'ADVANCE';
 /** Tipo do documento de venda (S15): factura série FT ou VD — Venda a Dinheiro (POS ao Cliente Geral). */
 export type InvoiceDocumentType = 'FACTURA' | 'VD';
 
@@ -404,7 +405,7 @@ export async function getCustomerStatement(db: PrismaClient, ctx: RequestContext
 
   const [invoices, payments, creditNotes, debitNotes] = await Promise.all([
     db.invoice.findMany({ where: { customerId, status: { in: ACTIVE_INVOICE_STATUSES } }, select: { number: true, issueDate: true, total: true, documentType: true } }),
-    db.payment.findMany({ where: { customerId, status: 'ACTIVE' }, select: { number: true, paidAt: true, amount: true } }),
+    db.payment.findMany({ where: { customerId, status: 'ACTIVE' }, select: { number: true, paidAt: true, amount: true, method: true } }),
     db.creditNote.findMany({ where: { customerId, status: 'ISSUED' }, select: { number: true, issueDate: true, total: true } }),
     db.debitNote.findMany({ where: { customerId, status: 'ISSUED' }, select: { number: true, issueDate: true, total: true } }),
   ]);
@@ -412,7 +413,7 @@ export async function getCustomerStatement(db: PrismaClient, ctx: RequestContext
   type Ev = { date: Date; doc: string; description: string; debit: number; credit: number };
   const events: Ev[] = [
     ...invoices.map((i) => ({ date: i.issueDate, doc: i.number, description: i.documentType === 'VD' ? 'Venda a Dinheiro' : 'Factura de venda', debit: Number(i.total), credit: 0 })),
-    ...payments.map((p) => ({ date: p.paidAt, doc: p.number, description: 'Recibo de pagamento', debit: 0, credit: Number(p.amount) })),
+    ...payments.map((p) => ({ date: p.paidAt, doc: p.number, description: p.method === 'ADVANCE' ? 'Recibo (adiantamento aplicado)' : 'Recibo de pagamento', debit: 0, credit: Number(p.amount) })),
     ...creditNotes.map((n) => ({ date: n.issueDate, doc: n.number, description: 'Nota de crédito', debit: 0, credit: Number(n.total) })),
     ...debitNotes.map((n) => ({ date: n.issueDate, doc: n.number, description: 'Nota de débito', debit: Number(n.total), credit: 0 })),
   ].sort((a, b) => a.date.getTime() - b.date.getTime());
@@ -2407,6 +2408,11 @@ export async function reverseCustomerPayment(db: PrismaClient, ctx: RequestConte
         const payment = await tx.payment.findFirst({ where: { companyId, id: data.paymentId } });
         if (!payment) throw new NotFoundError('Recebimento não encontrado.');
         if (payment.status === 'REVERSED') throw new ConflictError('Este recebimento já foi anulado.');
+        // S17: RECs de aplicação de adiantamento não têm movimento de tesouraria nem
+        // RECEIPT_POSTED — a anulação simétrica (repor saldo no RA) fica fora da V1.
+        if (payment.method === 'ADVANCE') {
+          throw new ConflictError('Este recibo resulta da aplicação de um Recibo de Adiantamento e não pode ser anulado nesta versão.');
+        }
         if (!payment.invoiceId) throw new ConflictError('Recebimento sem factura de origem (integridade).');
 
         await tx.$queryRaw`SELECT id FROM invoices WHERE id = ${payment.invoiceId} AND "companyId" = ${companyId} FOR UPDATE`;

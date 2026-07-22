@@ -31,7 +31,8 @@ export default async function NovaFacturaPage({ searchParams }: { searchParams: 
         customerNuit: d.customerNuit ?? '',
         customerPhone: d.customerPhone ?? '',
         warehouseId: d.warehouseId,
-        paymentMethod: d.paymentMethod,
+        // ADVANCE nunca é forma de pagamento de rascunho — narrowing para o union do formulário.
+        paymentMethod: d.paymentMethod === 'ADVANCE' ? null : d.paymentMethod,
         notes: d.notes ?? '',
         lines: d.lines,
       };

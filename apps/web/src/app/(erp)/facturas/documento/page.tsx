@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { forCompany } from '@ants/database';
 import { civilDateInTimeZone } from '@ants/shared';
-import { getCompanyPrintProfile, getInvoice, getInvoiceHistory, hasPermission, invoiceViaLabel, listAccounts, DomainError, type InvoiceDisplayStatus, type InvoiceHistoryEntry, type PaymentMethod } from '@ants/domain';
+import { getCompanyPrintProfile, getInvoice, getInvoiceHistory, hasPermission, invoiceViaLabel, listAccounts, listCustomerAdvances, DomainError, type InvoiceDisplayStatus, type InvoiceHistoryEntry, type PaymentMethod } from '@ants/domain';
 import { getContext } from '@/lib/session';
 import { Icon } from '@/components/Icon';
 import { PrintButton } from '@/components/PrintButton';
@@ -25,7 +25,7 @@ const STATUS: Record<InvoiceDisplayStatus, [string, string, string]> = {
   vencido: ['Vencido', 'var(--bad)', 'var(--bad-bg)'],
   cancelado: ['Cancelado', 'var(--text3)', 'var(--bd-soft)'],
 };
-const METHOD_LABEL: Record<PaymentMethod, string> = { CASH: 'Dinheiro', MPESA: 'M-Pesa', EMOLA: 'e-Mola', CARD: 'Cartão', TRANSFER: 'Transferência' };
+const METHOD_LABEL: Record<PaymentMethod, string> = { CASH: 'Dinheiro', MPESA: 'M-Pesa', EMOLA: 'e-Mola', CARD: 'Cartão', TRANSFER: 'Transferência', ADVANCE: 'Adiantamento' };
 
 const topBtn: React.CSSProperties = {
   display: 'flex',
@@ -80,6 +80,11 @@ export default async function DocumentoPage({ searchParams }: { searchParams: { 
   } catch {
     history = [];
   }
+
+  // RAs abertos do cliente (S17): alimentam o método «Adiantamento» no registo de recibo.
+  const openAdvances = inv.status !== 'CANCELLED' && inv.status !== 'DRAFT' && hasPermission(ctx, 'payments.receive')
+    ? (await listCustomerAdvances(db, ctx, { customerId: inv.customerId })).filter((a) => a.remaining > 0 && a.state !== 'CANCELADO').map((a) => ({ id: a.id, number: a.number, remaining: a.remaining }))
+    : [];
 
   const [statusLabel, statusColor, statusBg] = STATUS[inv.displayStatus];
   const isDraft = inv.status === 'DRAFT';
@@ -177,6 +182,7 @@ export default async function DocumentoPage({ searchParams }: { searchParams: { 
               invoiceId={inv.id}
               outstanding={inv.outstanding}
               accounts={accounts}
+              advances={openAdvances}
               trigger={
                 <button style={{ ...topBtn, border: 'none', background: 'var(--accent-fg)', color: '#fff', cursor: 'pointer' }}>
                   <Icon name="banknote" size={16} />

@@ -511,6 +511,8 @@ async function seedDemo(prisma: PrismaClient) {
     { code: '21', name: 'Fornecedores', type: 'LIABILITY', normal: 'CREDIT', parent: '2', level: 2, posting: false },
     { code: '22', name: 'Estado (passivo)', type: 'LIABILITY', normal: 'CREDIT', parent: '2', level: 2, posting: false },
     { code: '23', name: 'Pessoal', type: 'LIABILITY', normal: 'CREDIT', parent: '2', level: 2, posting: false },
+    // S17: grupo para adiantamentos de clientes (e futuros outros credores).
+    { code: '24', name: 'Outros credores', type: 'LIABILITY', normal: 'CREDIT', parent: '2', level: 2, posting: false },
     { code: '31', name: 'Capital', type: 'EQUITY', normal: 'CREDIT', parent: '3', level: 2, posting: false },
     { code: '32', name: 'Resultados', type: 'EQUITY', normal: 'CREDIT', parent: '3', level: 2, posting: false },
     { code: '41', name: 'Vendas', type: 'REVENUE', normal: 'CREDIT', parent: '4', level: 2, posting: false },
@@ -532,6 +534,8 @@ async function seedDemo(prisma: PrismaClient) {
     { code: '211', name: 'Fornecedores c/c', type: 'LIABILITY', normal: 'CREDIT', parent: '21', level: 3, posting: true, provisioningKey: 'ACCOUNTS_PAYABLE' },
     { code: '221', name: 'IVA liquidado', type: 'LIABILITY', normal: 'CREDIT', parent: '22', level: 3, posting: true, provisioningKey: 'VAT_OUTPUT' },
     { code: '231', name: 'Remunerações a pagar', type: 'LIABILITY', normal: 'CREDIT', parent: '23', level: 3, posting: true, provisioningKey: 'SALARIES_PAYABLE' },
+    // S17: passivo dos Recibos de Adiantamento (RA) — consumido na aplicação/devolução.
+    { code: '241', name: 'Adiantamentos de clientes', type: 'LIABILITY', normal: 'CREDIT', parent: '24', level: 3, posting: true, provisioningKey: 'CUSTOMER_ADVANCES' },
     { code: '311', name: 'Capital social', type: 'EQUITY', normal: 'CREDIT', parent: '31', level: 3, posting: true },
     // S8: contrapartida do lançamento de abertura de stock inicial (produto novo sem fornecedor).
     { code: '312', name: 'Regularização de abertura de existências', type: 'EQUITY', normal: 'CREDIT', parent: '31', level: 3, posting: true, provisioningKey: 'OPENING_BALANCE_EQUITY' },
@@ -601,6 +605,7 @@ async function seedDemo(prisma: PrismaClient) {
     'ACCOUNTS_PAYABLE', 'VAT_OUTPUT', 'SALARIES_PAYABLE', 'SALES_REVENUE', 'COST_OF_GOODS_SOLD',
     'PURCHASES_EXPENSE', 'GENERAL_EXPENSE', 'CASH_DIFFERENCE', 'SALARIES_EXPENSE',
     'OPENING_BALANCE_EQUITY', 'INVENTORY_SURPLUS', 'INVENTORY_SHORTAGE', 'OTHER_INCOME',
+    'CUSTOMER_ADVANCES',
   ];
   for (const key of systemKeys) {
     const acct = await prisma.ledgerAccount.findUnique({

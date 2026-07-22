@@ -10,7 +10,7 @@ import { fmt } from '@/lib/format';
 
 export const dynamic = 'force-dynamic';
 
-const METHOD_LABEL: Record<PaymentMethod, string> = { CASH: 'Dinheiro', MPESA: 'M-Pesa', EMOLA: 'e-Mola', CARD: 'Cartão', TRANSFER: 'Transferência' };
+const METHOD_LABEL: Record<PaymentMethod, string> = { CASH: 'Dinheiro', MPESA: 'M-Pesa', EMOLA: 'e-Mola', CARD: 'Cartão', TRANSFER: 'Transferência', ADVANCE: 'Adiantamento' };
 const topBtn: React.CSSProperties = {
   display: 'flex',
   alignItems: 'center',

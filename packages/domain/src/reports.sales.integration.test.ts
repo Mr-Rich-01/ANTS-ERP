@@ -241,7 +241,7 @@ describe('S16 — Relatorio de Vendas', () => {
     expect(filename).toBe('relatorio-vendas-2026-07-01-2026-07-31.xlsx');
 
     const workbook = new ExcelJS.Workbook();
-    await workbook.xlsx.load(buffer);
+    await workbook.xlsx.load(buffer as unknown as ArrayBuffer);
     const sheet = workbook.getWorksheet('Relatório de Vendas')!;
     expect(sheet).toBeTruthy();
 
@@ -305,7 +305,7 @@ describe('S16 — Relatorio de Vendas', () => {
     });
 
     const workbook = new ExcelJS.Workbook();
-    await workbook.xlsx.load(buffer);
+    await workbook.xlsx.load(buffer as unknown as ArrayBuffer);
     const sheet = workbook.worksheets[0]!;
     expect(sheet.getRow(6).getCell(1).value).toBe('Nome');
     expect(sheet.getRow(7).getCell(1).value).toBe('Linha 1');

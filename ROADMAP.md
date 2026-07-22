@@ -35,7 +35,7 @@ Quick wins primeiro (validar o fluxo de trabalho), depois fundações (dados da 
 
 `S1 → S2 → S3 → S4 → S5 → S6 → S7 → S8 → S9 → S10 → S11` concluídas.
 
-**Ordem actual (2026-07-22):** `S15 ✅ → S16 ✅ → S17 → S18` (backlog do cliente,
+**Ordem actual (2026-07-22):** `S15 ✅ → S16 ✅ → S17 ✅ → S18` (backlog do cliente,
 prioridades 1–4) → depois `S12 ⏸ (quando a KOKO responder) → S13 → S14`.
 
 ---
@@ -307,18 +307,40 @@ valores reais por documento (não `total ÷ 1,16`); zero migrações, zero RBAC 
 
 ## Sessão S17 — Notas, Adiantamentos e Devoluções 🔴
 
-*(Backlog Prioridade 3)*
+*(Backlog Prioridade 3 — ✅ concluída em 2026-07-22 na branch `s17-notas-devolucoes`)*
 
 🔒 **Aprovação:** mapa D/C contabilístico do adiantamento e da devolução antes de código.
+*(Cumprido: mapa D/C aprovado com o plano da sessão em 2026-07-22 — `ADVANCE_RECEIVED`
+D Caixa/Banco / C 241 «Adiantamentos de clientes» (conta nova aprovada: grupo 24 «Outros
+credores» + 241, mapping `CUSTOMER_ADVANCES`); `ADVANCE_APPLIED` D 241 / C 121;
+`REFUND_ISSUED` D 241 ou D 121 (conforme a origem) / C Caixa/Banco. Sem IVA no RA —
+o IVA nasce todo na factura.)*
 
-- [ ] Verificar NC (item já coberto pela S5: linhas da factura em tabela com tectos por
+- [x] Verificar NC (item já coberto pela S5: linhas da factura em tabela com tectos por
       linha) e estender a NC sobre VD; descrição composta a partir dos produtos.
-- [ ] **Recibo de Adiantamento**: pagamento sem factura (`Payment.invoiceId` já é opcional
-      no schema; falta o caminho de domínio), registado na conta corrente do cliente e
-      utilizável depois para liquidar facturas total/parcialmente.
-- [ ] **Devolução ao Cliente**: documento próprio que justifica a devolução de dinheiro —
+      *(Verificado sem alterações: a VD é uma `Invoice` e `createCreditNote` não
+      discrimina o tipo — a NC sobre VD já funciona; a tabela de produtos com tectos por
+      linha e descrições herdadas das linhas da factura existem desde a S5.)*
+- [x] **Recibo de Adiantamento**: pagamento sem factura, registado e utilizável depois
+      para liquidar facturas total/parcialmente. *(Modelo próprio `CustomerAdvance`
+      série `RA` — decisão: documento próprio em vez de `Payment` sem factura, para
+      acumulados aplicado/devolvido e estado derivado ABERTO/PARCIAL/CONSUMIDO/DEVOLVIDO;
+      aplicação a factura gera REC normal com método novo «Adiantamento» (enum `ADVANCE`)
+      SEM novo movimento de tesouraria, via `CustomerAdvanceApplication` (N aplicações
+      por RA) sob `FOR UPDATE`; extracto do cliente com secção própria de adiantamentos
+      separada do saldo devedor; documento imprimível sem dados bancários — regra S15.)*
+- [x] **Devolução ao Cliente**: documento próprio que justifica a devolução de dinheiro —
       movimento de tesouraria, conta corrente, contabilidade e stock quando houver
       devolução física; distinguir devolução de produtos/dinheiro, parcial/total.
+      *(Modelo `CustomerRefund` série `DEV`, origens ADVANCE/CREDIT_NOTE/RECEIPT;
+      regra aprovada: a NC é a ÚNICA fonte de reversão de venda e stock — a Devolução
+      trata só do dinheiro e lista os produtos da NC a título informativo; saldo credor
+      validado sob `FOR UPDATE` com tecto por documento de origem; parcial/total é só o
+      valor face ao crédito disponível.)*
+- [x] **Pendência registada:** validar o tratamento de IVA em adiantamentos com o
+      contabilista do cliente (hoje o RA não liquida IVA — o imposto nasce todo na
+      factura, no `SALE_ISSUED`; se a legislação exigir IVA na recepção do adiantamento,
+      desenhar o mecanismo em sessão própria com mapa D/C aprovado).
 
 ## Sessão S18 — Stock e Contabilidade (backlog) 🟡
 

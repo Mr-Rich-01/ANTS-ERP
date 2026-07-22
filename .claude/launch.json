@@ -12,6 +12,13 @@
       "runtimeExecutable": "pnpm",
       "runtimeArgs": ["--filter", "@ants/web", "exec", "next", "dev", "-p", "3211"],
       "port": 3211
+    },
+    {
+      "name": "web-dev-alt",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["--filter", "@ants/web", "exec", "next", "dev", "-p", "3213"],
+      "port": 3213,
+      "env": { "AUTH_URL": "http://localhost:3213" }
     }
   ]
 }

@@ -75,6 +75,9 @@ model Company {
   logo                 CompanyLogo?
   stockCounts          StockCount[]
   stockCountLines      StockCountLine[]
+  customerAdvances            CustomerAdvance[]
+  customerAdvanceApplications CustomerAdvanceApplication[]
+  customerRefunds             CustomerRefund[]
 
   @@index([status])
   @@map("companies")
@@ -338,6 +341,8 @@ model Customer {
   quotations   Quotation[]
   creditNotes  CreditNote[]
   debitNotes   DebitNote[]
+  advances     CustomerAdvance[]
+  refunds      CustomerRefund[]
 
   @@unique([companyId, nuit])
   @@unique([companyId, id])
@@ -640,6 +645,7 @@ model Invoice {
   stockMovements StockMovement[]
   creditNotes    CreditNote[]
   debitNotes     DebitNote[]
+  advanceApplications CustomerAdvanceApplication[]
 
   @@unique([companyId, number])
   @@unique([companyId, id])
@@ -697,6 +703,9 @@ model Payment {
   notes          String?
   createdBy      String?
   createdAt      DateTime      @default(now())
+
+  advanceApplications CustomerAdvanceApplication[]
+  refunds             CustomerRefund[]
 
   @@unique([companyId, number])
   @@index([companyId, customerId])
@@ -818,6 +827,7 @@ model CreditNote {
 
   lines     CreditNoteLine[]
   movements StockMovement[]
+  refunds   CustomerRefund[]
 
   @@unique([companyId, number])
   @@unique([companyId, id])
@@ -912,6 +922,125 @@ model DebitNoteLine {
   @@index([companyId])
   @@index([debitNoteId])
   @@map("debit_note_lines")
+}
+
+// ─────────────────────────────────────────────────────────────
+// Adiantamentos e Devoluções a Clientes (Sessão S17)
+// ─────────────────────────────────────────────────────────────
+
+/// Recibo de Adiantamento (RA): dinheiro recebido SEM factura. Não liquida IVA
+/// (o IVA nasce todo na factura, no SALE_ISSUED); o passivo vive na conta
+/// «Adiantamentos de clientes» (mapping CUSTOMER_ADVANCES).
+/// Estado derivável — nunca gravado: cancelledAt → CANCELADO; senão pelo
+/// saldo (aplicado/devolvido vs. valor): ABERTO / PARCIAL / CONSUMIDO / DEVOLVIDO.
+model CustomerAdvance {
+  id           String   @id @default(cuid())
+  companyId    String
+  company      Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  /// Número (ex.: "RA 2026/0001"), único por empresa.
+  number       String
+  customerId   String
+  customer     Customer @relation(fields: [companyId, customerId], references: [companyId, id], onDelete: Restrict)
+  /// Snapshot dos dados do cliente no momento da emissão.
+  customerName String
+  customerNuit String?
+  issueDate    DateTime @default(now())
+  /// Valor original recebido.
+  amount        Decimal @db.Decimal(14, 2)
+  /// Acumulado aplicado em facturas (soma das CustomerAdvanceApplication).
+  appliedTotal  Decimal @default(0) @db.Decimal(14, 2)
+  /// Acumulado devolvido ao cliente (CustomerRefund com origem ADVANCE).
+  refundedTotal Decimal @default(0) @db.Decimal(14, 2)
+  method            PaymentMethod   @default(CASH)
+  treasuryAccountId String
+  treasuryAccount   TreasuryAccount @relation(fields: [companyId, treasuryAccountId], references: [companyId, id], onDelete: Restrict)
+  /// Motivo/referência do adiantamento (proforma, encomenda, reserva…).
+  reference    String?
+  notes        String?
+  /// Anulação (padrão Invoice/NC): quem, quando e porquê. RA nunca se apaga.
+  cancelledAt        DateTime?
+  cancelledById      String?
+  cancellationReason String?
+  createdBy    String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  applications CustomerAdvanceApplication[]
+  refunds      CustomerRefund[]
+
+  @@unique([companyId, number])
+  @@unique([companyId, id])
+  @@index([companyId, customerId])
+  @@index([companyId, issueDate])
+  @@map("customer_advances")
+}
+
+/// Aplicação (parcial ou total) de um RA a uma factura — gera SEMPRE um REC
+/// (Payment com método ADVANCE), permitindo N aplicações por RA com rastreio completo.
+model CustomerAdvanceApplication {
+  id        String          @id @default(cuid())
+  companyId String
+  company   Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  advanceId String
+  advance   CustomerAdvance @relation(fields: [companyId, advanceId], references: [companyId, id], onDelete: Restrict)
+  invoiceId String
+  invoice   Invoice         @relation(fields: [companyId, invoiceId], references: [companyId, id], onDelete: Restrict)
+  /// O recibo (REC) gerado pela aplicação — rastreio RA → REC → factura.
+  paymentId String
+  payment   Payment         @relation(fields: [paymentId], references: [id], onDelete: Restrict)
+  amount    Decimal         @db.Decimal(14, 2)
+  createdBy String?
+  createdAt DateTime        @default(now())
+
+  @@unique([companyId, id])
+  @@index([companyId, advanceId])
+  @@index([companyId, invoiceId])
+  @@index([companyId, paymentId])
+  @@map("customer_advance_applications")
+}
+
+/// Devolução ao Cliente (DEV): documento que justifica a saída de dinheiro
+/// (tesouraria + conta corrente + contabilidade via REFUND_ISSUED).
+/// NUNCA movimenta stock nem reverte venda/IVA/CMV — esse papel é da NC;
+/// quando há devolução física, a entrada de stock acontece na NC referenciada.
+model CustomerRefund {
+  id           String   @id @default(cuid())
+  companyId    String
+  company      Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  /// Número (ex.: "DEV 2026/0001"), único por empresa.
+  number       String
+  customerId   String
+  customer     Customer @relation(fields: [companyId, customerId], references: [companyId, id], onDelete: Restrict)
+  /// Snapshot dos dados do cliente no momento da emissão.
+  customerName String
+  customerNuit String?
+  issueDate    DateTime @default(now())
+  amount       Decimal  @db.Decimal(14, 2)
+  method            PaymentMethod   @default(CASH)
+  treasuryAccountId String
+  treasuryAccount   TreasuryAccount @relation(fields: [companyId, treasuryAccountId], references: [companyId, id], onDelete: Restrict)
+  /// Origem do crédito devolvido: RA (ADVANCE), NC (CREDIT_NOTE) ou recibo/ajuste (RECEIPT).
+  origin       CustomerRefundOrigin
+  advanceId    String?
+  advance      CustomerAdvance? @relation(fields: [companyId, advanceId], references: [companyId, id], onDelete: Restrict)
+  creditNoteId String?
+  creditNote   CreditNote?      @relation(fields: [companyId, creditNoteId], references: [companyId, id], onDelete: Restrict)
+  /// Recibo de origem (origem RECEIPT).
+  paymentId    String?
+  payment      Payment?         @relation(fields: [paymentId], references: [id], onDelete: Restrict)
+  /// Motivo obrigatório da devolução.
+  reason       String
+  notes        String?
+  createdBy    String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([companyId, number])
+  @@unique([companyId, id])
+  @@index([companyId, customerId])
+  @@index([companyId, origin])
+  @@index([companyId, issueDate])
+  @@map("customer_refunds")
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -1106,6 +1235,8 @@ model TreasuryAccount {
 
   movements    TreasuryMovement[]
   journalLines JournalEntryLine[]
+  customerAdvances CustomerAdvance[]
+  customerRefunds  CustomerRefund[]
 
   @@unique([companyId, name])
   @@unique([companyId, id])
@@ -1230,6 +1361,15 @@ enum PaymentMethod {
   EMOLA
   CARD
   TRANSFER
+  /// Liquidação por aplicação de Recibo de Adiantamento (S17) — sem movimento de tesouraria novo.
+  ADVANCE
+}
+
+/// Origem do crédito devolvido numa Devolução ao Cliente (S17).
+enum CustomerRefundOrigin {
+  ADVANCE
+  CREDIT_NOTE
+  RECEIPT
 }
 
 /// DRAFT existe já no enum para o fluxo rascunho→emissão da S6 não exigir migration nova.
@@ -1569,6 +1709,9 @@ enum OperationIdempotencyScope {
   STOCK_COUNT_VALIDATE
   CREDIT_NOTE_CANCEL
   INVENTORY_REGULARIZATION
+  CUSTOMER_ADVANCE_CREATE
+  CUSTOMER_ADVANCE_APPLY
+  CUSTOMER_REFUND_CREATE
 }
 
 model OperationIdempotency {

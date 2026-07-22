@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { forCompany } from '@ants/database';
 import { civilDateInTimeZone } from '@ants/shared';
-import { getCustomer, getSupplier, getCustomerStatement, getSupplierStatement, hasPermission, listAccounts, listSupplierPayments, DomainError, type SupplierPaymentItem } from '@ants/domain';
+import { advanceStateLabel, getCustomer, getCustomerAdvanceSummary, getSupplier, getCustomerStatement, getSupplierStatement, hasPermission, listAccounts, listSupplierPayments, DomainError, type CustomerAdvanceSummary, type SupplierPaymentItem } from '@ants/domain';
 import { getContext } from '@/lib/session';
 import { Icon } from '@/components/Icon';
 import { ACCENT } from '@/lib/erp-nav';
@@ -84,6 +84,10 @@ export default async function PerfilContaPage({ searchParams }: { searchParams: 
   let payAccounts: { id: string; label: string }[] = [];
   let supplierPaymentHistory: SupplierPaymentItem[] = [];
   let canReverseSupplierPayment = false;
+  // Adiantamentos do cliente (S17): secção própria, separada do saldo devedor do extracto.
+  let customerAdvances: CustomerAdvanceSummary | null = null;
+  let advancesCustomerId: string | null = null;
+  let canCreateAdvance = false;
   const supplierPaymentReversalDate = civilDateInTimeZone();
 
   const notFound = (message: string) => (
@@ -109,6 +113,9 @@ export default async function PerfilContaPage({ searchParams }: { searchParams: 
 
     const available = customer.creditLimit - customer.balance;
     const statement = await getCustomerStatement(forCompany(ctx.companyId), ctx, customer.id);
+    customerAdvances = await getCustomerAdvanceSummary(forCompany(ctx.companyId), ctx, customer.id);
+    advancesCustomerId = customer.id;
+    canCreateAdvance = hasPermission(ctx, 'payments.receive');
     const extract: ExtractRow[] = [
       {
         date: '—',
@@ -412,6 +419,60 @@ export default async function PerfilContaPage({ searchParams }: { searchParams: 
                       </tr>
                     );
                   })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      ) : null}
+
+      {/* Adiantamentos (S17): saldo credor de adiantamentos, separado do extracto normal */}
+      {customerAdvances && advancesCustomerId ? (
+        <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 16, overflow: 'hidden' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '15px 18px', borderBottom: '1px solid var(--bd-soft)', flexWrap: 'wrap' }}>
+            <span style={{ color: 'var(--accent-fg)', display: 'inline-flex' }}>
+              <Icon name="hand-coins" size={17} />
+            </span>
+            <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)' }}>Adiantamentos</div>
+            <span style={{ fontSize: 12, color: 'var(--text3)' }}>
+              · saldo por aplicar: <strong className="tnum" style={{ color: customerAdvances.totalRemaining > 0 ? 'var(--ok)' : 'var(--text2)' }}>{fmt(customerAdvances.totalRemaining)}</strong>
+            </span>
+            <div style={{ flex: 1 }} />
+            {canCreateAdvance ? (
+              <Link href={`/facturas/adiantamentos/novo?cliente=${advancesCustomerId}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, height: 32, padding: '0 12px', borderRadius: 9, border: 'none', background: ACCENT, color: '#fff', fontSize: 12, fontWeight: 600, textDecoration: 'none' }}>
+                <Icon name="plus" size={13} />
+                Novo adiantamento
+              </Link>
+            ) : null}
+          </div>
+          {customerAdvances.openAdvances.length === 0 ? (
+            <div style={{ padding: '16px 18px', fontSize: 12.5, color: 'var(--text3)' }}>
+              Sem adiantamentos com saldo por aplicar.
+            </div>
+          ) : (
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 620 }}>
+                <thead>
+                  <tr style={{ background: 'var(--card2)' }}>
+                    <th style={th}>Adiantamento</th>
+                    <th style={th}>Data</th>
+                    <th style={th}>Estado</th>
+                    <th style={{ ...th, textAlign: 'right' }}>Valor original</th>
+                    <th style={{ ...th, textAlign: 'right' }}>Saldo por aplicar</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {customerAdvances.openAdvances.map((a) => (
+                    <tr key={a.id} className="ants-row" style={{ borderBottom: '1px solid var(--bd-soft2)' }}>
+                      <td className="font-mono" style={{ padding: '11px 14px', fontSize: 12.5, fontWeight: 600, whiteSpace: 'nowrap' }}>
+                        <Link href={`/facturas/adiantamento?id=${a.id}`} style={{ color: 'var(--accent-fg)' }}>{a.number}</Link>
+                      </td>
+                      <td className="tnum" style={{ padding: '11px 14px', fontSize: 12.5, color: 'var(--text2)', whiteSpace: 'nowrap' }}>{fmtDate(a.issueDate)}</td>
+                      <td style={{ padding: '11px 14px', fontSize: 12.5, color: 'var(--text2)', whiteSpace: 'nowrap' }}>{advanceStateLabel(a.state)}</td>
+                      <td className="tnum" style={{ padding: '11px 14px', textAlign: 'right', fontSize: 13, fontWeight: 600, color: 'var(--text)', whiteSpace: 'nowrap' }}>{fmt(a.amount)}</td>
+                      <td className="tnum" style={{ padding: '11px 14px', textAlign: 'right', fontSize: 13, fontWeight: 700, color: 'var(--ok)', whiteSpace: 'nowrap' }}>{fmt(a.remaining)}</td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
             </div>

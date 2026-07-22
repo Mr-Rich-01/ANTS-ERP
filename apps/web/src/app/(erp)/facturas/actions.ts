@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 import { forContext } from '@ants/database';
-import { cancelCreditNote, cancelInvoice, createCreditNote, createDebitNote, createInvoice, createPayment, discardInvoiceDraft, emitInvoiceVia, issueInvoiceDraft, reverseCustomerPayment, saveInvoiceDraft, updateInvoiceDraft, DomainError, type CancelCreditNoteInput, type CancelInvoiceInput, type CreditNoteInput, type DebitNoteInput, type DiscardInvoiceDraftInput, type EmitInvoiceViaInput, type InvoiceDraftUpdateInput, type InvoiceInput, type IssueInvoiceDraftInput, type PaymentInput, type ReverseCustomerPaymentInput } from '@ants/domain';
+import { applyAdvanceToInvoice, cancelCreditNote, cancelInvoice, createCreditNote, createCustomerAdvance, createCustomerRefund, createDebitNote, createInvoice, createPayment, discardInvoiceDraft, emitInvoiceVia, issueInvoiceDraft, refundAdvance, reverseCustomerPayment, saveInvoiceDraft, updateInvoiceDraft, DomainError, type ApplyAdvanceInput, type CancelCreditNoteInput, type CancelInvoiceInput, type CreditNoteInput, type CustomerAdvanceInput, type CustomerRefundInput, type DebitNoteInput, type DiscardInvoiceDraftInput, type EmitInvoiceViaInput, type InvoiceDraftUpdateInput, type InvoiceInput, type IssueInvoiceDraftInput, type PaymentInput, type RefundAdvanceInput, type ReverseCustomerPaymentInput } from '@ants/domain';
 import { getContext } from '@/lib/session';
 
 export interface InvoiceActionResult {
@@ -183,6 +183,76 @@ export async function emitInvoiceViaAction(input: EmitInvoiceViaInput): Promise<
     const { via, number } = await emitInvoiceVia(forContext(ctx), ctx, input);
     revalidatePath('/facturas/documento');
     return { ok: true, via, number };
+  } catch (e) {
+    if (e instanceof DomainError) return { error: e.message };
+    throw e;
+  }
+}
+
+/** Recibo de Adiantamento (S17): entrada de dinheiro sem factura. */
+export async function createCustomerAdvanceAction(input: CustomerAdvanceInput): Promise<InvoiceActionResult> {
+  const ctx = await getContext();
+  if (!ctx.companyId) return { error: 'Sem empresa activa.' };
+  try {
+    const { id, number } = await createCustomerAdvance(forContext(ctx), ctx, input);
+    revalidatePath('/facturas/adiantamentos');
+    revalidatePath('/contas/perfil');
+    revalidatePath('/tesouraria');
+    revalidatePath('/contabilidade');
+    return { ok: true, id, number };
+  } catch (e) {
+    if (e instanceof DomainError) return { error: e.message };
+    throw e;
+  }
+}
+
+/** Aplica um RA a uma factura (S17): gera um REC com método Adiantamento. */
+export async function applyAdvanceToInvoiceAction(input: ApplyAdvanceInput): Promise<InvoiceActionResult> {
+  const ctx = await getContext();
+  if (!ctx.companyId) return { error: 'Sem empresa activa.' };
+  try {
+    const { paymentId, paymentNumber } = await applyAdvanceToInvoice(forContext(ctx), ctx, input);
+    revalidatePath('/facturas');
+    revalidatePath('/facturas/documento');
+    revalidatePath('/facturas/adiantamentos');
+    revalidatePath('/contas/perfil');
+    revalidatePath('/contabilidade');
+    return { ok: true, id: paymentId, number: paymentNumber };
+  } catch (e) {
+    if (e instanceof DomainError) return { error: e.message };
+    throw e;
+  }
+}
+
+/** Devolução ao Cliente do remanescente de um RA (S17). */
+export async function refundAdvanceAction(input: RefundAdvanceInput): Promise<InvoiceActionResult> {
+  const ctx = await getContext();
+  if (!ctx.companyId) return { error: 'Sem empresa activa.' };
+  try {
+    const { id, number } = await refundAdvance(forContext(ctx), ctx, input);
+    revalidatePath('/facturas/adiantamentos');
+    revalidatePath('/facturas/devolucoes');
+    revalidatePath('/contas/perfil');
+    revalidatePath('/tesouraria');
+    revalidatePath('/contabilidade');
+    return { ok: true, id, number };
+  } catch (e) {
+    if (e instanceof DomainError) return { error: e.message };
+    throw e;
+  }
+}
+
+/** Devolução ao Cliente com origem em NC ou recibo (S17) — nunca movimenta stock. */
+export async function createCustomerRefundAction(input: CustomerRefundInput): Promise<InvoiceActionResult> {
+  const ctx = await getContext();
+  if (!ctx.companyId) return { error: 'Sem empresa activa.' };
+  try {
+    const { id, number } = await createCustomerRefund(forContext(ctx), ctx, input);
+    revalidatePath('/facturas/devolucoes');
+    revalidatePath('/contas/perfil');
+    revalidatePath('/tesouraria');
+    revalidatePath('/contabilidade');
+    return { ok: true, id, number };
   } catch (e) {
     if (e instanceof DomainError) return { error: e.message };
     throw e;

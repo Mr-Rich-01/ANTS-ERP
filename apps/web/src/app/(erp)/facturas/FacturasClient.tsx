@@ -112,6 +112,14 @@ export function FacturasClient({ stats, rows, totalStr, canCreate }: { stats: St
             <Icon name="receipt" size={15} />
             Recibos
           </button>
+          <button onClick={() => router.push('/facturas/adiantamentos')} style={{ display: 'flex', alignItems: 'center', gap: 7, height: 36, padding: '0 13px', borderRadius: 9, border: '1px solid var(--border)', background: 'var(--card)', color: 'var(--text2)', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>
+            <Icon name="hand-coins" size={15} />
+            Adiantamentos
+          </button>
+          <button onClick={() => router.push('/facturas/devolucoes')} style={{ display: 'flex', alignItems: 'center', gap: 7, height: 36, padding: '0 13px', borderRadius: 9, border: '1px solid var(--border)', background: 'var(--card)', color: 'var(--text2)', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>
+            <Icon name="undo-2" size={15} />
+            Devoluções
+          </button>
           <button onClick={() => router.push('/facturas/notas')} style={{ display: 'flex', alignItems: 'center', gap: 7, height: 36, padding: '0 13px', borderRadius: 9, border: '1px solid var(--border)', background: 'var(--card)', color: 'var(--text2)', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>
             <Icon name="file-minus-2" size={15} />
             Notas de crédito/débito

@@ -15,6 +15,7 @@ export * from './stock';
 export * from './stock-counts';
 export * from './invoices';
 export * from './commercial-documents';
+export * from './advances';
 export * from './purchases';
 export * from './treasury';
 export * from './accounting';
