@@ -130,8 +130,10 @@ export async function listProductsPage(
   const take = Math.min(Math.max(Math.trunc(params.take), 1), 100);
   const skip = Math.max(Math.trunc(params.skip ?? 0), 0);
   const query = params.query?.trim();
+  // Produtos desactivados ficam fora do catálogo (histórico de documentos mantém-nos).
   const where: Prisma.ProductWhereInput = query
     ? {
+        status: 'ACTIVE',
         OR: [
           { name: { contains: query, mode: 'insensitive' } },
           { sku: { contains: query, mode: 'insensitive' } },
@@ -139,7 +141,7 @@ export async function listProductsPage(
           { brand: { contains: query, mode: 'insensitive' } },
         ],
       }
-    : {};
+    : { status: 'ACTIVE' };
   const [total, rows] = await Promise.all([
     db.product.count({ where }),
     db.product.findMany({
@@ -178,12 +180,17 @@ export async function searchProductOptions(
   const query = params.query?.trim();
   const where: Prisma.ProductWhereInput = {};
   if (params.ids?.length) {
+    // Por ids não se filtra o estado: documentos existentes podem referir produtos
+    // entretanto desactivados e precisam de resolver o label na mesma.
     where.id = { in: params.ids };
-  } else if (query) {
-    where.OR = [
-      { name: { contains: query, mode: 'insensitive' } },
-      { sku: { contains: query, mode: 'insensitive' } },
-    ];
+  } else {
+    where.status = 'ACTIVE';
+    if (query) {
+      where.OR = [
+        { name: { contains: query, mode: 'insensitive' } },
+        { sku: { contains: query, mode: 'insensitive' } },
+      ];
+    }
   }
   const rows = await db.product.findMany({
     where,

@@ -259,7 +259,7 @@ async function seedDemo(prisma: PrismaClient) {
   if (auditCount === 0) {
     await prisma.auditLog.createMany({
       data: [
-        { companyId: company.id, userId: admin.id, action: 'product.price_update', entity: 'Product', entityId: 'ANTS-OIL-1', oldValues: { price: 150 }, newValues: { price: 165 }, result: 'success' },
+        { companyId: company.id, userId: admin.id, action: 'product.price_update', entity: 'Product', entityId: 'KOKO-SAC-KRAFT', oldValues: { price: 22 }, newValues: { price: 25 }, result: 'success' },
         { companyId: company.id, userId: admin.id, action: 'invoice.cancel', entity: 'Invoice', entityId: 'FT 2026/0331', reason: 'Erro de facturação', result: 'success' },
         { companyId: company.id, userId: admin.id, action: 'sale.create', entity: 'Sale', entityId: 'VND-2041', newValues: { total: 12500 }, result: 'success' },
       ],
@@ -396,8 +396,9 @@ async function seedDemo(prisma: PrismaClient) {
   }
   const mainWarehouseId = whByCode.get('ARM-MAP')!;
 
-  // 12) Produtos demo (os 9 do design) + stock inicial no armazém de Maputo.
+  // 12) Produtos demo (catálogo KOKO Boxes) + stock inicial no armazém de Maputo.
   // Idempotente: upsert por (companyId, sku); stock só é semeado se ainda não houver nível.
+  // Preços/stocks são valores demo indicativos — a confirmar com a KOKO (REQUISITOS_KOKO A2).
   const demoProducts: Array<{
     sku: string;
     name: string;
@@ -407,15 +408,20 @@ async function seedDemo(prisma: PrismaClient) {
     minStock: number;
     stock: number;
   }> = [
-    { sku: 'ANTS-RICE-5', name: 'Arroz Tio 5kg', category: 'Mercearia', brand: 'Tio', salePrice: 580, minStock: 80, stock: 420 },
-    { sku: 'ANTS-OIL-1', name: 'Óleo Fula 1L', category: 'Mercearia', brand: 'Fula', salePrice: 165, minStock: 60, stock: 38 },
-    { sku: 'ANTS-SUG-2', name: 'Açúcar Xinavane 2kg', category: 'Mercearia', brand: 'Xinavane', salePrice: 190, minStock: 50, stock: 260 },
-    { sku: 'ANTS-WAT-5', name: 'Água Vumba 5L', category: 'Bebidas', brand: 'Vumba', salePrice: 95, minStock: 40, stock: 0 },
-    { sku: 'ANTS-COL-2', name: 'Coca-Cola 2L', category: 'Bebidas', brand: 'Coca-Cola', salePrice: 140, minStock: 60, stock: 312 },
-    { sku: 'ANTS-CEM-50', name: 'Cimento Dangote 50kg', category: 'Construção', brand: 'Dangote', salePrice: 720, minStock: 30, stock: 84 },
-    { sku: 'ANTS-PAR-500', name: 'Paracetamol 500mg', category: 'Farmácia', brand: 'Genérico', salePrice: 45, minStock: 40, stock: 22 },
-    { sku: 'ANTS-SOAP-1', name: 'Sabão Azul 400g', category: 'Higiene', brand: 'Lux', salePrice: 60, minStock: 100, stock: 540 },
-    { sku: 'ANTS-RICE-25', name: 'Arroz Tio 25kg', category: 'Mercearia', brand: 'Tio', salePrice: 2650, minStock: 15, stock: 12 },
+    { sku: 'KOKO-CX-OND', name: 'Caixa de cartão ondulado personalizada', category: 'Caixas', brand: 'KOKO Boxes', salePrice: 120, minStock: 200, stock: 850 },
+    { sku: 'KOKO-CX-ALIM', name: 'Caixa para alimentos', category: 'Caixas', brand: 'KOKO Boxes', salePrice: 45, minStock: 300, stock: 1200 },
+    { sku: 'KOKO-CX-BEB', name: 'Caixa para bebidas', category: 'Caixas', brand: 'KOKO Boxes', salePrice: 60, minStock: 200, stock: 640 },
+    { sku: 'KOKO-CX-TRANS', name: 'Caixa de transporte de alta resistência', category: 'Caixas', brand: 'KOKO Boxes', salePrice: 250, minStock: 80, stock: 55 },
+    { sku: 'KOKO-CX-ECOM', name: 'Embalagem para comércio electrónico', category: 'Caixas', brand: 'KOKO Boxes', salePrice: 95, minStock: 150, stock: 420 },
+    { sku: 'KOKO-SAC-KRAFT', name: 'Saco de papel kraft', category: 'Sacos', brand: 'KOKO Boxes', salePrice: 25, minStock: 500, stock: 3200 },
+    { sku: 'KOKO-SACOLA-PERS', name: 'Sacola de papel personalizada', category: 'Sacos', brand: 'KOKO Boxes', salePrice: 55, minStock: 300, stock: 980 },
+    { sku: 'KOKO-TA-BIO', name: 'Embalagem biodegradável para take-away', category: 'Take-away', brand: 'KOKO Boxes', salePrice: 35, minStock: 400, stock: 1750 },
+    { sku: 'KOKO-COPO-KRAFT', name: 'Copo de papel kraft (pack 50)', category: 'Copos', brand: 'KOKO Boxes', salePrice: 180, minStock: 60, stock: 240 },
+    { sku: 'KOKO-PALH-CANA', name: 'Palhinhas de cana-de-açúcar (pack 100)', category: 'Palhinhas', brand: 'KOKO Boxes', salePrice: 150, minStock: 50, stock: 0 },
+    { sku: 'KOKO-EMB-BAGACO', name: 'Embalagem de bagaço de cana-de-açúcar', category: 'Embalagens ecológicas', brand: 'KOKO Boxes', salePrice: 40, minStock: 300, stock: 1100 },
+    { sku: 'KOKO-EMB-RECIC', name: 'Embalagem de papel reciclado', category: 'Embalagens ecológicas', brand: 'KOKO Boxes', salePrice: 30, minStock: 300, stock: 260 },
+    { sku: 'KOKO-EMB-AMIDO', name: 'Embalagem de amido de milho', category: 'Embalagens ecológicas', brand: 'KOKO Boxes', salePrice: 50, minStock: 200, stock: 730 },
+    { sku: 'KOKO-PERS-EMB', name: 'Personalização de embalagens (impressão)', category: 'Personalização', brand: 'KOKO Boxes', salePrice: 500, minStock: 0, stock: 0 },
   ];
   for (const p of demoProducts) {
     const avgCost = Math.round(p.salePrice * 0.72);
@@ -449,6 +455,16 @@ async function seedDemo(prisma: PrismaClient) {
       }
     }
   }
+
+  // Catálogo genérico antigo (9 produtos do design): desactivado, não apagado —
+  // movimentos/documentos existentes mantêm o histórico. No-op em bases de dados novas.
+  await prisma.product.updateMany({
+    where: {
+      companyId: company.id,
+      sku: { in: ['ANTS-RICE-5', 'ANTS-OIL-1', 'ANTS-SUG-2', 'ANTS-WAT-5', 'ANTS-COL-2', 'ANTS-CEM-50', 'ANTS-PAR-500', 'ANTS-SOAP-1', 'ANTS-RICE-25'] },
+    },
+    data: { status: 'INACTIVE', updatedBy: admin.id },
+  });
 
   // 13) Contas de tesouraria demo. Idempotente via @@unique([companyId, name]).
   // `key` é um identificador estável do seed (não depende da ordem da BD nem do nome
