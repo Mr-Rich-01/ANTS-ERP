@@ -219,6 +219,10 @@ export default async function RelatoriosPage({ searchParams }: { searchParams: S
             <Icon name="sheet" size={14} />
             Excel futuro
           </button>
+          <a href={`${exportHref(selectedKey, filters)}&formato=xlsx`} style={{ ...actionBtn, background: ACCENT, color: '#fff', borderColor: ACCENT }}>
+            <Icon name="sheet" size={14} />
+            Exportar para Excel
+          </a>
           <Link href={exportHref(selectedKey, filters)} style={actionBtn}>
             <Icon name="download" size={14} />
             CSV
@@ -371,7 +375,7 @@ export default async function RelatoriosPage({ searchParams }: { searchParams: S
 
       <div className="ants-noprint">
         <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text)', marginBottom: 4 }}>Biblioteca de relatorios</div>
-        <div style={{ fontSize: 12.5, color: 'var(--text3)', marginBottom: 14 }}>Relatorios V1 usam dados reais, exportam CSV e podem ser impressos/guardados em PDF pelo navegador. PDF e Excel avancados ficam para fase futura.</div>
+        <div style={{ fontSize: 12.5, color: 'var(--text3)', marginBottom: 14 }}>Relatorios V1 usam dados reais, exportam Excel/CSV e podem ser impressos/guardados em PDF pelo navegador.</div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
           {groupedDefinitions().map(([group, items]) => (
             <div key={group}>
@@ -394,8 +398,8 @@ export default async function RelatoriosPage({ searchParams }: { searchParams: S
                         </div>
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 7, paddingTop: 11, borderTop: '1px solid var(--bd-soft2)' }}>
+                        <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--text2)', background: 'var(--bd-soft)', padding: '2px 7px', borderRadius: 6 }}>Excel</span>
                         <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--text2)', background: 'var(--bd-soft)', padding: '2px 7px', borderRadius: 6 }}>CSV</span>
-                        <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--text3)', background: 'var(--bd-soft)', padding: '2px 7px', borderRadius: 6 }}>PDF futuro</span>
                         <div style={{ flex: 1 }} />
                         {allowed ? (
                           <Link href={reportHref(def.key, filters)} style={{ ...actionBtn, height: 32, background: ACCENT, color: '#fff', border: 'none' }}>

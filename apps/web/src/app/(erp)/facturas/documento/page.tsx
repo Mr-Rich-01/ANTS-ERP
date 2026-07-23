@@ -344,7 +344,7 @@ export default async function DocumentoPage({ searchParams }: { searchParams: { 
                       <span className="ants-noprint">
                         <PaymentReversalDialog
                           reversalDate={reversalDate}
-                          payment={{ id: p.id, number: p.number, amount: p.amount, customerName: inv.customerName, invoiceNumber: inv.number, treasuryAccountName: p.treasuryAccountName }}
+                          payment={{ id: p.id, number: p.number, amount: p.amount, customerName: inv.customerName, invoiceNumber: inv.number, treasuryAccountName: p.treasuryAccountName, method: p.method }}
                           trigger={
                             <button title="Anular recibo" style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 28, height: 28, borderRadius: 8, border: '1px solid #f0d0cc', background: '#fff5f3', color: '#8b3a32', cursor: 'pointer' }}>
                               <Icon name="undo-2" size={14} />

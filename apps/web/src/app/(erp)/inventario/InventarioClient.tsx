@@ -145,10 +145,16 @@ export function InventarioClient({
 
   return (
     <div style={{ padding: '14px 26px 30px', display: 'flex', flexDirection: 'column', gap: 14 }}>
-      <Link href="/produtos" style={{ display: 'flex', alignItems: 'center', gap: 7, height: 34, padding: '0 13px', borderRadius: 9, border: '1px solid var(--border)', background: 'var(--card)', color: 'var(--text2)', fontSize: 12.5, fontWeight: 600, width: 'max-content' }}>
-        <Icon name="arrow-left" size={16} />
-        Voltar a Produtos &amp; Stock
-      </Link>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+        <Link href="/produtos" style={{ display: 'flex', alignItems: 'center', gap: 7, height: 34, padding: '0 13px', borderRadius: 9, border: '1px solid var(--border)', background: 'var(--card)', color: 'var(--text2)', fontSize: 12.5, fontWeight: 600, width: 'max-content' }}>
+          <Icon name="arrow-left" size={16} />
+          Voltar a Produtos &amp; Stock
+        </Link>
+        <Link href="/inventario/folha-contagem" style={{ display: 'flex', alignItems: 'center', gap: 7, height: 34, padding: '0 13px', borderRadius: 9, border: '1px solid var(--border)', background: 'var(--card)', color: 'var(--text2)', fontSize: 12.5, fontWeight: 600, width: 'max-content', marginLeft: 'auto' }}>
+          <Icon name="printer" size={15} />
+          Folha de contagem física
+        </Link>
+      </div>
 
       {draft && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, color: 'var(--info)', background: 'var(--info-bg)', padding: '10px 14px', borderRadius: 10, flexWrap: 'wrap' }}>

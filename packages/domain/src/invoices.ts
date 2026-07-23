@@ -18,6 +18,7 @@ import {
   runIdempotentOperation,
 } from './operation-idempotency';
 import { validateOpenReversalDateTx, validateReversalReason } from './reversals';
+import { reverseAdvanceApplication } from './advances';
 
 export type InvoiceStatus = 'DRAFT' | 'ISSUED' | 'PARTIAL' | 'PAID' | 'CANCELLED';
 /** Estado apresentado (inclui "vencido", derivado da data). */
@@ -2380,6 +2381,14 @@ export async function reverseCustomerPayment(db: PrismaClient, ctx: RequestConte
   const reversalDate = resolveAllowedReversalDate(data.reversalDate);
   const requestFingerprint = paymentReversalFingerprint(companyId, data.paymentId, reversalDate, reversalReason);
 
+  // S18: RECs de aplicação de adiantamento (método ADVANCE, imutável) seguem a
+  // reversão simétrica própria — repõem o saldo no RA e estornam o ADVANCE_APPLIED,
+  // sem tesouraria (que nunca existiu neste tipo de recibo).
+  const methodProbe = await db.payment.findFirst({ where: { companyId, id: data.paymentId }, select: { method: true } });
+  if (methodProbe?.method === 'ADVANCE') {
+    return reverseAdvanceApplication(db, ctx, input);
+  }
+
   return db.$transaction(async (tx) => {
     const op = await runIdempotentOperation<ReverseCustomerPaymentResult>(tx, ctx, {
       scope: 'CUSTOMER_PAYMENT_REVERSE',
@@ -2408,10 +2417,9 @@ export async function reverseCustomerPayment(db: PrismaClient, ctx: RequestConte
         const payment = await tx.payment.findFirst({ where: { companyId, id: data.paymentId } });
         if (!payment) throw new NotFoundError('Recebimento não encontrado.');
         if (payment.status === 'REVERSED') throw new ConflictError('Este recebimento já foi anulado.');
-        // S17: RECs de aplicação de adiantamento não têm movimento de tesouraria nem
-        // RECEIPT_POSTED — a anulação simétrica (repor saldo no RA) fica fora da V1.
+        // Guard defensivo: o caso ADVANCE é delegado antes da transacção (método imutável).
         if (payment.method === 'ADVANCE') {
-          throw new ConflictError('Este recibo resulta da aplicação de um Recibo de Adiantamento e não pode ser anulado nesta versão.');
+          throw new ConflictError('Este recibo resulta da aplicação de um Recibo de Adiantamento — a anulação segue o fluxo próprio de adiantamentos.');
         }
         if (!payment.invoiceId) throw new ConflictError('Recebimento sem factura de origem (integridade).');
 

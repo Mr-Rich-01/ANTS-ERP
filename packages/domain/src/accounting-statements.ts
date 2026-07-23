@@ -25,6 +25,7 @@ import {
   formatAccountingDate,
   parseAccountingDate,
 } from './accounting';
+import { exportTableToXlsx, type XlsxCellValue, type XlsxGroup } from './xlsx-export';
 
 // ─────────────────────────────────────────────────────────────
 // Tipos e helpers partilhados
@@ -513,4 +514,127 @@ export async function exportCashFlowStatementCsv(db: PrismaClient, ctx: RequestC
     accountingCsvLine(['Reconciliação com a Tesouraria — diferença', accountingMoneyLabel(report.treasury.difference)]),
   ];
   return { filename: `contabilidade-fluxo-caixa-${report.filters.from}-${report.filters.to}.csv`, content: lines.join('\n') };
+}
+
+// ─────────────────────────────────────────────────────────────
+// Exportação Excel das demonstrações (S18, item 9)
+// ─────────────────────────────────────────────────────────────
+
+async function statementXlsxHeader(db: PrismaClient, ctx: RequestContext): Promise<{ companyName: string; exportedBy: string | undefined }> {
+  const companyId = requireCompany(ctx);
+  const [company, user] = await Promise.all([
+    db.company.findUnique({ where: { id: companyId }, select: { legalName: true, tradeName: true } }),
+    ctx.userId ? db.user.findFirst({ where: { companyId, id: ctx.userId }, select: { name: true, email: true } }) : Promise.resolve(null),
+  ]);
+  return { companyName: company?.tradeName || company?.legalName || '', exportedBy: user?.name || user?.email || undefined };
+}
+
+const STATEMENT_COLUMNS = [
+  { key: 'code', header: 'Conta', type: 'text', width: 10 },
+  { key: 'name', header: 'Descrição', type: 'text', width: 46 },
+  { key: 'amount', header: 'Valor', type: 'money', width: 17 },
+] as const;
+
+function statementGroupRows(rows: StatementGroupRow[]): Array<Record<string, XlsxCellValue>> {
+  const out: Array<Record<string, XlsxCellValue>> = [];
+  for (const group of rows) {
+    out.push({ code: group.code, name: group.name, amount: group.amount });
+    for (const account of group.accounts) {
+      out.push({ code: account.code, name: `  ${account.name}`, amount: account.amount });
+    }
+  }
+  return out;
+}
+
+/** Demonstração de Resultados em Excel — mesmos valores do ecrã/CSV, montantes numéricos. */
+export async function exportIncomeStatementXlsx(db: PrismaClient, ctx: RequestContext, filters: StatementPeriodFilters = {}): Promise<{ filename: string; buffer: Buffer }> {
+  requirePermission(ctx, 'reports.export');
+  const report = await getIncomeStatementReport(db, ctx, filters);
+  const header = await statementXlsxHeader(db, ctx);
+  const buffer = await exportTableToXlsx({
+    title: 'Demonstração de Resultados',
+    ...header,
+    period: `${report.filters.from} a ${report.filters.to}`,
+    exportedAt: new Date(),
+    sheetName: 'Demonstração de Resultados',
+    columns: [...STATEMENT_COLUMNS],
+    groups: [
+      { label: 'PROVEITOS', rows: statementGroupRows(report.revenue), subtotal: { name: 'Total dos proveitos', amount: report.totalRevenue } },
+      { label: 'CUSTOS', rows: statementGroupRows(report.expenses), subtotal: { name: 'Total dos custos', amount: report.totalExpenses } },
+    ],
+    grandTotal: { name: `Resultado líquido do período (${report.netResult >= 0 ? 'Excedente' : 'Déficit'})`, amount: report.netResult },
+  });
+  return { filename: `contabilidade-demonstracao-resultados-${report.filters.from}-${report.filters.to}.xlsx`, buffer };
+}
+
+/** Balanço Patrimonial em Excel — secções Activo/Passivo/Capital com validação de fecho. */
+export async function exportBalanceSheetXlsx(db: PrismaClient, ctx: RequestContext, filters: Pick<StatementPeriodFilters, 'to'> = {}): Promise<{ filename: string; buffer: Buffer }> {
+  requirePermission(ctx, 'reports.export');
+  const report = await getBalanceSheetReport(db, ctx, filters);
+  const header = await statementXlsxHeader(db, ctx);
+  const groups: XlsxGroup[] = [
+    { label: 'ACTIVO', rows: statementGroupRows(report.assets), subtotal: { name: 'Total do Activo', amount: report.totalAssets } },
+    { label: 'PASSIVO', rows: statementGroupRows(report.liabilities), subtotal: { name: 'Total do Passivo', amount: report.totalLiabilities } },
+    {
+      label: 'CAPITAL PRÓPRIO',
+      rows: [
+        ...statementGroupRows(report.equity),
+        { code: null, name: 'Resultados de exercícios anteriores (por apurar)', amount: report.priorYearsResult },
+        { code: null, name: 'Resultado líquido do exercício (por apurar)', amount: report.currentYearResult },
+      ],
+      subtotal: { name: 'Total do Capital Próprio', amount: report.totalEquity },
+    },
+  ];
+  const buffer = await exportTableToXlsx({
+    title: 'Balanço Patrimonial',
+    ...header,
+    period: `À data de ${report.asOf}`,
+    exportedAt: new Date(),
+    sheetName: 'Balanço Patrimonial',
+    headerLines: [report.isBalanced ? 'Validação: Activo = Passivo + Capital Próprio' : 'ATENÇÃO: BALANÇO NÃO FECHA — investigar lançamentos desequilibrados'],
+    columns: [...STATEMENT_COLUMNS],
+    groups,
+    grandTotal: { name: 'Total do Passivo + Capital Próprio', amount: report.totalLiabilitiesAndEquity },
+  });
+  return { filename: `contabilidade-balanco-${report.asOf}.xlsx`, buffer };
+}
+
+/** Demonstração do Fluxo de Caixa em Excel — método directo, com reconciliação da Tesouraria. */
+export async function exportCashFlowStatementXlsx(db: PrismaClient, ctx: RequestContext, filters: StatementPeriodFilters = {}): Promise<{ filename: string; buffer: Buffer }> {
+  requirePermission(ctx, 'reports.export');
+  const report = await getCashFlowStatementReport(db, ctx, filters);
+  const header = await statementXlsxHeader(db, ctx);
+  const section = (title: string, rows: CashFlowLine[], total: number): XlsxGroup => ({
+    label: title,
+    rows: rows.map((l) => ({ name: l.label, amount: l.amount })),
+    subtotal: { name: `Fluxo líquido — ${title.toLowerCase()}`, amount: total },
+  });
+  const buffer = await exportTableToXlsx({
+    title: 'Demonstração do Fluxo de Caixa (método directo)',
+    ...header,
+    period: `${report.filters.from} a ${report.filters.to}`,
+    exportedAt: new Date(),
+    sheetName: 'Fluxo de Caixa',
+    columns: [
+      { key: 'name', header: 'Rubrica', type: 'text', width: 52 },
+      { key: 'amount', header: 'Valor', type: 'money', width: 17 },
+    ],
+    groups: [
+      section('Actividades operacionais', report.operating, report.operatingTotal),
+      section('Actividades de investimento', report.investing, report.investingTotal),
+      section('Actividades de financiamento', report.financing, report.financingTotal),
+      {
+        label: 'Síntese',
+        rows: [
+          { name: 'Variação líquida de caixa', amount: report.netChange },
+          { name: 'Caixa e equivalentes no início do período', amount: report.openingCash },
+          { name: 'Caixa e equivalentes no fim do período', amount: report.closingCash },
+          { name: 'Reconciliação com a Tesouraria — entradas', amount: report.treasury.totalIn },
+          { name: 'Reconciliação com a Tesouraria — saídas', amount: report.treasury.totalOut },
+          { name: 'Reconciliação com a Tesouraria — diferença', amount: report.treasury.difference },
+        ],
+      },
+    ],
+  });
+  return { filename: `contabilidade-fluxo-caixa-${report.filters.from}-${report.filters.to}.xlsx`, buffer };
 }

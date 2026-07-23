@@ -5,6 +5,7 @@ import { requireCompany } from './context';
 import { hasPermission, requirePermission } from './permissions';
 import { ValidationError } from './errors';
 import { ACTIVE_INVOICE_STATUSES } from './invoices';
+import { exportWorkbookToXlsx, type XlsxColumn } from './xlsx-export';
 
 export type OperationalReportKey =
   | 'sales'
@@ -693,6 +694,38 @@ function csvEscape(value: string): string {
 
 function csvLine(values: string[]): string {
   return values.map(csvEscape).join(';');
+}
+
+/**
+ * Relatórios operacionais em Excel (S18, item 9): uma folha por secção, cabeçalho
+ * institucional + resumo de KPIs, valores monetários como NÚMEROS. Mesma fonte de
+ * dados do ecrã/CSV (`getOperationalReport`), zero divergência.
+ */
+export async function exportOperationalReportXlsx(db: PrismaClient, ctx: RequestContext, key: OperationalReportKey, filters: ReportFilters = {}): Promise<{ filename: string; buffer: Buffer }> {
+  requirePermission(ctx, 'reports.export');
+  const report = await getOperationalReport(db, ctx, key, filters);
+  const companyId = requireCompany(ctx);
+  const [company, user] = await Promise.all([
+    db.company.findUnique({ where: { id: companyId }, select: { legalName: true, tradeName: true } }),
+    ctx.userId ? db.user.findFirst({ where: { companyId, id: ctx.userId }, select: { name: true, email: true } }) : Promise.resolve(null),
+  ]);
+  const summaryLines = report.summary.map((s) => `${s.label}: ${s.kind === 'money' && typeof s.value === 'number' ? money(s.value) : String(s.value)}`);
+  // As datas das linhas já vêm formatadas (dd/mm/yyyy) — ficam como texto.
+  const columnType = (kind?: ReportColumn['kind']): XlsxColumn['type'] => (kind === 'money' ? 'money' : kind === 'count' ? 'number' : 'text');
+  const buffer = await exportWorkbookToXlsx({
+    title: report.title,
+    companyName: company?.tradeName || company?.legalName || '',
+    period: report.periodLabel,
+    exportedBy: user?.name || user?.email || undefined,
+    exportedAt: new Date(),
+    sheets: report.sections.map((section, index) => ({
+      name: section.title,
+      headerLines: index === 0 ? summaryLines : undefined,
+      columns: section.columns.map((c): XlsxColumn => ({ key: c.key, header: c.label, type: columnType(c.kind), width: c.kind === 'money' ? 16 : c.kind === 'count' ? 12 : 28 })),
+      rows: section.rows,
+    })),
+  });
+  return { filename: `${report.key}-${report.filters.from}-${report.filters.to}.xlsx`, buffer };
 }
 
 export async function exportOperationalReportCsv(db: PrismaClient, ctx: RequestContext, key: OperationalReportKey, filters: ReportFilters = {}): Promise<{ filename: string; content: string }> {

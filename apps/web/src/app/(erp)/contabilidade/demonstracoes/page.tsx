@@ -194,6 +194,12 @@ export default async function DemonstracoesPage({ searchParams }: { searchParams
           </div>
           <PrintButton label="Imprimir / Guardar PDF" />
           {canExport ? (
+            <a href={`/contabilidade/exportar?${exportQs.toString()}&formato=xlsx`} style={{ ...actionBtn, background: ACCENT, color: '#fff', borderColor: ACCENT }}>
+              <Icon name="sheet" size={14} />
+              Excel
+            </a>
+          ) : null}
+          {canExport ? (
             <Link href={`/contabilidade/exportar?${exportQs.toString()}`} style={actionBtn}>
               <Icon name="download" size={14} />
               CSV

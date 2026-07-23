@@ -110,6 +110,12 @@ export default async function FechoPage({ searchParams }: { searchParams: Search
         </Link>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           {canExport ? (
+            <a href={`${exportHref(accountId, date)}&formato=xlsx`} style={backBtn}>
+              <Icon name="sheet" size={15} />
+              Excel
+            </a>
+          ) : null}
+          {canExport ? (
             <Link href={exportHref(accountId, date)} style={backBtn}>
               <Icon name="download" size={15} />
               CSV

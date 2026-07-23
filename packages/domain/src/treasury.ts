@@ -9,6 +9,7 @@ import { writeAudit } from './audit';
 import { FINGERPRINT_VERSION, canonicalRequestFingerprint, fpDate, runIdempotentOperation } from './operation-idempotency';
 import { formatAccountingDate } from './accounting';
 import { parseReversalDateInput, validateOpenReversalDateTx, validateReversalReason } from './reversals';
+import { exportTableToXlsx } from './xlsx-export';
 
 export type TreasuryAccountType = 'CASH' | 'BANK' | 'MOBILE' | 'OTHER';
 export type TreasuryFlow = 'IN' | 'OUT';
@@ -546,6 +547,57 @@ export async function exportCashClosingCsv(
     filename: `cash-closing-${safeDate}.csv`,
     content: `${lines.join('\r\n')}\r\n`,
   };
+}
+
+/** Fecho de Caixa em Excel (S18, item 9) — mesma fonte do CSV, valores numéricos. */
+export async function exportCashClosingXlsx(
+  db: PrismaClient,
+  ctx: RequestContext,
+  input: { accountId: string; dateISO?: string },
+): Promise<{ filename: string; buffer: Buffer }> {
+  requirePermission(ctx, 'reports.export');
+  const report = await cashClosingReport(db, ctx, input);
+  const companyId = requireCompany(ctx);
+  const [company, user] = await Promise.all([
+    db.company.findUnique({ where: { id: companyId }, select: { legalName: true, tradeName: true } }),
+    ctx.userId ? db.user.findFirst({ where: { companyId, id: ctx.userId }, select: { name: true, email: true } }) : Promise.resolve(null),
+  ]);
+  const buffer = await exportTableToXlsx({
+    title: 'Fecho de Caixa — relatório diário',
+    companyName: company?.tradeName || company?.legalName || '',
+    period: `${report.daily.date} · Conta: ${report.daily.accountName}`,
+    exportedBy: user?.name || user?.email || undefined,
+    exportedAt: new Date(),
+    sheetName: 'Fecho de Caixa',
+    columns: [
+      { key: 'movementType', header: 'Tipo de movimento', type: 'text', width: 16 },
+      { key: 'origin', header: 'Origem', type: 'text', width: 24 },
+      { key: 'entry', header: 'Entrada', type: 'money', width: 15 },
+      { key: 'exit', header: 'Saída', type: 'money', width: 15 },
+      { key: 'balance', header: 'Saldo', type: 'money', width: 15 },
+      { key: 'method', header: 'Método', type: 'text', width: 14 },
+      { key: 'reference', header: 'Referência', type: 'text', width: 22 },
+      { key: 'user', header: 'Utilizador', type: 'text', width: 20 },
+    ],
+    rows: report.movements.map((movement) => ({
+      movementType: movement.flow === 'IN' ? 'Entrada' : 'Saída',
+      origin: movement.originLabel,
+      entry: movement.entry || null,
+      exit: movement.exit || null,
+      balance: movement.balanceAfter,
+      method: movement.methodLabel,
+      reference: movement.reference,
+      user: movement.userLabel,
+    })),
+    grandTotal: {
+      origin: 'Totais do dia',
+      entry: report.daily.totalIn,
+      exit: report.daily.totalOut,
+      balance: report.expectedTotal,
+    },
+  });
+  const safeDate = (input.dateISO ?? report.daily.date.split('/').reverse().join('-')).replace(/[^0-9-]/g, '');
+  return { filename: `fecho-caixa-${safeDate}.xlsx`, buffer };
 }
 
 /**

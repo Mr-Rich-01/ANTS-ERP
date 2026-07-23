@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { forCompany } from '@ants/database';
-import { DomainError, exportCashClosingCsv } from '@ants/domain';
+import { DomainError, exportCashClosingCsv, exportCashClosingXlsx } from '@ants/domain';
 import { getContext } from '@/lib/session';
 
 export const dynamic = 'force-dynamic';
@@ -20,6 +20,21 @@ export async function GET(request: Request) {
     const accountId = clean(url.searchParams.get('account'));
     if (!accountId) {
       return NextResponse.json({ error: 'Seleccione a conta de tesouraria.' }, { status: 422 });
+    }
+    // S18: formato=xlsx — Excel via helper S16; CSV mantém-se.
+    if (clean(url.searchParams.get('formato')) === 'xlsx') {
+      const exportedXlsx = await exportCashClosingXlsx(forCompany(ctx.companyId), ctx, {
+        accountId,
+        dateISO: clean(url.searchParams.get('date')),
+      });
+      return new NextResponse(new Uint8Array(exportedXlsx.buffer), {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          'Content-Disposition': `attachment; filename="${exportedXlsx.filename}"`,
+          'Cache-Control': 'no-store',
+        },
+      });
     }
     const exported = await exportCashClosingCsv(forCompany(ctx.companyId), ctx, {
       accountId,

@@ -35,8 +35,10 @@ Quick wins primeiro (validar o fluxo de trabalho), depois fundações (dados da 
 
 `S1 → S2 → S3 → S4 → S5 → S6 → S7 → S8 → S9 → S10 → S11` concluídas.
 
-**Ordem actual (2026-07-22):** `S15 ✅ → S16 ✅ → S17 ✅ → S18` (backlog do cliente,
-prioridades 1–4) → depois `S12 ⏸ (quando a KOKO responder) → S13 → S14`.
+**Ordem actual (2026-07-23):** `S15 ✅ → S16 ✅ → S17 ✅ → S18 ✅` — **as Prioridades 1–4 do
+backlog do cliente estão CONCLUÍDAS.** Seguem-se `S12 ⏸ (quando a KOKO responder) → S13 → S14`.
+Pendências transversais: IVA em adiantamentos (aguarda contabilista do cliente), filtro por
+loja/filial no relatório de vendas (pendência S16) e push das branches para `origin`.
 
 ---
 
@@ -344,17 +346,51 @@ o IVA nasce todo na factura.)*
 
 ## Sessão S18 — Stock e Contabilidade (backlog) 🟡
 
-*(Backlog Prioridade 4)*
+*(Backlog Prioridade 4 — ✅ concluída em 2026-07-23 na branch `s18-stock-contabilidade`;
+inclui a anulação simétrica de adiantamentos, pendência registada na S17, aprovada com o
+plano da sessão)*
 
-- [ ] Lista de produtos sem stock, imprimível como folha de contagem física: Código /
+- [x] Lista de produtos sem stock, imprimível como folha de contagem física: Código /
       Produto / Categoria / Armazém / Stock no Sistema / Quantidade Contada (vazia no
       impresso) / Diferença / Observações; filtros por armazém, categoria, produto, sem
-      stock, negativos, inactivos, todos.
-- [ ] Balancete: filtro por classe contabilística; opção contas com/sem movimento (já tem
-      Saldo Inicial/Débito/Crédito/Saldo Final e selector de colunas da S11).
-- [ ] Razão Geral: variante «todas as contas» (hoje só uma conta de cada vez; saldo
-      inicial/acumulado/totais já existem).
-- [ ] Impressão + exportação Excel destas listagens (reutiliza a infra-estrutura da S16).
+      stock, negativos, inactivos, todos. *(Página nova `/inventario/folha-contagem` —
+      domínio de leitura `stock-count-sheet.ts` gate `stock.view`; linhas produto ×
+      armazém com produto sem `StockLevel` a contar como 0; ordenação por código/nome/
+      categoria; impressão com cabeçalho empresa/armazém/data/utilizador + espaço para
+      quem conta + assinaturas; Excel com as MESMAS colunas e as de contagem VAZIAS;
+      entrada a partir do ecrã de Inventário. Só leitura — o registo digital continua a
+      ser a contagem CI da S9.)*
+- [x] Balancete: filtro por classe contabilística; opção contas com/sem movimento (já tem
+      Saldo Inicial/Débito/Crédito/Saldo Final e selector de colunas da S11). *(Filtro
+      `classe` = prefixo do código com classes derivadas do nível 1 do plano
+      (`getTrialBalanceClassOptions`, zero hardcode); toggle `contas` Com movimento
+      (default S11, sem regressão) / Sem movimento (= saldo inicial, débitos e créditos
+      todos zero, universo = contas de movimento do plano) / Todas; validação global
+      D=C mantida e desligada com filtros parciais; Excel via helper S16 além do CSV.)*
+- [x] Razão Geral: variante «todas as contas» (hoje só uma conta de cada vez; saldo
+      inicial/acumulado/totais já existem). *(`getGeneralLedgerReport` — iteração pelas
+      contas COM movimento no período, cada secção com saldo inicial → movimentos →
+      totais D/C → saldo final; quebra de página por conta na impressão
+      (`.ants-page-break-after`); consulta de conta única intacta; Excel com secções
+      sequenciais e sub-totais por conta.)*
+- [x] Impressão + exportação Excel destas listagens (reutiliza a infra-estrutura da S16).
+      *(Helper estendido GENERICAMENTE para multi-folha (`exportWorkbookToXlsx`) e linhas
+      de resumo no cabeçalho; adopção XLSX (item 9) nas tabelas restantes: 8 relatórios
+      operacionais (uma folha por secção), Extrato Diário, Razão de conta única, DR,
+      Balanço, DFC e Fecho de Caixa — todos com `formato=xlsx` nas rotas existentes,
+      valores monetários NUMÉRICOS e CSV mantido.)*
+- [x] **Anulação simétrica de adiantamentos** (pendência S17, aprovada com o plano):
+      `reverseAdvanceApplication` anula o REC método `ADVANCE` — estorna o
+      `ADVANCE_APPLIED` por verdade histórica, repõe o saldo do RA sob `FOR UPDATE`,
+      factura volta ao estado de dívida e o bloqueio V1 do `reverseCustomerPayment` dá
+      lugar à delegação para a reversão completa (a UI de anulação de recibos passou a
+      funcionar tal-qual para RECs de adiantamento); `cancelCustomerAdvance` só com RA
+      intacto (aplicado líquido = 0 e devolvido = 0) — reverte a entrada de tesouraria e
+      estorna o `ADVANCE_RECEIVED`, estado CANCELADO, nunca se apaga; gate
+      `payments.cancel`, motivo ≥ 10 chars, idempotência operacional com scopes novos
+      aprovados (`CUSTOMER_ADVANCE_APPLY_REVERSE`/`CUSTOMER_ADVANCE_CANCEL` — única
+      migração da sessão, enum puramente aditivo); suite `advances` 21/21 com
+      concorrência e balanço âncora 241.
 
 ---
 

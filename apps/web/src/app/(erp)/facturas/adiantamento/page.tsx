@@ -1,10 +1,12 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { forCompany } from '@ants/database';
+import { civilDateInTimeZone } from '@ants/shared';
 import { advanceStateLabel, getCompanyPrintProfile, getCustomerAdvance, hasPermission, DomainError, type CustomerAdvanceState, type PaymentMethod } from '@ants/domain';
 import { getContext } from '@/lib/session';
 import { Icon } from '@/components/Icon';
 import { PrintButton } from '@/components/PrintButton';
+import { AdvanceCancellationDialog } from '@/components/facturas/AdvanceCancellationDialog';
 import { CompanyHeader, DocumentFooter, PrintLayout, SignatureBlock } from '@/components/print/PrintLayout';
 import { fmt } from '@/lib/format';
 
@@ -74,6 +76,9 @@ export default async function AdiantamentoPage({ searchParams }: { searchParams:
   const company = await getCompanyPrintProfile(db, ctx);
   const [stateColor, stateBg] = STATE_COLORS[advance.state];
   const canRefund = hasPermission(ctx, 'treasury.createMovement') && advance.remaining > 0 && advance.state !== 'CANCELADO';
+  // S18: cancelável apenas com o RA intacto (ABERTO = sem aplicações activas nem devoluções).
+  const canCancel = hasPermission(ctx, 'payments.cancel') && advance.state === 'ABERTO';
+  const cancellationDate = civilDateInTimeZone();
 
   return (
     <div data-screen-label="Recibo de Adiantamento (documento)">
@@ -88,6 +93,18 @@ export default async function AdiantamentoPage({ searchParams }: { searchParams:
               <Icon name="undo-2" size={16} />
               Devolver remanescente
             </Link>
+          )}
+          {canCancel && (
+            <AdvanceCancellationDialog
+              cancellationDate={cancellationDate}
+              advance={{ id: advance.id, number: advance.number, amount: advance.amount, customerName: advance.customerName, treasuryAccountName: advance.treasuryAccountName }}
+              trigger={
+                <button style={{ ...topBtn, border: '1px solid #f0d0cc', background: '#fff5f3', color: '#8b3a32', cursor: 'pointer' }}>
+                  <Icon name="x-circle" size={16} />
+                  Cancelar RA
+                </button>
+              }
+            />
           )}
           <PrintButton label="Imprimir / Guardar PDF" />
         </div>
@@ -157,8 +174,9 @@ export default async function AdiantamentoPage({ searchParams }: { searchParams:
             </div>
             <div style={{ fontSize: 12, color: '#5f7378', lineHeight: 1.7 }}>
               {advance.applications.map((a) => (
-                <div key={a.id}>
-                  {fmtDate(a.createdAt)} · Aplicado à factura <strong style={{ color: '#16282c' }}>{a.invoiceNumber}</strong> pelo recibo {a.paymentNumber} — {fmt(a.amount)}
+                <div key={a.id} style={a.reversed ? { textDecoration: 'line-through', color: '#8b3a32' } : undefined}>
+                  {fmtDate(a.createdAt)} · Aplicado à factura <strong style={{ color: a.reversed ? '#8b3a32' : '#16282c' }}>{a.invoiceNumber}</strong> pelo recibo {a.paymentNumber} — {fmt(a.amount)}
+                  {a.reversed ? ' · ANULADO (valor reposto no adiantamento)' : ''}
                 </div>
               ))}
               {advance.refunds.map((r) => (
@@ -167,6 +185,13 @@ export default async function AdiantamentoPage({ searchParams }: { searchParams:
                 </div>
               ))}
             </div>
+          </div>
+        ) : null}
+
+        {advance.cancelledAt ? (
+          <div style={{ marginTop: 18, padding: '11px 13px', borderRadius: 8, border: '1px solid #f0d0cc', background: '#fff5f3', color: '#8b3a32', fontSize: 12, lineHeight: 1.55 }}>
+            <strong>CANCELADO</strong> em {fmtDate(advance.cancelledAt)}
+            {advance.cancellationReason ? ` — ${advance.cancellationReason}` : ''}. A entrada de tesouraria foi revertida e o lançamento contabilístico estornado.
           </div>
         ) : null}
 

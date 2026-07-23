@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 import { forContext } from '@ants/database';
-import { applyAdvanceToInvoice, cancelCreditNote, cancelInvoice, createCreditNote, createCustomerAdvance, createCustomerRefund, createDebitNote, createInvoice, createPayment, discardInvoiceDraft, emitInvoiceVia, issueInvoiceDraft, refundAdvance, reverseCustomerPayment, saveInvoiceDraft, updateInvoiceDraft, DomainError, type ApplyAdvanceInput, type CancelCreditNoteInput, type CancelInvoiceInput, type CreditNoteInput, type CustomerAdvanceInput, type CustomerRefundInput, type DebitNoteInput, type DiscardInvoiceDraftInput, type EmitInvoiceViaInput, type InvoiceDraftUpdateInput, type InvoiceInput, type IssueInvoiceDraftInput, type PaymentInput, type RefundAdvanceInput, type ReverseCustomerPaymentInput } from '@ants/domain';
+import { applyAdvanceToInvoice, cancelCreditNote, cancelCustomerAdvance, cancelInvoice, createCreditNote, createCustomerAdvance, createCustomerRefund, createDebitNote, createInvoice, createPayment, discardInvoiceDraft, emitInvoiceVia, issueInvoiceDraft, refundAdvance, reverseCustomerPayment, saveInvoiceDraft, updateInvoiceDraft, DomainError, type ApplyAdvanceInput, type CancelCreditNoteInput, type CancelCustomerAdvanceInput, type CancelInvoiceInput, type CreditNoteInput, type CustomerAdvanceInput, type CustomerRefundInput, type DebitNoteInput, type DiscardInvoiceDraftInput, type EmitInvoiceViaInput, type InvoiceDraftUpdateInput, type InvoiceInput, type IssueInvoiceDraftInput, type PaymentInput, type RefundAdvanceInput, type ReverseCustomerPaymentInput } from '@ants/domain';
 import { getContext } from '@/lib/session';
 
 export interface InvoiceActionResult {
@@ -108,6 +108,9 @@ export async function reverseCustomerPaymentAction(input: ReverseCustomerPayment
     const { id, number } = await reverseCustomerPayment(forContext(ctx), ctx, input);
     revalidatePath('/facturas');
     revalidatePath('/facturas/documento');
+    // S18: um REC de método ADVANCE repõe o saldo no RA — refrescar também os adiantamentos.
+    revalidatePath('/facturas/adiantamentos');
+    revalidatePath('/facturas/adiantamento');
     revalidatePath('/contas/perfil');
     revalidatePath('/tesouraria');
     revalidatePath('/contabilidade');
@@ -218,6 +221,24 @@ export async function applyAdvanceToInvoiceAction(input: ApplyAdvanceInput): Pro
     revalidatePath('/contas/perfil');
     revalidatePath('/contabilidade');
     return { ok: true, id: paymentId, number: paymentNumber };
+  } catch (e) {
+    if (e instanceof DomainError) return { error: e.message };
+    throw e;
+  }
+}
+
+/** Cancela um RA intacto (S18): tesouraria revertida + estorno do ADVANCE_RECEIVED. */
+export async function cancelCustomerAdvanceAction(input: CancelCustomerAdvanceInput): Promise<InvoiceActionResult> {
+  const ctx = await getContext();
+  if (!ctx.companyId) return { error: 'Sem empresa activa.' };
+  try {
+    const { id, number } = await cancelCustomerAdvance(forContext(ctx), ctx, input);
+    revalidatePath('/facturas/adiantamentos');
+    revalidatePath('/facturas/adiantamento');
+    revalidatePath('/contas/perfil');
+    revalidatePath('/tesouraria');
+    revalidatePath('/contabilidade');
+    return { ok: true, id, number };
   } catch (e) {
     if (e instanceof DomainError) return { error: e.message };
     throw e;

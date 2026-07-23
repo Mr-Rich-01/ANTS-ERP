@@ -4,7 +4,7 @@ import { useEffect, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger, Input, Label } from '@ants/ui';
 import { Icon } from '@/components/Icon';
-import { reverseCustomerPaymentAction } from '@/app/(erp)/facturas/actions';
+import { cancelCustomerAdvanceAction } from '@/app/(erp)/facturas/actions';
 import { fmt } from '@/lib/format';
 
 function createIdempotencyKey(): string {
@@ -22,18 +22,16 @@ function displayDate(value: string): string {
   return `${day}/${month}/${year}`;
 }
 
-export interface PaymentReversalDialogPayment {
+export interface AdvanceCancellationDialogAdvance {
   id: string;
   number: string;
   amount: number;
   customerName: string;
-  invoiceNumber: string;
-  treasuryAccountName: string | null;
-  /** Método do REC — 'ADVANCE' activa o texto da reversão simétrica de adiantamento (S18). */
-  method?: string;
+  treasuryAccountName: string;
 }
 
-export function PaymentReversalDialog({ payment, reversalDate, trigger }: { payment: PaymentReversalDialogPayment; reversalDate: string; trigger: React.ReactNode }) {
+/** Cancelamento de RA intacto (S18) — só elegível sem aplicações activas nem devoluções. */
+export function AdvanceCancellationDialog({ advance, cancellationDate, trigger }: { advance: AdvanceCancellationDialogAdvance; cancellationDate: string; trigger: React.ReactNode }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
@@ -54,13 +52,13 @@ export function PaymentReversalDialog({ payment, reversalDate, trigger }: { paym
   const submit = () => {
     setError(null);
     if (reason.trim().length < 10) return setError('Indique um motivo com pelo menos 10 caracteres.');
-    if (!confirmed) return setError('Confirme a anulação do recibo.');
+    if (!confirmed) return setError('Confirme o cancelamento do recibo de adiantamento.');
     startTransition(async () => {
-      const res = await reverseCustomerPaymentAction({
-        paymentId: payment.id,
+      const res = await cancelCustomerAdvanceAction({
+        advanceId: advance.id,
         idempotencyKey,
-        reversalReason: reason,
-        reversalDate,
+        cancellationReason: reason,
+        cancellationDate,
       });
       if (res.error) setError(res.error);
       else {
@@ -76,19 +74,17 @@ export function PaymentReversalDialog({ payment, reversalDate, trigger }: { paym
       <DialogTrigger asChild>{trigger}</DialogTrigger>
       <DialogContent style={{ maxWidth: 540 }}>
         <DialogHeader>
-          <DialogTitle>Anular recibo</DialogTitle>
-          <DialogDescription>Recibo {payment.number} - {fmt(payment.amount)}</DialogDescription>
+          <DialogTitle>Cancelar recibo de adiantamento</DialogTitle>
+          <DialogDescription>{advance.number} - {fmt(advance.amount)}</DialogDescription>
         </DialogHeader>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 13 }}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
             {[
-              ['Cliente', payment.customerName],
-              ['Factura', payment.invoiceNumber],
-              payment.method === 'ADVANCE'
-                ? ['Método', 'Adiantamento (sem tesouraria)']
-                : ['Conta financeira', payment.treasuryAccountName ?? 'Conta não encontrada'],
-              ['Data da anulação', displayDate(reversalDate)],
+              ['Cliente', advance.customerName],
+              ['Conta financeira', advance.treasuryAccountName],
+              ['Valor a devolver da conta', fmt(advance.amount)],
+              ['Data do cancelamento', displayDate(cancellationDate)],
             ].map(([label, value]) => (
               <div key={label} style={{ border: '1px solid var(--bd-soft)', borderRadius: 8, padding: '9px 10px', minWidth: 0 }}>
                 <div style={{ fontSize: 11, color: 'var(--text3)', marginBottom: 3 }}>{label}</div>
@@ -98,14 +94,14 @@ export function PaymentReversalDialog({ payment, reversalDate, trigger }: { paym
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <Label htmlFor={`reversal-date-${payment.id}`}>Data da anulação</Label>
-            <Input id={`reversal-date-${payment.id}`} type="date" value={reversalDate} readOnly />
+            <Label htmlFor={`advance-cancel-date-${advance.id}`}>Data do cancelamento</Label>
+            <Input id={`advance-cancel-date-${advance.id}`} type="date" value={cancellationDate} readOnly />
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <Label htmlFor={`reversal-reason-${payment.id}`}>Motivo</Label>
+            <Label htmlFor={`advance-cancel-reason-${advance.id}`}>Motivo</Label>
             <textarea
-              id={`reversal-reason-${payment.id}`}
+              id={`advance-cancel-reason-${advance.id}`}
               value={reason}
               onChange={(e) => setReason(e.target.value)}
               maxLength={500}
@@ -116,16 +112,12 @@ export function PaymentReversalDialog({ payment, reversalDate, trigger }: { paym
 
           <div style={{ display: 'flex', gap: 9, alignItems: 'flex-start', border: '1px solid var(--warn)', background: 'var(--warn-bg)', color: 'var(--text)', borderRadius: 8, padding: '10px 12px', fontSize: 12.5, lineHeight: 1.45 }}>
             <Icon name="alert-triangle" size={16} color="var(--warn)" />
-            <span>
-              {payment.method === 'ADVANCE'
-                ? 'Esta operação anulará o recebimento, restaurará o saldo da factura e do cliente, reporá o valor no saldo remanescente do Recibo de Adiantamento de origem e criará um lançamento contabilístico inverso. Sem movimento de Tesouraria: o dinheiro permanece no adiantamento. O recibo original permanecerá no histórico.'
-                : 'Esta operação anulará o recebimento, restaurará o saldo da factura e do cliente, criará um movimento inverso de Tesouraria e um lançamento contabilístico inverso. O recibo original permanecerá no histórico.'}
-            </span>
+            <span>Esta operação cancelará o recibo de adiantamento, criará um movimento inverso de Tesouraria (saída do valor recebido) e um lançamento contabilístico inverso. Só é possível com o adiantamento intacto — sem aplicações activas em facturas nem devoluções. O documento original permanecerá no histórico.</span>
           </div>
 
           <label style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 12.5, color: 'var(--text2)' }}>
             <input type="checkbox" checked={confirmed} onChange={(e) => setConfirmed(e.target.checked)} />
-            Confirmo a anulação integral deste recibo.
+            Confirmo o cancelamento integral deste recibo de adiantamento.
           </label>
 
           {error && (
@@ -140,7 +132,7 @@ export function PaymentReversalDialog({ payment, reversalDate, trigger }: { paym
               Fechar
             </Button>
             <Button type="button" onClick={submit} disabled={pending}>
-              {pending ? 'A anular...' : 'Anular recibo'}
+              {pending ? 'A cancelar...' : 'Cancelar adiantamento'}
             </Button>
           </DialogFooter>
         </div>

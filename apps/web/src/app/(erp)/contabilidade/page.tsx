@@ -8,8 +8,10 @@ import {
   accountingSourceTypeLabel,
   getAccountLedgerReport,
   getAccountingJournalReport,
+  getGeneralLedgerReport,
   getAccountingReportOptions,
   getCompanyPrintProfile,
+  getTrialBalanceClassOptions,
   getTrialBalanceReport,
   hasPermission,
   journalEntryStatusLabel,
@@ -81,6 +83,7 @@ function journalTypeFromSearch(value: string | undefined): AccountingJournalType
 
 function filtersFromSearch(searchParams: Search): AccountingReportFilters {
   const fallback = todayYearRange();
+  const contas = clean(one(searchParams.contas));
   return {
     from: clean(one(searchParams.from)) ?? fallback.from,
     to: clean(one(searchParams.to)) ?? fallback.to,
@@ -90,6 +93,8 @@ function filtersFromSearch(searchParams: Search): AccountingReportFilters {
     journalType: journalTypeFromSearch(clean(one(searchParams.type))),
     status: statusFromSearch(clean(one(searchParams.status))),
     q: clean(one(searchParams.q)),
+    accountClass: clean(one(searchParams.classe)),
+    accountMovement: contas === 'WITHOUT' || contas === 'ALL' ? contas : undefined,
   };
 }
 
@@ -103,6 +108,8 @@ function appendFilters(qs: URLSearchParams, view: View, filters: AccountingRepor
   if (filters.journalType) qs.set('type', filters.journalType);
   if (filters.status) qs.set('status', filters.status);
   if (filters.q) qs.set('q', filters.q);
+  if (filters.accountClass) qs.set('classe', filters.accountClass);
+  if (filters.accountMovement) qs.set('contas', filters.accountMovement);
   if (cols) qs.set('cols', cols);
 }
 
@@ -202,16 +209,20 @@ export default async function ContabilidadePage({ searchParams }: { searchParams
   const db = forCompany(ctx.companyId);
   const filters = filtersFromSearch(searchParams);
   const view = viewFromSearch(searchParams);
+  // S18: variante «todas as contas» do Razão (a consulta de conta única fica intacta).
+  const razaoTodas = view === 'ledger' && clean(one(searchParams.razao)) === 'todas';
   const colsParam = clean(one(searchParams.cols));
   const trialColumns = parseTrialBalanceColumns(colsParam);
-  const [options, journal, trial, company] = await Promise.all([
+  const [options, journal, trial, company, trialClasses] = await Promise.all([
     getAccountingReportOptions(db, ctx),
     getAccountingJournalReport(db, ctx, filters),
     getTrialBalanceReport(db, ctx, filters),
     getCompanyPrintProfile(db, ctx),
+    getTrialBalanceClassOptions(db, ctx),
   ]);
   const selectedAccountId = filters.ledgerAccountId ?? options.accounts.find((a) => a.isPosting && a.isActive)?.id ?? options.accounts[0]?.id;
-  const ledger = selectedAccountId ? await getAccountLedgerReport(db, ctx, selectedAccountId, filters) : null;
+  const generalLedger = razaoTodas ? await getGeneralLedgerReport(db, ctx, filters) : null;
+  const ledger = selectedAccountId && !razaoTodas ? await getAccountLedgerReport(db, ctx, selectedAccountId, filters) : null;
   const activeAccount = ledger?.account ?? options.accounts.find((a) => a.id === selectedAccountId) ?? null;
   const canExport = hasPermission(ctx, 'reports.export');
   const periodLabel = `${datePt(journal.filters.from)} a ${datePt(journal.filters.to)}`;
@@ -228,7 +239,7 @@ export default async function ContabilidadePage({ searchParams }: { searchParams
       }
     : {
         value: 'Filtrado',
-        label: 'Validacao global indisponivel com filtro de conta',
+        label: filters.accountMovement === 'WITHOUT' ? 'Contas sem movimento — validacao global nao se aplica' : 'Validacao global indisponivel com o filtro aplicado',
         tone: 'blue' as const,
         color: 'var(--info)',
         background: 'var(--info-bg)',
@@ -253,12 +264,24 @@ export default async function ContabilidadePage({ searchParams }: { searchParams
             <div style={{ fontSize: 12.5, color: 'var(--text3)', marginTop: 4 }}>Plano de contas, extrato diario, razao e balancete com dados reais - {periodLabel}</div>
           </div>
           <PrintButton label="Imprimir / Guardar PDF" />
-          {canExport && view !== 'chart' ? (
+          {canExport && view !== 'chart' && !razaoTodas ? (
+            <a href={`${exportHref(view, filters, selectedAccountId, colsParam)}&formato=xlsx`} style={{ ...actionBtn, background: ACCENT, color: '#fff', borderColor: ACCENT }}>
+              <Icon name="sheet" size={14} />
+              Excel
+            </a>
+          ) : null}
+          {canExport && razaoTodas ? (
+            <a href={`${exportHref('ledger', filters, undefined, colsParam)}&razao=todas&formato=xlsx`} style={{ ...actionBtn, background: ACCENT, color: '#fff', borderColor: ACCENT }}>
+              <Icon name="sheet" size={14} />
+              Excel
+            </a>
+          ) : null}
+          {canExport && view !== 'chart' && !razaoTodas ? (
             <Link href={exportHref(view, filters, selectedAccountId, colsParam)} style={actionBtn}>
               <Icon name="download" size={14} />
               CSV
             </Link>
-          ) : (
+          ) : razaoTodas ? null : (
             <span style={{ ...actionBtn, opacity: 0.55, cursor: 'not-allowed' }}>
               <Icon name="download" size={14} />
               {view === 'chart' ? 'CSV nos relatorios' : 'CSV sem permissao'}
@@ -279,6 +302,7 @@ export default async function ContabilidadePage({ searchParams }: { searchParams
 
         <form method="get" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(150px,1fr))', gap: 10, alignItems: 'end' }}>
           <input type="hidden" name="view" value={view} />
+          {razaoTodas ? <input type="hidden" name="razao" value="todas" /> : null}
           {colsParam ? <input type="hidden" name="cols" value={colsParam} /> : null}
           <label style={labelStyle}>
             Data inicial
@@ -341,6 +365,27 @@ export default async function ContabilidadePage({ searchParams }: { searchParams
             Pesquisa
             <input name="q" defaultValue={filters.q ?? ''} placeholder="Referencia ou descricao" style={field} />
           </label>
+          {view === 'trial-balance' ? (
+            <>
+              <label style={labelStyle}>
+                Classe
+                <select name="classe" defaultValue={filters.accountClass ?? ''} style={field}>
+                  <option value="">Todas</option>
+                  {trialClasses.map((c) => (
+                    <option key={c.code} value={c.code}>{c.code} - {c.name}</option>
+                  ))}
+                </select>
+              </label>
+              <label style={labelStyle}>
+                Contas
+                <select name="contas" defaultValue={filters.accountMovement ?? ''} style={field}>
+                  <option value="">Com movimento</option>
+                  <option value="WITHOUT">Sem movimento</option>
+                  <option value="ALL">Todas</option>
+                </select>
+              </label>
+            </>
+          ) : null}
           <button type="submit" style={{ ...actionBtn, background: ACCENT, color: '#fff', borderColor: ACCENT }}>
             <Icon name="filter" size={14} />
             Aplicar
@@ -356,7 +401,7 @@ export default async function ContabilidadePage({ searchParams }: { searchParams
         <div className="ants-print-only">
           <CompanyHeader
             company={company}
-            title={view === 'chart' ? 'Plano de contas' : view === 'ledger' ? 'Razao / Extracto por conta' : view === 'trial-balance' ? 'Balancete' : 'Extrato Diario'}
+            title={view === 'chart' ? 'Plano de contas' : view === 'ledger' ? (razaoTodas ? 'Razao Geral — todas as contas' : 'Razao / Extracto por conta') : view === 'trial-balance' ? 'Balancete' : 'Extrato Diario'}
             documentNumber={periodLabel}
             meta={<div style={{ fontSize: 12, color: '#5f7378', lineHeight: 1.5 }}>Gerado em {generatedAt()}<br />Empresa activa: {company?.legalName ?? ctx.companyId}</div>}
           />
@@ -441,11 +486,77 @@ export default async function ContabilidadePage({ searchParams }: { searchParams
           </div>
         ) : null}
 
-        {view === 'ledger' ? (
+        {view === 'ledger' && razaoTodas ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <div className="ants-noprint" style={{ ...panel, padding: '13px 16px', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+              <strong style={{ fontSize: 14, color: 'var(--text)' }}>Razao Geral — todas as contas</strong>
+              <span style={{ fontSize: 12, color: 'var(--text3)' }}>
+                {generalLedger?.sections.length ?? 0} conta{(generalLedger?.sections.length ?? 0) === 1 ? '' : 's'} com movimento no periodo
+                {generalLedger?.truncated ? ' · relatorio cortado no tecto de linhas — reduza o periodo' : ''}
+              </span>
+              <Link href={viewHref('ledger', filters, selectedAccountId, colsParam)} style={{ ...actionBtn, marginLeft: 'auto', height: 32 }}>
+                <Icon name="list-tree" size={14} />
+                Conta unica
+              </Link>
+            </div>
+            {!generalLedger || generalLedger.sections.length === 0 ? (
+              <div style={{ ...panel, padding: '34px 16px', textAlign: 'center', color: 'var(--text3)', fontSize: 13 }}>
+                Sem movimentos contabilisticos no periodo seleccionado.
+              </div>
+            ) : (
+              generalLedger.sections.map((section, index) => (
+                <div key={section.account.id} className={index < generalLedger.sections.length - 1 ? 'ants-page-break-after' : undefined} style={panel}>
+                  <div style={{ padding: '13px 16px', borderBottom: '1px solid var(--bd-soft)' }}>
+                    <strong style={{ fontSize: 14, color: 'var(--text)' }}>
+                      <span className="font-mono">{section.account.code}</span> — {section.account.name}
+                    </strong>
+                  </div>
+                  <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', minWidth: 760, borderCollapse: 'collapse' }}>
+                      <thead>
+                        <tr>{['Data', 'Documento', 'Descricao', 'Debito', 'Credito', 'Saldo acumulado'].map((h) => <th key={h} style={{ ...th, textAlign: ['Debito', 'Credito', 'Saldo acumulado'].includes(h) ? 'right' : 'left' }}>{h}</th>)}</tr>
+                      </thead>
+                      <tbody>
+                        <tr>
+                          <td colSpan={5} style={{ ...td, fontWeight: 800, color: 'var(--text)' }}>Saldo inicial</td>
+                          <td className="tnum" style={{ ...td, textAlign: 'right', fontWeight: 800, color: 'var(--text)' }}>{balanceValue(section.openingBalance, section.account.normalBalance)}</td>
+                        </tr>
+                        {section.rows.map((row, rowIndex) => (
+                          <tr key={`${row.entryId}-${rowIndex}`} className="ants-row">
+                            <td style={td}>{datePt(row.date)}</td>
+                            <td className="font-mono" style={{ ...td, color: 'var(--accent-fg)', fontWeight: 700 }}>{row.entryNumber}</td>
+                            <td style={td}>{row.description}<br /><span style={{ color: 'var(--text3)' }}>{row.reference ?? (accountingEventLabel(row.accountingEvent) || '-')}</span></td>
+                            <td className="tnum" style={{ ...td, textAlign: 'right', fontWeight: 700 }}>{row.debit ? fmtNoSymbol(row.debit) : '-'}</td>
+                            <td className="tnum" style={{ ...td, textAlign: 'right', fontWeight: 700 }}>{row.credit ? fmtNoSymbol(row.credit) : '-'}</td>
+                            <td className="tnum" style={{ ...td, textAlign: 'right', fontWeight: 800, color: 'var(--text)' }}>{balanceValue(row.balance, section.account.normalBalance)}</td>
+                          </tr>
+                        ))}
+                        <tr>
+                          <td colSpan={3} style={{ ...td, fontWeight: 800, color: 'var(--text)', background: 'var(--card2)' }}>Totais da conta</td>
+                          <td className="tnum" style={{ ...td, textAlign: 'right', fontWeight: 800, background: 'var(--card2)' }}>{fmtNoSymbol(section.totalDebit)}</td>
+                          <td className="tnum" style={{ ...td, textAlign: 'right', fontWeight: 800, background: 'var(--card2)' }}>{fmtNoSymbol(section.totalCredit)}</td>
+                          <td className="tnum" style={{ ...td, textAlign: 'right', fontWeight: 800, background: 'var(--card2)' }}>{balanceValue(section.closingBalance, section.account.normalBalance)}</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        ) : null}
+
+        {view === 'ledger' && !razaoTodas ? (
           <div style={panel}>
-            <div style={{ padding: '13px 16px', borderBottom: '1px solid var(--bd-soft)' }}>
-              <strong style={{ fontSize: 14, color: 'var(--text)' }}>Razao / extracto por conta</strong>
-              <div style={{ fontSize: 12, color: 'var(--text3)', marginTop: 4 }}>{activeAccount ? `${activeAccount.code} - ${activeAccount.name}` : 'Sem conta seleccionada'}</div>
+            <div style={{ padding: '13px 16px', borderBottom: '1px solid var(--bd-soft)', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+              <div>
+                <strong style={{ fontSize: 14, color: 'var(--text)' }}>Razao / extracto por conta</strong>
+                <div style={{ fontSize: 12, color: 'var(--text3)', marginTop: 4 }}>{activeAccount ? `${activeAccount.code} - ${activeAccount.name}` : 'Sem conta seleccionada'}</div>
+              </div>
+              <Link href={`${viewHref('ledger', filters, selectedAccountId, colsParam)}&razao=todas`} className="ants-noprint" style={{ ...actionBtn, marginLeft: 'auto', height: 32 }}>
+                <Icon name="layers" size={14} />
+                Todas as contas
+              </Link>
             </div>
             <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', minWidth: 900, borderCollapse: 'collapse' }}>

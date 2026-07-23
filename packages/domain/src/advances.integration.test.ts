@@ -16,6 +16,7 @@ import type { RequestContext } from './context';
 import {
   applyAdvanceToInvoice,
   advanceRemaining,
+  cancelCustomerAdvance,
   createCustomerAdvance,
   createCustomerRefund,
   getCustomerAdvance,
@@ -25,12 +26,13 @@ import {
   listCustomerAdvances,
   listCustomerRefunds,
   refundAdvance,
+  reverseAdvanceApplication,
   type CustomerAdvanceInput,
 } from './advances';
-import { createInvoice, createPayment, getCustomerStatement } from './invoices';
+import { createInvoice, createPayment, getCustomerStatement, reverseCustomerPayment } from './invoices';
 import { createCreditNote } from './commercial-documents';
 import { getBalanceSheetReport } from './accounting-statements';
-import { ForbiddenError, NotFoundError, ValidationError } from './errors';
+import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from './errors';
 
 const CA = 'smoke-advances';
 const CB = 'smoke-advances-b';
@@ -579,5 +581,302 @@ describe('S17 — Recibo de Adiantamento + Devolucao ao Cliente', () => {
       advances.reduce((acc, a) => acc + advanceRemaining({ amount: Number(a.amount), appliedTotal: Number(a.appliedTotal), refundedTotal: Number(a.refundedTotal) }), 0),
     );
     expect(ledger241).toBe(operationalRemaining);
+  });
+});
+
+describe('S18 — Anulacao simetrica de adiantamentos', () => {
+  const cancelCtx = ctx(CA, ['sales.view', 'sales.create', 'payments.receive', 'payments.cancel', 'treasury.createMovement', 'clients.view', 'accounting.view']);
+  /** RA do ciclo completo: aplicar → anular a aplicacao → cancelar o RA. */
+  let cycleAdvanceId = '';
+  let cycleInvoiceId = '';
+  let cyclePaymentId = '';
+
+  it('R1: anular o REC de aplicacao repoe o saldo do RA e devolve a factura a divida', async () => {
+    const { id: advanceId } = await createCustomerAdvance(prisma, fullCtx, advanceInput({ amount: 300 }));
+    cycleAdvanceId = advanceId;
+    const invoice = await newInvoice(2); // 232,00
+    cycleInvoiceId = invoice.id;
+    const applied = await applyAdvanceToInvoice(prisma, fullCtx, {
+      idempotencyKey: randomUUID(),
+      advanceId,
+      invoiceId: invoice.id,
+      amount: 232,
+    });
+    cyclePaymentId = applied.paymentId;
+    expect((await prisma.invoice.findUniqueOrThrow({ where: { id: invoice.id } })).status).toBe('PAID');
+
+    const customerBefore = Number((await prisma.customer.findUniqueOrThrow({ where: { id: ids.customer } })).balance);
+    const cashBefore = await cashBalance();
+
+    // Caminho da UI: reverseCustomerPayment delega para a reversao simetrica (S18).
+    const result = await reverseCustomerPayment(prisma, cancelCtx, {
+      paymentId: applied.paymentId,
+      idempotencyKey: randomUUID(),
+      reversalReason: 'Aplicacao registada por engano',
+      reversalDate: CURRENT_DATE,
+    });
+    expect(result.treasuryReversalId).toBeNull();
+    expect(result.accountingReversalId).toBeTruthy();
+
+    // REC anulado; factura volta a divida integral; saldo do cliente reposto.
+    const payment = await prisma.payment.findUniqueOrThrow({ where: { id: applied.paymentId } });
+    expect(payment.status).toBe('REVERSED');
+    expect(payment.reversalReason).toBe('Aplicacao registada por engano');
+    const invoiceAfter = await prisma.invoice.findUniqueOrThrow({ where: { id: invoice.id } });
+    expect(invoiceAfter.status).toBe('ISSUED');
+    expect(Number(invoiceAfter.amountPaid)).toBe(0);
+    const customerAfter = Number((await prisma.customer.findUniqueOrThrow({ where: { id: ids.customer } })).balance);
+    expect(round2(customerAfter - customerBefore)).toBe(232);
+
+    // Saldo do RA reposto por inteiro; estado volta a ABERTO.
+    const detail = await getCustomerAdvance(dbA, viewCtx, advanceId);
+    expect(detail.appliedTotal).toBe(0);
+    expect(detail.remaining).toBe(300);
+    expect(detail.state).toBe('ABERTO');
+    expect(detail.applications.length).toBe(1);
+    expect(detail.applications[0]!.reversed).toBe(true);
+
+    // Sem tesouraria: nenhum movimento novo, caixa intacta.
+    expect(await cashBalance()).toBe(cashBefore);
+    expect(await prisma.treasuryMovement.count({ where: { companyId: CA, sourceId: applied.paymentId } })).toBe(0);
+
+    // Estorno contabilistico balanceado e simetrico: D 121 / C 241 (inverso do ADVANCE_APPLIED).
+    const original = await prisma.journalEntry.findFirstOrThrow({
+      where: { companyId: CA, sourceType: 'CUSTOMER_ADVANCE_APPLICATION', sourceId: applied.applicationId, accountingEvent: 'ADVANCE_APPLIED' },
+    });
+    expect(original.status).toBe('REVERSED');
+    const reversal = await prisma.journalEntry.findFirstOrThrow({
+      where: { companyId: CA, reversalOfId: original.id },
+      include: { lines: { include: { ledgerAccount: true } } },
+    });
+    expect(reversal.id).toBe(result.accountingReversalId);
+    const debit = reversal.lines.reduce((acc, l) => acc + Number(l.debit), 0);
+    const credit = reversal.lines.reduce((acc, l) => acc + Number(l.credit), 0);
+    expect(debit).toBe(232);
+    expect(debit).toBe(credit);
+    expect(reversal.lines.find((l) => Number(l.debit) > 0)?.ledgerAccount.code).toBe('121');
+    expect(reversal.lines.find((l) => Number(l.credit) > 0)?.ledgerAccount.code).toBe('241');
+  });
+
+  it('R2: reversao idempotente — replay devolve o mesmo resultado e nao duplica estornos', async () => {
+    const { id: advanceId } = await createCustomerAdvance(prisma, fullCtx, advanceInput({ amount: 116 }));
+    const invoice = await newInvoice(1); // 116,00
+    const applied = await applyAdvanceToInvoice(prisma, fullCtx, {
+      idempotencyKey: randomUUID(),
+      advanceId,
+      invoiceId: invoice.id,
+      amount: 116,
+    });
+    const input = {
+      paymentId: applied.paymentId,
+      idempotencyKey: randomUUID(),
+      reversalReason: 'Reversao idempotente de teste',
+      reversalDate: CURRENT_DATE,
+    };
+    const first = await reverseAdvanceApplication(prisma, cancelCtx, input);
+    const replay = await reverseAdvanceApplication(prisma, cancelCtx, input);
+    expect(replay).toEqual(first);
+    const original = await prisma.journalEntry.findFirstOrThrow({
+      where: { companyId: CA, sourceType: 'CUSTOMER_ADVANCE_APPLICATION', sourceId: applied.applicationId, accountingEvent: 'ADVANCE_APPLIED' },
+    });
+    expect(await prisma.journalEntry.count({ where: { companyId: CA, reversalOfId: original.id } })).toBe(1);
+    const advance = await prisma.customerAdvance.findUniqueOrThrow({ where: { id: advanceId } });
+    expect(Number(advance.appliedTotal)).toBe(0); // reposto UMA vez, nao duas
+
+    // Nova tentativa com chave nova: o REC ja esta anulado.
+    await expect(
+      reverseAdvanceApplication(prisma, cancelCtx, { ...input, idempotencyKey: randomUUID() }),
+    ).rejects.toBeInstanceOf(ConflictError);
+  });
+
+  it('R3: bloqueios de cancelamento — aplicacoes activas ou devolucoes impedem cancelar o RA', async () => {
+    // RA com aplicacao activa.
+    const { id: withApp } = await createCustomerAdvance(prisma, fullCtx, advanceInput({ amount: 100 }));
+    const invoice = await newInvoice(1);
+    await applyAdvanceToInvoice(prisma, fullCtx, { idempotencyKey: randomUUID(), advanceId: withApp, invoiceId: invoice.id, amount: 50 });
+    await expect(
+      cancelCustomerAdvance(prisma, cancelCtx, {
+        advanceId: withApp,
+        idempotencyKey: randomUUID(),
+        cancellationReason: 'Tentativa com aplicacoes activas',
+        cancellationDate: CURRENT_DATE,
+      }),
+    ).rejects.toThrow(/aplicacoes activas|aplicações activas/);
+
+    // RA com devolucao.
+    const { id: withRefund } = await createCustomerAdvance(prisma, fullCtx, advanceInput({ amount: 80 }));
+    await refundAdvance(prisma, fullCtx, {
+      idempotencyKey: randomUUID(),
+      issueDate: CURRENT_DATE,
+      advanceId: withRefund,
+      amount: 30,
+      method: 'CASH',
+      accountId: ids.cashAccount,
+      reason: 'Devolucao parcial antes do cancelamento',
+    });
+    await expect(
+      cancelCustomerAdvance(prisma, cancelCtx, {
+        advanceId: withRefund,
+        idempotencyKey: randomUUID(),
+        cancellationReason: 'Tentativa com devolucoes feitas',
+        cancellationDate: CURRENT_DATE,
+      }),
+    ).rejects.toThrow(/devolu/);
+  });
+
+  it('R4: ciclo completo — apos anular a aplicacao, o RA intacto e cancelavel (tesouraria revertida, CANCELADO)', async () => {
+    const cashBefore = await cashBalance();
+    const input = {
+      advanceId: cycleAdvanceId,
+      idempotencyKey: randomUUID(),
+      cancellationReason: 'Adiantamento registado por engano',
+      cancellationDate: CURRENT_DATE,
+    };
+    const result = await cancelCustomerAdvance(prisma, cancelCtx, input);
+    expect(result.treasuryReversalId).toBeTruthy();
+    expect(result.accountingReversalId).toBeTruthy();
+
+    // Tesouraria revertida: saida compensatoria de 300 e movimento original REVERSED.
+    expect(await cashBalance()).toBe(round2(cashBefore - 300));
+    const originalMovement = await prisma.treasuryMovement.findFirstOrThrow({
+      where: { companyId: CA, sourceType: 'CUSTOMER_ADVANCE', sourceId: cycleAdvanceId, movementPurpose: 'ADVANCE_IN' },
+    });
+    expect(originalMovement.status).toBe('REVERSED');
+    const reversalMovement = await prisma.treasuryMovement.findFirstOrThrow({ where: { companyId: CA, reversesId: originalMovement.id } });
+    expect(reversalMovement.flow).toBe('OUT');
+    expect(Number(reversalMovement.amount)).toBe(300);
+    expect(reversalMovement.movementPurpose).toBe('ADVANCE_IN_REVERSAL');
+
+    // ADVANCE_RECEIVED estornado: D 241 / C 111.
+    const originalEntry = await prisma.journalEntry.findFirstOrThrow({
+      where: { companyId: CA, sourceType: 'CUSTOMER_ADVANCE', sourceId: cycleAdvanceId, accountingEvent: 'ADVANCE_RECEIVED' },
+    });
+    expect(originalEntry.status).toBe('REVERSED');
+    const reversalEntry = await prisma.journalEntry.findFirstOrThrow({
+      where: { companyId: CA, reversalOfId: originalEntry.id },
+      include: { lines: { include: { ledgerAccount: true } } },
+    });
+    expect(reversalEntry.lines.find((l) => Number(l.debit) > 0)?.ledgerAccount.code).toBe('241');
+    expect(reversalEntry.lines.find((l) => Number(l.credit) > 0)?.ledgerAccount.code).toBe('111');
+
+    // Estado CANCELADO com motivo; replay idempotente devolve o mesmo resultado.
+    const detail = await getCustomerAdvance(dbA, viewCtx, cycleAdvanceId);
+    expect(detail.state).toBe('CANCELADO');
+    expect(detail.cancellationReason).toBe('Adiantamento registado por engano');
+    const replay = await cancelCustomerAdvance(prisma, cancelCtx, input);
+    expect(replay).toEqual(result);
+    expect(await prisma.journalEntry.count({ where: { companyId: CA, reversalOfId: originalEntry.id } })).toBe(1);
+
+    // Nova tentativa com chave nova: ja cancelado.
+    await expect(
+      cancelCustomerAdvance(prisma, cancelCtx, { ...input, idempotencyKey: randomUUID() }),
+    ).rejects.toBeInstanceOf(ConflictError);
+
+    // RA cancelado nao aceita aplicacoes nem devolucoes.
+    const inv = await newInvoice(1);
+    await expect(
+      applyAdvanceToInvoice(prisma, fullCtx, { idempotencyKey: randomUUID(), advanceId: cycleAdvanceId, invoiceId: inv.id, amount: 10 }),
+    ).rejects.toBeInstanceOf(ConflictError);
+    await expect(
+      refundAdvance(prisma, fullCtx, {
+        idempotencyKey: randomUUID(),
+        issueDate: CURRENT_DATE,
+        advanceId: cycleAdvanceId,
+        amount: 10,
+        method: 'CASH',
+        accountId: ids.cashAccount,
+        reason: 'Tentativa sobre RA cancelado',
+      }),
+    ).rejects.toBeInstanceOf(ConflictError);
+
+    // A factura do ciclo continua em divida (a anulacao da aplicacao nao foi desfeita pelo cancelamento).
+    const invoiceAfter = await prisma.invoice.findUniqueOrThrow({ where: { id: cycleInvoiceId } });
+    expect(invoiceAfter.status).toBe('ISSUED');
+    const payment = await prisma.payment.findUniqueOrThrow({ where: { id: cyclePaymentId } });
+    expect(payment.status).toBe('REVERSED');
+  });
+
+  it('R5: permissoes — anulacao e cancelamento exigem payments.cancel', async () => {
+    await expect(
+      reverseAdvanceApplication(prisma, fullCtx, {
+        paymentId: cyclePaymentId,
+        idempotencyKey: randomUUID(),
+        reversalReason: 'Sem permissao para anular',
+        reversalDate: CURRENT_DATE,
+      }),
+    ).rejects.toBeInstanceOf(ForbiddenError);
+    await expect(
+      cancelCustomerAdvance(prisma, fullCtx, {
+        advanceId: cycleAdvanceId,
+        idempotencyKey: randomUUID(),
+        cancellationReason: 'Sem permissao para cancelar',
+        cancellationDate: CURRENT_DATE,
+      }),
+    ).rejects.toBeInstanceOf(ForbiddenError);
+  });
+
+  it('R6: concorrencia — reversao e aplicacao simultaneas nunca corrompem o saldo do RA', async () => {
+    const { id: advanceId } = await createCustomerAdvance(prisma, fullCtx, advanceInput({ amount: 100 }));
+    const inv1 = await newInvoice(1); // 116,00
+    const applied = await applyAdvanceToInvoice(prisma, fullCtx, {
+      idempotencyKey: randomUUID(),
+      advanceId,
+      invoiceId: inv1.id,
+      amount: 60,
+    });
+    const inv2 = await newInvoice(1);
+
+    // Reversao da aplicacao (repoe 60) em corrida com nova aplicacao de 70 (so cabe apos a reversao).
+    const results = await Promise.allSettled([
+      reverseAdvanceApplication(prisma, cancelCtx, {
+        paymentId: applied.paymentId,
+        idempotencyKey: randomUUID(),
+        reversalReason: 'Reversao em corrida com aplicacao',
+        reversalDate: CURRENT_DATE,
+      }),
+      applyAdvanceToInvoice(prisma, fullCtx, { idempotencyKey: randomUUID(), advanceId, invoiceId: inv2.id, amount: 70 }),
+    ]);
+    // A reversao nunca falha por concorrencia; a aplicacao pode falhar (saldo 40) ou vencer (apos reversao, saldo 100).
+    expect(results[0]!.status).toBe('fulfilled');
+
+    // Invariante final: appliedTotal do RA = soma das aplicacoes cujo REC continua ACTIVO.
+    const advance = await prisma.customerAdvance.findUniqueOrThrow({ where: { id: advanceId } });
+    const activeApplications = await prisma.customerAdvanceApplication.findMany({
+      where: { companyId: CA, advanceId },
+      include: { payment: { select: { status: true } } },
+    });
+    const activeSum = round2(
+      activeApplications.filter((a) => a.payment.status === 'ACTIVE').reduce((acc, a) => acc + Number(a.amount), 0),
+    );
+    expect(round2(Number(advance.appliedTotal))).toBe(activeSum);
+    expect(Number(advance.appliedTotal)).toBeGreaterThanOrEqual(0);
+    expect(advanceRemaining({ amount: 100, appliedTotal: Number(advance.appliedTotal), refundedTotal: 0 })).toBeGreaterThanOrEqual(0);
+  });
+
+  it('R7: balanco ancora apos os ciclos — Activo = Passivo + Capital e 241 = remanescentes nao cancelados', async () => {
+    const report = await getBalanceSheetReport(dbA, fullCtx);
+    expect(report.isBalanced).toBe(true);
+    expect(report.totalAssets).toBe(report.totalLiabilitiesAndEquity);
+
+    const lines = await prisma.journalEntryLine.findMany({ where: { companyId: CA, ledgerAccount: { code: '241' } } });
+    const ledger241 = round2(lines.reduce((acc, l) => acc + Number(l.credit) - Number(l.debit), 0));
+    const advances = await prisma.customerAdvance.findMany({ where: { companyId: CA, cancelledAt: null } });
+    const operationalRemaining = round2(
+      advances.reduce((acc, a) => acc + advanceRemaining({ amount: Number(a.amount), appliedTotal: Number(a.appliedTotal), refundedTotal: Number(a.refundedTotal) }), 0),
+    );
+    // O RA cancelado (ciclo completo) fecha a zero na 241 — recepcao + estorno anulam-se.
+    expect(ledger241).toBe(operationalRemaining);
+
+    const cancelledLines = await prisma.journalEntry.findMany({
+      where: { companyId: CA, sourceType: 'CUSTOMER_ADVANCE', sourceId: cycleAdvanceId },
+      include: { lines: { where: { ledgerAccount: { code: '241' } } } },
+    });
+    const reversalIds = (await prisma.journalEntry.findMany({ where: { companyId: CA, reversalOfId: { in: cancelledLines.map((e) => e.id) } }, include: { lines: { where: { ledgerAccount: { code: '241' } } } } }));
+    const net241 = round2(
+      [...cancelledLines, ...reversalIds]
+        .flatMap((e) => e.lines)
+        .reduce((acc, l) => acc + Number(l.credit) - Number(l.debit), 0),
+    );
+    expect(net241).toBe(0);
   });
 });

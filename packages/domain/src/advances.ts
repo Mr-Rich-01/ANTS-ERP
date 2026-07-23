@@ -24,9 +24,10 @@ import { requireCompany } from './context';
 import { requirePermission } from './permissions';
 import { ConflictError, NotFoundError, ValidationError } from './errors';
 import { writeAudit } from './audit';
-import { postTreasuryMovementTx } from './treasury';
+import { postTreasuryMovementTx, reverseOperationalTreasuryMovementTx } from './treasury';
 import { formatAccountingDate, getMappedAccountTx, parseAccountingDate, type AccountingJournalType } from './accounting';
-import { postAccountingEventTx, resolveTreasuryLedgerTx } from './accounting-events';
+import { postAccountingEventTx, resolveTreasuryLedgerTx, reverseAccountingEventTx } from './accounting-events';
+import { validateOpenReversalDateTx, validateReversalReason } from './reversals';
 import {
   FINGERPRINT_VERSION,
   canonicalRequestFingerprint,
@@ -141,6 +142,8 @@ export interface CustomerAdvanceApplicationItem {
   paymentNumber: string;
   amount: number;
   createdAt: Date;
+  /** true quando o REC de aplicação foi anulado (S18) — o valor voltou ao saldo do RA. */
+  reversed: boolean;
 }
 
 export interface CustomerAdvanceRefundItem {
@@ -169,6 +172,8 @@ export interface CustomerAdvanceDetail {
   state: CustomerAdvanceState;
   createdByName: string | null;
   createdAt: Date;
+  cancelledAt: Date | null;
+  cancellationReason: string | null;
   applications: CustomerAdvanceApplicationItem[];
   refunds: CustomerAdvanceRefundItem[];
 }
@@ -287,7 +292,7 @@ export async function getCustomerAdvance(db: PrismaClient, ctx: RequestContext, 
       treasuryAccount: { select: { name: true } },
       applications: {
         orderBy: { createdAt: 'asc' },
-        include: { invoice: { select: { number: true } }, payment: { select: { number: true } } },
+        include: { invoice: { select: { number: true } }, payment: { select: { number: true, status: true } } },
       },
       refunds: { orderBy: { createdAt: 'asc' }, select: { id: true, number: true, amount: true, issueDate: true } },
     },
@@ -319,6 +324,8 @@ export async function getCustomerAdvance(db: PrismaClient, ctx: RequestContext, 
     state: advanceState(shape),
     createdByName: createdByUser ? createdByUser.name || createdByUser.email : null,
     createdAt: a.createdAt,
+    cancelledAt: a.cancelledAt,
+    cancellationReason: a.cancellationReason,
     applications: a.applications.map((ap) => ({
       id: ap.id,
       invoiceId: ap.invoiceId,
@@ -327,6 +334,7 @@ export async function getCustomerAdvance(db: PrismaClient, ctx: RequestContext, 
       paymentNumber: ap.payment.number,
       amount: Number(ap.amount),
       createdAt: ap.createdAt,
+      reversed: ap.payment.status === 'REVERSED',
     })),
     refunds: a.refunds.map((r) => ({ id: r.id, number: r.number, amount: Number(r.amount), issueDate: r.issueDate })),
   };
@@ -1014,6 +1022,361 @@ export async function refundAdvance(db: PrismaClient, ctx: RequestContext, input
         });
 
         return { resourceType: 'CustomerRefund', resourceId: refund.id, result: { id: refund.id, number } };
+      },
+    });
+    return op.result;
+  });
+}
+
+// ─────────────────────────── Anulação simétrica (S18) ───────────────────────────
+
+const reverseAdvanceApplicationInput = z.object({
+  paymentId: z.string().min(1, 'Recebimento inválido.'),
+  idempotencyKey: z.string().min(1, 'Chave de idempotência obrigatória.'),
+  reversalReason: z.string(),
+  reversalDate: z.string().min(1, 'Data da anulação obrigatória.'),
+});
+
+export type ReverseAdvanceApplicationInput = z.input<typeof reverseAdvanceApplicationInput>;
+
+export interface ReverseAdvanceApplicationResult {
+  id: string;
+  number: string;
+  reversalDate: string;
+  /** Sempre null: o REC de aplicação nunca teve movimento de tesouraria próprio. */
+  treasuryReversalId: null;
+  accountingReversalId: string | null;
+}
+
+function resolveAllowedAdvanceReversalDate(value: string): Date {
+  const requestedDate = parseAccountingDate(value);
+  const currentDate = civilDateInTimeZone();
+  if (formatAccountingDate(requestedDate) !== currentDate) {
+    throw new ValidationError('A data da anulação deve ser a data actual em Africa/Maputo.');
+  }
+  return parseAccountingDate(currentDate);
+}
+
+/**
+ * Anula um REC de aplicação de adiantamento (método ADVANCE) — reversão SIMÉTRICA
+ * do `applyAdvanceToInvoice`: o REC fica ANULADO, a factura volta ao estado de
+ * dívida correcto, o saldo devedor do cliente é reposto e o valor regressa ao
+ * saldo remanescente do RA (sob `FOR UPDATE`). Estorna o `ADVANCE_APPLIED` pelo
+ * mecanismo de verdade histórica da S10. SEM tesouraria: o dinheiro nunca saiu
+ * do RA — continua lá, disponível para nova aplicação ou devolução.
+ */
+export async function reverseAdvanceApplication(
+  db: PrismaClient,
+  ctx: RequestContext,
+  input: ReverseAdvanceApplicationInput,
+): Promise<ReverseAdvanceApplicationResult> {
+  requirePermission(ctx, 'payments.cancel');
+  const companyId = requireCompany(ctx);
+  const parsed = reverseAdvanceApplicationInput.safeParse(input);
+  if (!parsed.success) throw new ValidationError(parsed.error.issues[0]?.message ?? 'Dados inválidos.');
+  const data = parsed.data;
+  const reversalReason = validateReversalReason(data.reversalReason);
+  const reversalDate = resolveAllowedAdvanceReversalDate(data.reversalDate);
+  const requestFingerprint = canonicalRequestFingerprint(FINGERPRINT_VERSION, {
+    companyId,
+    paymentId: data.paymentId,
+    reversalDate: fpDate(reversalDate),
+    reversalReason,
+  });
+
+  return db.$transaction(async (tx) => {
+    const op = await runIdempotentOperation<ReverseAdvanceApplicationResult>(tx, ctx, {
+      scope: 'CUSTOMER_ADVANCE_APPLY_REVERSE',
+      idempotencyKey: data.idempotencyKey,
+      requestFingerprint,
+      expectedResourceType: 'Payment',
+      loadExisting: async (resourceId) => {
+        const payment = await tx.payment.findFirst({ where: { companyId, id: resourceId }, select: { id: true, number: true, status: true } });
+        if (!payment) return null;
+        if (payment.status !== 'REVERSED') throw new ConflictError('Registo de idempotência aponta para um recebimento ainda activo (integridade).');
+        const application = await tx.customerAdvanceApplication.findFirst({ where: { companyId, paymentId: payment.id }, select: { id: true } });
+        if (!application) throw new ConflictError('Registo de idempotência aponta para uma anulação incompleta (integridade).');
+        const originalEntry = await tx.journalEntry.findFirst({
+          where: { companyId, sourceType: 'CUSTOMER_ADVANCE_APPLICATION', sourceId: application.id, accountingEvent: 'ADVANCE_APPLIED' },
+          select: { id: true },
+        });
+        if (!originalEntry) throw new ConflictError('Registo de idempotência aponta para uma anulação incompleta (integridade).');
+        const accountingReversal = await tx.journalEntry.findFirst({ where: { companyId, reversalOfId: originalEntry.id }, select: { id: true } });
+        if (!accountingReversal) throw new ConflictError('Registo de idempotência aponta para uma anulação incompleta (integridade).');
+        return { id: payment.id, number: payment.number, reversalDate: formatAccountingDate(reversalDate), treasuryReversalId: null, accountingReversalId: accountingReversal.id };
+      },
+      run: async () => {
+        await validateOpenReversalDateTx(tx, companyId, reversalDate);
+
+        // Ordem de locks compatível com applyAdvanceToInvoice (factura → RA) e com
+        // reverseCustomerPayment (recibo → factura → cliente).
+        await tx.$queryRaw`SELECT id FROM payments WHERE id = ${data.paymentId} AND "companyId" = ${companyId} FOR UPDATE`;
+        const payment = await tx.payment.findFirst({ where: { companyId, id: data.paymentId } });
+        if (!payment) throw new NotFoundError('Recebimento não encontrado.');
+        if (payment.status === 'REVERSED') throw new ConflictError('Este recebimento já foi anulado.');
+        if (payment.method !== 'ADVANCE') {
+          throw new ConflictError('Este recibo não resulta da aplicação de um adiantamento — anule-o pelo fluxo normal de recibos.');
+        }
+        if (!payment.invoiceId) throw new ConflictError('Recebimento sem factura de origem (integridade).');
+
+        await tx.$queryRaw`SELECT id FROM invoices WHERE id = ${payment.invoiceId} AND "companyId" = ${companyId} FOR UPDATE`;
+        const invoice = await tx.invoice.findFirst({ where: { companyId, id: payment.invoiceId } });
+        if (!invoice) throw new NotFoundError('Factura do recebimento não encontrada.');
+        if (invoice.status === 'CANCELLED') throw new ConflictError('A factura do recebimento está cancelada.');
+        if (invoice.customerId !== payment.customerId) throw new ConflictError('Recebimento e factura apontam para clientes diferentes (integridade).');
+
+        const application = await tx.customerAdvanceApplication.findFirst({ where: { companyId, paymentId: payment.id } });
+        if (!application) throw new ConflictError('Recibo de adiantamento sem aplicação associada (integridade).');
+
+        await tx.$queryRaw`SELECT id FROM customer_advances WHERE id = ${application.advanceId} AND "companyId" = ${companyId} FOR UPDATE`;
+        const advance = await tx.customerAdvance.findFirst({ where: { companyId, id: application.advanceId } });
+        if (!advance) throw new NotFoundError('Recibo de adiantamento da aplicação não encontrado.');
+        if (advance.cancelledAt) throw new ConflictError('O recibo de adiantamento de origem está cancelado (integridade).');
+
+        await tx.$queryRaw`SELECT id FROM customers WHERE id = ${payment.customerId} AND "companyId" = ${companyId} FOR UPDATE`;
+        const customer = await tx.customer.findFirst({ where: { companyId, id: payment.customerId } });
+        if (!customer) throw new NotFoundError('Cliente do recebimento não encontrado.');
+
+        const amount = round2(Number(payment.amount));
+        if (round2(Number(application.amount)) !== amount) {
+          throw new ConflictError('Integridade: a aplicação do adiantamento não coincide com o recebimento.');
+        }
+        const appliedTotalBefore = round2(Number(advance.appliedTotal));
+        if (appliedTotalBefore < amount) {
+          throw new ConflictError('Integridade: o acumulado aplicado do adiantamento é inferior ao valor a repor.');
+        }
+
+        const customerBalanceBefore = round2(Number(customer.balance));
+        await tx.payment.update({
+          where: { id: payment.id },
+          data: { status: 'REVERSED', reversedAt: new Date(), reversedById: ctx.userId, reversalReason },
+        });
+
+        const activePaid = round2(
+          Number(
+            (
+              await tx.payment.aggregate({
+                where: { companyId, invoiceId: invoice.id, status: 'ACTIVE' },
+                _sum: { amount: true },
+              })
+            )._sum.amount ?? 0,
+          ),
+        );
+        const invoiceTotal = round2(Number(invoice.total));
+        const invoiceStatus = activePaid <= 0 ? 'ISSUED' : activePaid >= invoiceTotal ? 'PAID' : 'PARTIAL';
+        await tx.invoice.update({ where: { id: invoice.id }, data: { amountPaid: activePaid, status: invoiceStatus } });
+        const updatedCustomer = await tx.customer.update({ where: { id: customer.id }, data: { balance: { increment: amount } } });
+
+        // Repõe o valor no saldo remanescente do RA (o acumulado aplicado desce).
+        const updatedAdvance = await tx.customerAdvance.update({
+          where: { id: advance.id },
+          data: { appliedTotal: { decrement: amount } },
+        });
+
+        const accountingReversal = await reverseAccountingEventTx(tx, ctx, {
+          origin: { sourceType: 'CUSTOMER_ADVANCE_APPLICATION', sourceId: application.id, accountingEvent: 'ADVANCE_APPLIED' },
+          reversalDate,
+          reason: reversalReason,
+          operationalReference: payment.number,
+        });
+
+        await writeAudit(tx, ctx, {
+          action: 'advance.apply.reverse',
+          entity: 'CustomerAdvance',
+          entityId: advance.id,
+          oldValues: {
+            paymentStatus: payment.status,
+            invoiceAmountPaid: Number(invoice.amountPaid),
+            invoiceStatus: invoice.status,
+            customerBalance: customerBalanceBefore,
+            advanceAppliedTotal: appliedTotalBefore,
+          },
+          newValues: {
+            advanceNumber: advance.number,
+            applicationId: application.id,
+            paymentId: payment.id,
+            receiptNumber: payment.number,
+            invoiceId: invoice.id,
+            invoice: invoice.number,
+            customerId: customer.id,
+            amount,
+            reversalReason,
+            reversalDate: formatAccountingDate(reversalDate),
+            idempotencyKey: data.idempotencyKey,
+            paymentStatus: 'REVERSED',
+            invoiceAmountPaid: activePaid,
+            invoiceStatus,
+            customerBalanceAfter: round2(Number(updatedCustomer.balance)),
+            advanceAppliedTotal: round2(Number(updatedAdvance.appliedTotal)),
+            journalEntryReversalId: accountingReversal.reversalId,
+          },
+        });
+
+        return {
+          resourceType: 'Payment',
+          resourceId: payment.id,
+          result: {
+            id: payment.id,
+            number: payment.number,
+            reversalDate: formatAccountingDate(reversalDate),
+            treasuryReversalId: null,
+            accountingReversalId: accountingReversal.reversalId,
+          },
+        };
+      },
+    });
+    return op.result;
+  });
+}
+
+const cancelAdvanceInput = z.object({
+  advanceId: z.string().min(1, 'Adiantamento inválido.'),
+  idempotencyKey: z.string().min(1, 'Chave de idempotência obrigatória.'),
+  cancellationReason: z.string(),
+  cancellationDate: z.string().min(1, 'Data do cancelamento obrigatória.'),
+});
+
+export type CancelCustomerAdvanceInput = z.input<typeof cancelAdvanceInput>;
+
+export interface CancelCustomerAdvanceResult {
+  id: string;
+  number: string;
+  cancellationDate: string;
+  treasuryReversalId: string | null;
+  accountingReversalId: string | null;
+}
+
+/**
+ * Cancela um RA INTACTO (aplicado líquido = 0 e devolvido = 0): reverte a entrada
+ * de tesouraria e estorna o `ADVANCE_RECEIVED`; o RA fica CANCELADO, nunca se
+ * apaga. Um RA com aplicações activas ou devoluções NÃO é cancelável — o caminho
+ * é anular primeiro os RECs de aplicação (a devolução já devolveu dinheiro real
+ * e não se reverte por aqui).
+ */
+export async function cancelCustomerAdvance(
+  db: PrismaClient,
+  ctx: RequestContext,
+  input: CancelCustomerAdvanceInput,
+): Promise<CancelCustomerAdvanceResult> {
+  requirePermission(ctx, 'payments.cancel');
+  const companyId = requireCompany(ctx);
+  const parsed = cancelAdvanceInput.safeParse(input);
+  if (!parsed.success) throw new ValidationError(parsed.error.issues[0]?.message ?? 'Dados inválidos.');
+  const data = parsed.data;
+  const cancellationReason = validateReversalReason(data.cancellationReason);
+  const cancellationDate = resolveAllowedAdvanceReversalDate(data.cancellationDate);
+  const requestFingerprint = canonicalRequestFingerprint(FINGERPRINT_VERSION, {
+    companyId,
+    advanceId: data.advanceId,
+    cancellationDate: fpDate(cancellationDate),
+    cancellationReason,
+  });
+
+  return db.$transaction(async (tx) => {
+    const op = await runIdempotentOperation<CancelCustomerAdvanceResult>(tx, ctx, {
+      scope: 'CUSTOMER_ADVANCE_CANCEL',
+      idempotencyKey: data.idempotencyKey,
+      requestFingerprint,
+      expectedResourceType: 'CustomerAdvance',
+      loadExisting: async (resourceId) => {
+        const advance = await tx.customerAdvance.findFirst({ where: { companyId, id: resourceId }, select: { id: true, number: true, cancelledAt: true } });
+        if (!advance) return null;
+        if (!advance.cancelledAt) throw new ConflictError('Registo de idempotência aponta para um adiantamento ainda activo (integridade).');
+        const [originalMovement, originalEntry] = await Promise.all([
+          tx.treasuryMovement.findFirst({ where: { companyId, sourceType: 'CUSTOMER_ADVANCE', sourceId: advance.id, movementPurpose: 'ADVANCE_IN' }, select: { id: true } }),
+          tx.journalEntry.findFirst({ where: { companyId, sourceType: 'CUSTOMER_ADVANCE', sourceId: advance.id, accountingEvent: 'ADVANCE_RECEIVED' }, select: { id: true } }),
+        ]);
+        if (!originalMovement || !originalEntry) throw new ConflictError('Registo de idempotência aponta para um cancelamento incompleto (integridade).');
+        const [treasuryReversal, accountingReversal] = await Promise.all([
+          tx.treasuryMovement.findFirst({ where: { companyId, reversesId: originalMovement.id }, select: { id: true } }),
+          tx.journalEntry.findFirst({ where: { companyId, reversalOfId: originalEntry.id }, select: { id: true } }),
+        ]);
+        if (!treasuryReversal || !accountingReversal) throw new ConflictError('Registo de idempotência aponta para um cancelamento incompleto (integridade).');
+        return { id: advance.id, number: advance.number, cancellationDate: formatAccountingDate(cancellationDate), treasuryReversalId: treasuryReversal.id, accountingReversalId: accountingReversal.id };
+      },
+      run: async () => {
+        await validateOpenReversalDateTx(tx, companyId, cancellationDate);
+
+        await tx.$queryRaw`SELECT id FROM customer_advances WHERE id = ${data.advanceId} AND "companyId" = ${companyId} FOR UPDATE`;
+        const advance = await tx.customerAdvance.findFirst({ where: { companyId, id: data.advanceId } });
+        if (!advance) throw new NotFoundError('Recibo de adiantamento não encontrado.');
+        if (advance.cancelledAt) throw new ConflictError('Este recibo de adiantamento já foi cancelado.');
+
+        const appliedTotal = round2(Number(advance.appliedTotal));
+        const refundedTotal = round2(Number(advance.refundedTotal));
+        if (appliedTotal !== 0) {
+          throw new ConflictError('O adiantamento tem aplicações activas em facturas — anule primeiro os recibos de aplicação.');
+        }
+        if (refundedTotal !== 0) {
+          throw new ConflictError('O adiantamento já teve devoluções ao cliente — um RA com devoluções não é cancelável.');
+        }
+
+        const movements = await tx.treasuryMovement.findMany({
+          where: { companyId, sourceType: 'CUSTOMER_ADVANCE', sourceId: advance.id, movementPurpose: 'ADVANCE_IN' },
+        });
+        if (movements.length !== 1) throw new ConflictError('Integridade: adiantamento sem movimento de tesouraria único.');
+        const originalMovement = movements[0]!;
+        const amount = round2(Number(advance.amount));
+        if (originalMovement.flow !== 'IN' || round2(Number(originalMovement.amount)) !== amount) {
+          throw new ConflictError('Integridade: movimento de tesouraria não coincide com o adiantamento.');
+        }
+
+        const now = new Date();
+        await tx.customerAdvance.update({
+          where: { id: advance.id },
+          data: { cancelledAt: now, cancelledById: ctx.userId, cancellationReason },
+        });
+
+        const treasuryReversal = await reverseOperationalTreasuryMovementTx(tx, companyId, ctx.userId, {
+          movementId: originalMovement.id,
+          reason: cancellationReason,
+          occurredAt: cancellationDate,
+          expectedSourceType: 'CUSTOMER_ADVANCE',
+          expectedSourceId: advance.id,
+          expectedMovementPurpose: 'ADVANCE_IN',
+          reversalPurpose: 'ADVANCE_IN_REVERSAL',
+          description: `Cancelamento do recibo de adiantamento ${advance.number} - ${cancellationReason}`,
+        });
+
+        const accountingReversal = await reverseAccountingEventTx(tx, ctx, {
+          origin: { sourceType: 'CUSTOMER_ADVANCE', sourceId: advance.id, accountingEvent: 'ADVANCE_RECEIVED' },
+          reversalDate: cancellationDate,
+          reason: cancellationReason,
+          operationalReference: advance.number,
+        });
+
+        await writeAudit(tx, ctx, {
+          action: 'advance.cancel',
+          entity: 'CustomerAdvance',
+          entityId: advance.id,
+          oldValues: { cancelledAt: null, appliedTotal, refundedTotal },
+          newValues: {
+            number: advance.number,
+            customerId: advance.customerId,
+            customer: advance.customerName,
+            amount,
+            cancellationReason,
+            cancellationDate: formatAccountingDate(cancellationDate),
+            idempotencyKey: data.idempotencyKey,
+            treasuryMovementOriginalId: originalMovement.id,
+            treasuryMovementReversalId: treasuryReversal.reversalId,
+            treasuryBalanceBefore: treasuryReversal.balanceBefore,
+            treasuryBalanceAfter: treasuryReversal.balanceAfter,
+            journalEntryReversalId: accountingReversal.reversalId,
+          },
+        });
+
+        return {
+          resourceType: 'CustomerAdvance',
+          resourceId: advance.id,
+          result: {
+            id: advance.id,
+            number: advance.number,
+            cancellationDate: formatAccountingDate(cancellationDate),
+            treasuryReversalId: treasuryReversal.reversalId,
+            accountingReversalId: accountingReversal.reversalId,
+          },
+        };
       },
     });
     return op.result;

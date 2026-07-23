@@ -40,6 +40,7 @@
     "test:integration:pos": "pnpm --filter @ants/domain test:integration:pos",
     "test:integration:reports": "pnpm --filter @ants/domain test:integration:reports",
     "test:integration:reports:sales": "pnpm --filter @ants/domain test:integration:reports-sales",
+    "test:integration:reports:s18": "pnpm --filter @ants/domain test:integration:reports-s18",
     "test:integration:advances": "pnpm --filter @ants/domain test:integration:advances",
     "test:integration:treasury:cash-closing": "pnpm --filter @ants/domain test:integration:treasury-cash-closing",
     "test:integration:company-profile": "pnpm --filter @ants/domain test:integration:company-profile",

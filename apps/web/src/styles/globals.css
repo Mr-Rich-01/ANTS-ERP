@@ -166,6 +166,11 @@ input::placeholder {
     break-inside: avoid;
     page-break-inside: avoid;
   }
+  /* S18: Razão Geral «todas as contas» — cada conta começa em página nova. */
+  .ants-page-break-after {
+    break-after: page;
+    page-break-after: always;
+  }
   .ants-pcard:hover,
   .ants-row:hover {
     transform: none !important;

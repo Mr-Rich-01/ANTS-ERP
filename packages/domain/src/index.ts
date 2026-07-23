@@ -13,6 +13,7 @@ export * from './suppliers';
 export * from './products';
 export * from './stock';
 export * from './stock-counts';
+export * from './stock-count-sheet';
 export * from './invoices';
 export * from './commercial-documents';
 export * from './advances';

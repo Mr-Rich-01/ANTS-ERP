@@ -6,6 +6,7 @@ import { requireCompany } from './context';
 import { requirePermission, hasPermission } from './permissions';
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from './errors';
 import { writeAudit } from './audit';
+import { exportTableToXlsx, type XlsxCellValue, type XlsxColumn } from './xlsx-export';
 
 // ─────────────────────────────────────────────────────────────
 // Tipos
@@ -1141,6 +1142,9 @@ export async function getTrialBalance(db: PrismaClient, ctx: RequestContext, opt
 export type AccountingReportKind = 'journal' | 'ledger' | 'trial-balance';
 export type AccountingReportStatusFilter = JournalEntryStatus | 'POSTED_AND_REVERSED';
 
+/** Toggle do balancete (S18): contas com movimento (comportamento S11), sem movimento, ou todas. */
+export type TrialBalanceMovementFilter = 'WITH' | 'WITHOUT' | 'ALL';
+
 export interface AccountingReportFilters {
   from?: string;
   to?: string;
@@ -1151,6 +1155,10 @@ export interface AccountingReportFilters {
   status?: AccountingReportStatusFilter;
   q?: string;
   limit?: number;
+  /** S18 (balancete): prefixo de código de conta — classe do plano (ex.: '1', '4'). */
+  accountClass?: string;
+  /** S18 (balancete): filtro de movimento; omitido = 'WITH' (comportamento S11). */
+  accountMovement?: TrialBalanceMovementFilter;
 }
 
 export interface AccountingReportOptions {
@@ -1258,6 +1266,7 @@ function normalizeAccountingReportFilters(filters: AccountingReportFilters = {})
   const fromDate = parseAccountingDate(from);
   const toDate = parseAccountingDate(to);
   if (fromDate > toDate) throw new ValidationError('A data inicial não pode ser posterior à data final.');
+  const accountClass = filters.accountClass?.trim();
   return {
     ...filters,
     from,
@@ -1267,6 +1276,8 @@ function normalizeAccountingReportFilters(filters: AccountingReportFilters = {})
     sourceType: filters.sourceType?.trim() || undefined,
     q: filters.q?.trim() || undefined,
     limit: filters.limit ? Math.min(Math.max(Math.trunc(filters.limit), 1), 2000) : DEFAULT_REPORT_LIMIT,
+    accountClass: accountClass && /^\d{1,3}$/.test(accountClass) ? accountClass : undefined,
+    accountMovement: filters.accountMovement === 'WITHOUT' || filters.accountMovement === 'ALL' ? filters.accountMovement : undefined,
   };
 }
 
@@ -1460,15 +1471,126 @@ export async function getAccountLedgerReport(db: PrismaClient, ctx: RequestConte
   };
 }
 
+/** Secção de uma conta na variante «todas as contas» do Razão Geral (S18). */
+export interface GeneralLedgerSection {
+  account: { id: string; code: string; name: string; normalBalance: NormalBalance };
+  openingBalance: number;
+  rows: AccountLedgerReportRow[];
+  totalDebit: number;
+  totalCredit: number;
+  closingBalance: number;
+}
+
+export interface GeneralLedgerReport {
+  filters: Required<Pick<AccountingReportFilters, 'from' | 'to'>> & Omit<AccountingReportFilters, 'from' | 'to'>;
+  sections: GeneralLedgerSection[];
+  totalDebit: number;
+  totalCredit: number;
+  /** true quando o tecto de linhas cortou o relatório. */
+  truncated: boolean;
+}
+
+/** Tecto defensivo de linhas do Razão Geral completo. */
+const GENERAL_LEDGER_MAX_LINES = 8000;
+
+/**
+ * Razão Geral — variante «todas as contas» (S18, item 12): itera as contas COM
+ * movimento no período, cada uma com saldo inicial → movimentos → totais D/C →
+ * saldo final. A consulta de conta única (`getAccountLedgerReport`) fica intacta.
+ */
+export async function getGeneralLedgerReport(db: PrismaClient, ctx: RequestContext, rawFilters: AccountingReportFilters = {}): Promise<GeneralLedgerReport> {
+  requirePermission(ctx, 'accounting.view');
+  const companyId = requireCompany(ctx);
+  const filters = normalizeAccountingReportFilters({ ...rawFilters, ledgerAccountId: undefined });
+
+  const lines = await db.journalEntryLine.findMany({
+    where: { companyId, journalEntry: reportEntryWhere(companyId, filters, { postedOnly: true }) },
+    include: {
+      ledgerAccount: { select: { id: true, code: true, name: true, normalBalance: true } },
+      journalEntry: { select: { id: true, entryNumber: true, entryDate: true, postingDate: true, description: true, reference: true, sourceType: true, accountingEvent: true } },
+    },
+    orderBy: [{ ledgerAccount: { code: 'asc' } }, { journalEntry: { entryDate: 'asc' } }, { journalEntry: { entryNumber: 'asc' } }, { lineNumber: 'asc' }],
+    take: GENERAL_LEDGER_MAX_LINES + 1,
+  });
+  const truncated = lines.length > GENERAL_LEDGER_MAX_LINES;
+  const boundedLines = truncated ? lines.slice(0, GENERAL_LEDGER_MAX_LINES) : lines;
+
+  const accountIds = [...new Set(boundedLines.map((l) => l.ledgerAccount.id))];
+  // Saldos iniciais de todas as contas com movimento, numa única agregação.
+  const opening = accountIds.length
+    ? await db.journalEntryLine.groupBy({
+        by: ['ledgerAccountId'],
+        where: {
+          companyId,
+          ledgerAccountId: { in: accountIds },
+          journalEntry: { companyId, status: postedOrReversedWhere(), entryDate: { lt: parseAccountingDate(filters.from) } },
+        },
+        _sum: { debit: true, credit: true },
+      })
+    : [];
+  const openingById = new Map(opening.map((g) => [g.ledgerAccountId, { debit: round2(Number(g._sum.debit ?? 0)), credit: round2(Number(g._sum.credit ?? 0)) }]));
+
+  const sections: GeneralLedgerSection[] = [];
+  let grandDebit = 0;
+  let grandCredit = 0;
+  for (const line of boundedLines) {
+    const account = line.ledgerAccount;
+    let section = sections[sections.length - 1];
+    if (!section || section.account.id !== account.id) {
+      const o = openingById.get(account.id) ?? { debit: 0, credit: 0 };
+      const debitNormal = account.normalBalance === 'DEBIT';
+      section = {
+        account: { id: account.id, code: account.code, name: account.name, normalBalance: account.normalBalance as NormalBalance },
+        openingBalance: round2(debitNormal ? o.debit - o.credit : o.credit - o.debit),
+        rows: [],
+        totalDebit: 0,
+        totalCredit: 0,
+        closingBalance: 0,
+      };
+      section.closingBalance = section.openingBalance;
+      sections.push(section);
+    }
+    const debit = round2(Number(line.debit));
+    const credit = round2(Number(line.credit));
+    const debitNormal = section.account.normalBalance === 'DEBIT';
+    section.totalDebit = round2(section.totalDebit + debit);
+    section.totalCredit = round2(section.totalCredit + credit);
+    section.closingBalance = round2(section.closingBalance + (debitNormal ? debit - credit : credit - debit));
+    grandDebit += debit;
+    grandCredit += credit;
+    const date = line.journalEntry.postingDate ?? line.journalEntry.entryDate;
+    section.rows.push({
+      entryId: line.journalEntry.id,
+      entryNumber: line.journalEntry.entryNumber,
+      date: formatAccountingDate(date),
+      description: line.journalEntry.description,
+      reference: line.journalEntry.reference,
+      sourceType: line.journalEntry.sourceType,
+      accountingEvent: line.journalEntry.accountingEvent,
+      debit,
+      credit,
+      balance: section.closingBalance,
+    });
+  }
+
+  return { filters, sections, totalDebit: round2(grandDebit), totalCredit: round2(grandCredit), truncated };
+}
+
 export async function getTrialBalanceReport(db: PrismaClient, ctx: RequestContext, rawFilters: AccountingReportFilters = {}): Promise<TrialBalanceReport> {
   requirePermission(ctx, 'accounting.view');
   const companyId = requireCompany(ctx);
   const filters = normalizeAccountingReportFilters(rawFilters);
+  const movement: TrialBalanceMovementFilter = filters.accountMovement ?? 'WITH';
+  // S18: filtro por classe = prefixo do código da conta (derivado do plano, sem hardcode).
+  const classAccountWhere: Prisma.LedgerAccountWhereInput | undefined = filters.accountClass
+    ? { code: { startsWith: filters.accountClass } }
+    : undefined;
   const baseLineWhere: Prisma.JournalEntryLineWhereInput = {
     companyId,
     journalEntry: reportEntryWhere(companyId, filters, { postedOnly: true }),
   };
   if (filters.ledgerAccountId) baseLineWhere.ledgerAccountId = filters.ledgerAccountId;
+  if (classAccountWhere) baseLineWhere.ledgerAccount = classAccountWhere;
 
   const [openingGrouped, periodGrouped] = await Promise.all([
     db.journalEntryLine.groupBy({
@@ -1476,6 +1598,7 @@ export async function getTrialBalanceReport(db: PrismaClient, ctx: RequestContex
       where: {
         companyId,
         ...(filters.ledgerAccountId ? { ledgerAccountId: filters.ledgerAccountId } : {}),
+        ...(classAccountWhere ? { ledgerAccount: classAccountWhere } : {}),
         journalEntry: {
           companyId,
           status: postedOrReversedWhere(),
@@ -1494,7 +1617,20 @@ export async function getTrialBalanceReport(db: PrismaClient, ctx: RequestContex
       _count: { _all: true },
     }),
   ]);
-  const accountIds = [...new Set([...openingGrouped.map((g) => g.ledgerAccountId), ...periodGrouped.map((g) => g.ledgerAccountId)])];
+  let accountIds = [...new Set([...openingGrouped.map((g) => g.ledgerAccountId), ...periodGrouped.map((g) => g.ledgerAccountId)])];
+  // S18: para «sem movimento»/«todas», o universo passa a ser o plano (contas de movimento).
+  if (movement !== 'WITH') {
+    const chartAccounts = await db.ledgerAccount.findMany({
+      where: {
+        companyId,
+        isPosting: true,
+        ...(filters.ledgerAccountId ? { id: filters.ledgerAccountId } : {}),
+        ...(classAccountWhere ?? {}),
+      },
+      select: { id: true },
+    });
+    accountIds = [...new Set([...accountIds, ...chartAccounts.map((a) => a.id)])];
+  }
   const accounts = await db.ledgerAccount.findMany({
     where: { companyId, id: { in: accountIds } },
     select: { id: true, code: true, name: true, accountType: true, normalBalance: true },
@@ -1502,24 +1638,12 @@ export async function getTrialBalanceReport(db: PrismaClient, ctx: RequestContex
   const byId = new Map(accounts.map((a) => [a.id, a]));
   const openingById = new Map(openingGrouped.map((g) => [g.ledgerAccountId, { debit: round2(Number(g._sum.debit ?? 0)), credit: round2(Number(g._sum.credit ?? 0)) }]));
   const periodById = new Map(periodGrouped.map((g) => [g.ledgerAccountId, { debit: round2(Number(g._sum.debit ?? 0)), credit: round2(Number(g._sum.credit ?? 0)), count: g._count._all }]));
-  let totalDebit = 0;
-  let totalCredit = 0;
-  let totalClosingDebit = 0;
-  let totalClosingCredit = 0;
-  let movementCount = 0;
-  const rows: TrialBalanceReportRow[] = accountIds.map((accountId) => {
+  let rows: Array<TrialBalanceReportRow & { movementLineCount: number }> = accountIds.map((accountId) => {
     const account = byId.get(accountId);
     const opening = openingById.get(accountId) ?? { debit: 0, credit: 0 };
     const period = periodById.get(accountId) ?? { debit: 0, credit: 0, count: 0 };
     const openingSigned = round2(opening.debit - opening.credit);
     const closingSigned = round2(openingSigned + period.debit - period.credit);
-    const closingDebit = round2(Math.max(closingSigned, 0));
-    const closingCredit = round2(Math.max(-closingSigned, 0));
-    totalDebit += period.debit;
-    totalCredit += period.credit;
-    totalClosingDebit += closingDebit;
-    totalClosingCredit += closingCredit;
-    movementCount += period.count;
     return {
       accountId,
       code: account?.code ?? '?',
@@ -1529,24 +1653,54 @@ export async function getTrialBalanceReport(db: PrismaClient, ctx: RequestContex
       openingBalance: openingSigned,
       debit: period.debit,
       credit: period.credit,
-      closingDebit,
-      closingCredit,
+      closingDebit: round2(Math.max(closingSigned, 0)),
+      closingCredit: round2(Math.max(-closingSigned, 0)),
+      movementLineCount: period.count,
     };
   });
+  // «Sem movimento» = saldo inicial, débitos e créditos todos zero no período.
+  if (movement === 'WITHOUT') {
+    rows = rows.filter((r) => r.openingBalance === 0 && r.debit === 0 && r.credit === 0);
+  }
   rows.sort((a, b) => a.code.localeCompare(b.code));
+
+  let totalDebit = 0;
+  let totalCredit = 0;
+  let totalClosingDebit = 0;
+  let totalClosingCredit = 0;
+  let movementCount = 0;
+  for (const row of rows) {
+    totalDebit += row.debit;
+    totalCredit += row.credit;
+    totalClosingDebit += row.closingDebit;
+    totalClosingCredit += row.closingCredit;
+    movementCount += row.movementLineCount;
+  }
   totalDebit = round2(totalDebit);
   totalCredit = round2(totalCredit);
   return {
     filters,
-    rows,
+    rows: rows.map(({ movementLineCount: _ignored, ...row }) => row),
     totalDebit,
     totalCredit,
     totalClosingDebit: round2(totalClosingDebit),
     totalClosingCredit: round2(totalClosingCredit),
     isBalanced: totalDebit === totalCredit,
-    isGlobalBalanceCheckAvailable: !filters.ledgerAccountId,
+    isGlobalBalanceCheckAvailable: !filters.ledgerAccountId && !filters.accountClass && movement !== 'WITHOUT',
     movementCount,
   };
+}
+
+/** Classes contabilísticas do plano (nível 1) — alimenta o filtro por classe do balancete (S18). */
+export async function getTrialBalanceClassOptions(db: PrismaClient, ctx: RequestContext): Promise<Array<{ code: string; name: string }>> {
+  requirePermission(ctx, 'accounting.view');
+  requireCompany(ctx);
+  const classes = await db.ledgerAccount.findMany({ where: { level: 1 }, orderBy: { code: 'asc' }, select: { code: true, name: true } });
+  if (classes.length > 0) return classes;
+  // Plano sem contas de nível 1: deriva as classes do primeiro dígito das contas de movimento.
+  const accounts = await db.ledgerAccount.findMany({ where: { isPosting: true }, select: { code: true }, orderBy: { code: 'asc' } });
+  const digits = [...new Set(accounts.map((a) => a.code.charAt(0)).filter((c) => /\d/.test(c)))].sort();
+  return digits.map((d) => ({ code: d, name: `Classe ${d}` }));
 }
 
 function accountingCsvEscape(value: string): string {
@@ -1586,6 +1740,62 @@ export async function exportAccountingJournalCsv(db: PrismaClient, ctx: RequestC
   return { filename: `contabilidade-extrato-diario-${report.filters.from}-${report.filters.to}.csv`, content: lines.join('\n') };
 }
 
+/** Cabeçalho institucional partilhado pelos exportadores XLSX da contabilidade (S18). */
+async function xlsxExportContext(db: PrismaClient, ctx: RequestContext): Promise<{ companyName: string; exportedBy: string | undefined }> {
+  const companyId = requireCompany(ctx);
+  const [company, user] = await Promise.all([
+    db.company.findUnique({ where: { id: companyId }, select: { legalName: true, tradeName: true } }),
+    ctx.userId ? db.user.findFirst({ where: { companyId, id: ctx.userId }, select: { name: true, email: true } }) : Promise.resolve(null),
+  ]);
+  return { companyName: company?.tradeName || company?.legalName || '', exportedBy: user?.name || user?.email || undefined };
+}
+
+/** Extrato Diário em Excel (S18, item 9) — mesmas colunas do CSV, valores numéricos. */
+export async function exportAccountingJournalXlsx(db: PrismaClient, ctx: RequestContext, filters: AccountingReportFilters = {}): Promise<{ filename: string; buffer: Buffer }> {
+  requirePermission(ctx, 'reports.export');
+  const report = await getAccountingJournalReport(db, ctx, filters);
+  const header = await xlsxExportContext(db, ctx);
+  const buffer = await exportTableToXlsx({
+    title: 'Extrato Diário',
+    ...header,
+    period: `${report.filters.from} a ${report.filters.to}`,
+    exportedAt: new Date(),
+    sheetName: 'Extrato Diário',
+    columns: [
+      { key: 'date', header: 'Data', type: 'date', width: 13 },
+      { key: 'number', header: 'Número', type: 'text', width: 15 },
+      { key: 'journal', header: 'Diário', type: 'text', width: 10 },
+      { key: 'status', header: 'Estado', type: 'text', width: 13 },
+      { key: 'source', header: 'Origem', type: 'text', width: 18 },
+      { key: 'event', header: 'Evento', type: 'text', width: 22 },
+      { key: 'reference', header: 'Referência', type: 'text', width: 18 },
+      { key: 'account', header: 'Conta', type: 'text', width: 10 },
+      { key: 'accountName', header: 'Nome da conta', type: 'text', width: 26 },
+      { key: 'description', header: 'Descrição', type: 'text', width: 36 },
+      { key: 'debit', header: 'Débito', type: 'money', width: 15 },
+      { key: 'credit', header: 'Crédito', type: 'money', width: 15 },
+      { key: 'user', header: 'Utilizador', type: 'text', width: 20 },
+    ],
+    rows: report.lines.map((l) => ({
+      date: new Date(`${l.postingDate ?? l.entryDate}T00:00:00.000Z`),
+      number: l.entryNumber,
+      journal: l.journalCode,
+      status: journalEntryStatusLabel(l.status),
+      source: accountingSourceTypeLabel(l.sourceType),
+      event: accountingEventLabel(l.accountingEvent),
+      reference: l.reference,
+      account: l.accountCode,
+      accountName: l.accountName,
+      description: l.lineDescription ?? l.description,
+      debit: l.debit || null,
+      credit: l.credit || null,
+      user: l.postedByName ?? l.postedById,
+    })),
+    grandTotal: { description: 'Totais', debit: report.totalDebit, credit: report.totalCredit, user: report.isBalanced ? 'Balanceado' : 'Desequilibrado' },
+  });
+  return { filename: `contabilidade-extrato-diario-${report.filters.from}-${report.filters.to}.xlsx`, buffer };
+}
+
 export async function exportAccountLedgerCsv(db: PrismaClient, ctx: RequestContext, ledgerAccountId: string, filters: AccountingReportFilters = {}): Promise<{ filename: string; content: string }> {
   requirePermission(ctx, 'reports.export');
   const report = await getAccountLedgerReport(db, ctx, ledgerAccountId, filters);
@@ -1600,6 +1810,105 @@ export async function exportAccountLedgerCsv(db: PrismaClient, ctx: RequestConte
   ];
   const code = report.account?.code ?? 'conta';
   return { filename: `contabilidade-razao-${code}-${report.filters.from}-${report.filters.to}.csv`, content: lines.join('\n') };
+}
+
+/** Razão/extracto de conta única em Excel (S18, item 9) — saldo inicial, movimentos e totais. */
+export async function exportAccountLedgerXlsx(db: PrismaClient, ctx: RequestContext, ledgerAccountId: string, filters: AccountingReportFilters = {}): Promise<{ filename: string; buffer: Buffer }> {
+  requirePermission(ctx, 'reports.export');
+  const report = await getAccountLedgerReport(db, ctx, ledgerAccountId, filters);
+  const header = await xlsxExportContext(db, ctx);
+  const accountLabel = report.account ? `${report.account.code} - ${report.account.name}` : '';
+  const buffer = await exportTableToXlsx({
+    title: 'Razão / Extracto por conta',
+    ...header,
+    period: `${report.filters.from} a ${report.filters.to}`,
+    exportedAt: new Date(),
+    sheetName: report.account?.code ? `Razão ${report.account.code}` : 'Razão',
+    headerLines: [`Conta: ${accountLabel}`],
+    columns: [
+      { key: 'date', header: 'Data', type: 'date', width: 13 },
+      { key: 'number', header: 'Número', type: 'text', width: 15 },
+      { key: 'source', header: 'Origem', type: 'text', width: 18 },
+      { key: 'event', header: 'Evento', type: 'text', width: 22 },
+      { key: 'reference', header: 'Referência', type: 'text', width: 18 },
+      { key: 'description', header: 'Descrição', type: 'text', width: 36 },
+      { key: 'debit', header: 'Débito', type: 'money', width: 15 },
+      { key: 'credit', header: 'Crédito', type: 'money', width: 15 },
+      { key: 'balance', header: 'Saldo acumulado', type: 'money', width: 17 },
+    ],
+    rows: [
+      { date: null, number: null, source: null, event: null, reference: null, description: 'Saldo inicial', debit: null, credit: null, balance: Math.abs(report.openingBalance) },
+      ...report.rows.map((r) => ({
+        date: new Date(`${r.date}T00:00:00.000Z`),
+        number: r.entryNumber,
+        source: accountingSourceTypeLabel(r.sourceType),
+        event: accountingEventLabel(r.accountingEvent),
+        reference: r.reference,
+        description: r.description,
+        debit: r.debit || null,
+        credit: r.credit || null,
+        balance: Math.abs(r.balance),
+      })),
+    ],
+    grandTotal: { description: 'Totais', debit: report.totalDebit, credit: report.totalCredit, balance: Math.abs(report.closingBalance) },
+  });
+  const code = report.account?.code ?? 'conta';
+  return { filename: `contabilidade-razao-${code}-${report.filters.from}-${report.filters.to}.xlsx`, buffer };
+}
+
+/** Razão Geral «todas as contas» em Excel (S18) — secções sequenciais com sub-totais por conta. */
+export async function exportGeneralLedgerXlsx(
+  db: PrismaClient,
+  ctx: RequestContext,
+  filters: AccountingReportFilters = {},
+): Promise<{ filename: string; buffer: Buffer }> {
+  requirePermission(ctx, 'reports.export');
+  const report = await getGeneralLedgerReport(db, ctx, filters);
+  const companyId = requireCompany(ctx);
+  const [company, user] = await Promise.all([
+    db.company.findUnique({ where: { id: companyId }, select: { legalName: true, tradeName: true } }),
+    ctx.userId ? db.user.findFirst({ where: { companyId, id: ctx.userId }, select: { name: true, email: true } }) : Promise.resolve(null),
+  ]);
+
+  const columns: XlsxColumn[] = [
+    { key: 'date', header: 'Data', type: 'date', width: 13 },
+    { key: 'doc', header: 'Documento', type: 'text', width: 16 },
+    { key: 'description', header: 'Descrição', type: 'text', width: 40 },
+    { key: 'debit', header: 'Débito', type: 'money', width: 15 },
+    { key: 'credit', header: 'Crédito', type: 'money', width: 15 },
+    { key: 'balance', header: 'Saldo acumulado', type: 'money', width: 17 },
+  ];
+  const buffer = await exportTableToXlsx({
+    title: 'Razão Geral — todas as contas',
+    companyName: company?.tradeName || company?.legalName || '',
+    period: `${report.filters.from} a ${report.filters.to}`,
+    exportedBy: user?.name || user?.email || undefined,
+    exportedAt: new Date(),
+    sheetName: 'Razão Geral',
+    columns,
+    groups: report.sections.map((section) => ({
+      label: `${section.account.code} — ${section.account.name}`,
+      rows: [
+        { date: null, doc: null, description: 'Saldo inicial', debit: null, credit: null, balance: Math.abs(section.openingBalance) },
+        ...section.rows.map((r) => ({
+          date: new Date(`${r.date}T00:00:00.000Z`),
+          doc: r.entryNumber,
+          description: r.description,
+          debit: r.debit || null,
+          credit: r.credit || null,
+          balance: Math.abs(r.balance),
+        })),
+      ],
+      subtotal: {
+        description: `Totais da conta ${section.account.code}`,
+        debit: section.totalDebit,
+        credit: section.totalCredit,
+        balance: Math.abs(section.closingBalance),
+      },
+    })),
+    grandTotal: { description: 'TOTAL GERAL', debit: report.totalDebit, credit: report.totalCredit, balance: null },
+  });
+  return { filename: `contabilidade-razao-geral-${report.filters.from}-${report.filters.to}.xlsx`, buffer };
 }
 
 /**
@@ -1673,4 +1982,64 @@ export async function exportTrialBalanceCsv(db: PrismaClient, ctx: RequestContex
     ]),
   ];
   return { filename: `contabilidade-balancete-${report.filters.from}-${report.filters.to}.csv`, content: lines.join('\n') };
+}
+
+/** Balancete em Excel (S18, item 9) — mesmas colunas do ecrã/CSV, valores monetários numéricos. */
+export async function exportTrialBalanceXlsx(
+  db: PrismaClient,
+  ctx: RequestContext,
+  filters: AccountingReportFilters = {},
+  columns: TrialBalanceColumnKey[] = DEFAULT_TRIAL_BALANCE_COLUMNS,
+): Promise<{ filename: string; buffer: Buffer }> {
+  requirePermission(ctx, 'reports.export');
+  const report = await getTrialBalanceReport(db, ctx, filters);
+  const companyId = requireCompany(ctx);
+  const [company, user] = await Promise.all([
+    db.company.findUnique({ where: { id: companyId }, select: { legalName: true, tradeName: true } }),
+    ctx.userId ? db.user.findFirst({ where: { companyId, id: ctx.userId }, select: { name: true, email: true } }) : Promise.resolve(null),
+  ]);
+
+  const isMoney = (key: TrialBalanceColumnKey) => key !== 'type' && key !== 'nature';
+  const xlsxColumns: XlsxColumn[] = [
+    { key: 'code', header: 'Conta', type: 'text', width: 12 },
+    { key: 'name', header: 'Nome da conta', type: 'text', width: 34 },
+    ...columns.map((key): XlsxColumn => ({ key, header: trialBalanceColumnLabel(key), type: isMoney(key) ? 'money' : 'text', width: isMoney(key) ? 16 : 14 })),
+  ];
+  const cellFor = (r: TrialBalanceReportRow, key: TrialBalanceColumnKey): XlsxCellValue => {
+    switch (key) {
+      case 'type': return ledgerAccountTypeLabel(r.accountType);
+      case 'nature': return normalBalanceLabel(r.normalBalance);
+      case 'opening': return Math.abs(r.openingBalance);
+      case 'debit': return r.debit;
+      case 'credit': return r.credit;
+      case 'closingDebit': return r.closingDebit;
+      case 'closingCredit': return r.closingCredit;
+    }
+  };
+  const totalFor = (key: TrialBalanceColumnKey): XlsxCellValue => {
+    switch (key) {
+      case 'debit': return report.totalDebit;
+      case 'credit': return report.totalCredit;
+      case 'closingDebit': return report.totalClosingDebit;
+      case 'closingCredit': return report.totalClosingCredit;
+      default: return null;
+    }
+  };
+  const movement = report.filters.accountMovement ?? 'WITH';
+  const scopeNotes = [
+    report.filters.accountClass ? `Classe ${report.filters.accountClass}` : null,
+    movement === 'WITHOUT' ? 'Contas sem movimento' : movement === 'ALL' ? 'Todas as contas' : null,
+  ].filter(Boolean);
+  const buffer = await exportTableToXlsx({
+    title: 'Balancete',
+    companyName: company?.tradeName || company?.legalName || '',
+    period: `${report.filters.from} a ${report.filters.to}${scopeNotes.length ? ` · ${scopeNotes.join(' · ')}` : ''}`,
+    exportedBy: user?.name || user?.email || undefined,
+    exportedAt: new Date(),
+    sheetName: 'Balancete',
+    columns: xlsxColumns,
+    rows: report.rows.map((r) => ({ code: r.code, name: r.name, ...Object.fromEntries(columns.map((key) => [key, cellFor(r, key)])) })),
+    grandTotal: { code: 'Totais', ...Object.fromEntries(columns.map((key) => [key, totalFor(key)])) },
+  });
+  return { filename: `contabilidade-balancete-${report.filters.from}-${report.filters.to}.xlsx`, buffer };
 }
