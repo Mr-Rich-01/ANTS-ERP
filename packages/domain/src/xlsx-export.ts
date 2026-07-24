@@ -21,14 +21,31 @@ export interface XlsxGroup {
   subtotal?: Record<string, XlsxCellValue>;
 }
 
+/**
+ * S18.1: linha de subtotal intercalada no modo plano (`rows`). Genérica — qualquer
+ * relatório pode achatar uma hierarquia com subtotais sem precisar de grupos aninhados.
+ * `emphasis`: 1 = destaque de grupo (HEADER_FILL); 2 = destaque forte (TOTAL_FILL).
+ */
+export interface XlsxSubtotalMarker {
+  kind: 'subtotal';
+  values: Record<string, XlsxCellValue>;
+  emphasis?: 1 | 2;
+}
+
+export type XlsxBodyRow = Record<string, XlsxCellValue> | XlsxSubtotalMarker;
+
+function isSubtotalMarker(row: XlsxBodyRow): row is XlsxSubtotalMarker {
+  return (row as XlsxSubtotalMarker).kind === 'subtotal' && typeof (row as XlsxSubtotalMarker).values === 'object';
+}
+
 export interface XlsxSheetInput {
   /** Nome da folha (saneado para as regras do Excel; duplicados são numerados). */
   name: string;
   columns: XlsxColumn[];
   /** Linhas informativas adicionais no cabeçalho da folha (ex.: resumo de KPIs). */
   headerLines?: string[];
-  /** Modo plano (sem grupos). Ignorado quando `groups` é fornecido. */
-  rows?: Array<Record<string, XlsxCellValue>>;
+  /** Modo plano (sem grupos). Ignorado quando `groups` é fornecido. Aceita linhas-subtotal (S18.1). */
+  rows?: XlsxBodyRow[];
   groups?: XlsxGroup[];
   grandTotal?: Record<string, XlsxCellValue>;
 }
@@ -51,8 +68,8 @@ export interface XlsxTableInput {
   sheetName?: string;
   columns: XlsxColumn[];
   headerLines?: string[];
-  /** Modo plano (sem grupos). Ignorado quando `groups` é fornecido. */
-  rows?: Array<Record<string, XlsxCellValue>>;
+  /** Modo plano (sem grupos). Ignorado quando `groups` é fornecido. Aceita linhas-subtotal (S18.1). */
+  rows?: XlsxBodyRow[];
   groups?: XlsxGroup[];
   grandTotal?: Record<string, XlsxCellValue>;
 }
@@ -158,7 +175,13 @@ function renderSheet(workbook: ExcelJS.Workbook, input: XlsxWorkbookInput, sheet
       if (group.subtotal) addTotalRow(sheet, sheetInput.columns, group.subtotal, { fill: HEADER_FILL });
     }
   } else {
-    for (const row of sheetInput.rows ?? []) addDataRow(sheet, sheetInput.columns, row);
+    for (const row of sheetInput.rows ?? []) {
+      if (isSubtotalMarker(row)) {
+        addTotalRow(sheet, sheetInput.columns, row.values, { fill: row.emphasis === 2 ? TOTAL_FILL : HEADER_FILL });
+      } else {
+        addDataRow(sheet, sheetInput.columns, row);
+      }
+    }
   }
 
   if (sheetInput.grandTotal) addTotalRow(sheet, sheetInput.columns, sheetInput.grandTotal, { fill: TOTAL_FILL, doubleTop: true });

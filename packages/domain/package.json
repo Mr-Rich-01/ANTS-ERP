@@ -32,6 +32,7 @@
     "test:integration:reports": "vitest run --config vitest.integration.config.ts reports.integration",
     "test:integration:reports-sales": "vitest run --config vitest.integration.config.ts reports.sales.integration",
     "test:integration:reports-s18": "vitest run --config vitest.integration.config.ts reports.s18.integration",
+    "test:integration:reports-s18-1": "vitest run --config vitest.integration.config.ts reports.s18-1.integration",
     "test:integration:advances": "vitest run --config vitest.integration.config.ts advances.integration",
     "test:integration:company-profile": "vitest run --config vitest.integration.config.ts company-profile.integration",
     "test:integration:treasury-cash-closing": "vitest run --config vitest.integration.config.ts treasury.cash-closing.integration",

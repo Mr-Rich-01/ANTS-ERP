@@ -394,6 +394,37 @@ plano da sessão)*
 
 ---
 
+## Sessão S18.1 — Balancete: «Total por Razão» e «Total por Classe» 🟢
+
+*(Refinamento do backlog do cliente — ✅ concluída em 2026-07-24 na branch
+`s18-1-balancete-razao-classe`, derivada de `main` após o merge ff da S18; replica os
+checkboxes «Total Classe»/«Total Razão» do sistema legado do cliente)*
+
+- [x] Dois toggles independentes e combináveis «Total por Razão» (conta razão, nível 2:
+      21, 22, 24…) e «Total por Classe» (classe, nível 1: 1, 2, 3…) junto aos filtros do
+      balancete, como no legado. *(Params GET `totalRazao`/`totalClasse`; ambos off =
+      comportamento actual sem alterações; combinados = hierarquia classe → razões com
+      «Subtotal» por razão e «Subtotal Classe» por classe, destaques visuais distintos.)*
+- [x] Subtotais derivados do plano de contas existente, pela relação REAL conta principal
+      → subcontas. *(Agrupamento por `parentId`/`level` — `ancestorAtLevel` generaliza o
+      `groupAncestor` da S11; prefixo de código só como fallback quando a cadeia está
+      incompleta, assinalado por `groupingFallbackUsed` e faixa na UI. Nos dados demo a
+      hierarquia está completa — sem fallback.)*
+- [x] Anti-duplicação: subtotais calculados só das contas de movimento do grupo. *(As
+      `rows` do balancete já são exclusivamente de movimento; `buildTrialBalanceDisplayRows`
+      (função pura) devolve `displayRows` tipados prontos — a UI/CSV/XLSX não recalculam.
+      Invariante testado: Σ subtotais de topo = total geral D=C.)*
+- [x] Exportação Excel e CSV com as linhas de subtotal quando activados; impressão respeita
+      a organização apresentada (PDF = imprimir do browser, sem pipeline novo). *(Helper
+      XLSX estendido GENERICAMENTE com `XlsxSubtotalMarker` no modo plano — sem variante
+      ad-hoc; suite `reports:s18-1` 10/10 reabre XLSX e CSV com exceljs.)*
+- [x] **Correcção de bug pré-existente (S11/S18):** os botões Excel/CSV e o separador
+      «Balancete» injectavam a conta default `selectedAccountId`, filtrando a
+      exportação/navegação do balancete a uma só conta apesar do ecrã mostrar todas —
+      agora só a conta escolhida explicitamente é herdada.
+
+---
+
 ## Prompt-modelo por sessão
 
 ```

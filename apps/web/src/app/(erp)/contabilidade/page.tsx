@@ -26,6 +26,7 @@ import {
   type NormalBalance,
   type TrialBalanceColumnKey,
   type TrialBalanceReportRow,
+  type TrialBalanceSubtotalRow,
 } from '@ants/domain';
 import { Icon } from '@/components/Icon';
 import { NoPermission } from '@/components/NoPermission';
@@ -95,6 +96,8 @@ function filtersFromSearch(searchParams: Search): AccountingReportFilters {
     q: clean(one(searchParams.q)),
     accountClass: clean(one(searchParams.classe)),
     accountMovement: contas === 'WITHOUT' || contas === 'ALL' ? contas : undefined,
+    groupByRazao: one(searchParams.totalRazao) === '1' || undefined,
+    groupByClasse: one(searchParams.totalClasse) === '1' || undefined,
   };
 }
 
@@ -110,6 +113,8 @@ function appendFilters(qs: URLSearchParams, view: View, filters: AccountingRepor
   if (filters.q) qs.set('q', filters.q);
   if (filters.accountClass) qs.set('classe', filters.accountClass);
   if (filters.accountMovement) qs.set('contas', filters.accountMovement);
+  if (filters.groupByRazao) qs.set('totalRazao', '1');
+  if (filters.groupByClasse) qs.set('totalClasse', '1');
   if (cols) qs.set('cols', cols);
 }
 
@@ -178,6 +183,26 @@ function trialBalanceCell(row: TrialBalanceReportRow, key: TrialBalanceColumnKey
   }
 }
 
+// S18.1: célula de uma linha de subtotal (razão/classe). Saldo inicial é a soma SIGNED do grupo.
+function trialBalanceSubtotalCell(sub: TrialBalanceSubtotalRow, key: TrialBalanceColumnKey, cellStyle: React.CSSProperties) {
+  const money = (v: number) => v ? fmtNoSymbol(v) : '-';
+  switch (key) {
+    case 'type':
+    case 'nature':
+      return <td key={key} style={cellStyle} />;
+    case 'opening':
+      return <td key={key} className="tnum" style={{ ...cellStyle, textAlign: 'right' }}>{sub.openingBalance ? fmtNoSymbol(sub.openingBalance) : '-'}</td>;
+    case 'debit':
+      return <td key={key} className="tnum" style={{ ...cellStyle, textAlign: 'right' }}>{money(sub.debit)}</td>;
+    case 'credit':
+      return <td key={key} className="tnum" style={{ ...cellStyle, textAlign: 'right' }}>{money(sub.credit)}</td>;
+    case 'closingDebit':
+      return <td key={key} className="tnum" style={{ ...cellStyle, textAlign: 'right' }}>{money(sub.closingDebit)}</td>;
+    case 'closingCredit':
+      return <td key={key} className="tnum" style={{ ...cellStyle, textAlign: 'right' }}>{money(sub.closingCredit)}</td>;
+  }
+}
+
 function generatedAt(): string {
   const d = new Date();
   return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
@@ -221,6 +246,9 @@ export default async function ContabilidadePage({ searchParams }: { searchParams
     getTrialBalanceClassOptions(db, ctx),
   ]);
   const selectedAccountId = filters.ledgerAccountId ?? options.accounts.find((a) => a.isPosting && a.isActive)?.id ?? options.accounts[0]?.id;
+  // O Balancete mostra todas as contas por omissão; a navegação/exportação só herda a conta
+  // quando escolhida explicitamente (o default `selectedAccountId` serve a vista Razão, não o balancete).
+  const balanceteAccountId = filters.ledgerAccountId;
   const generalLedger = razaoTodas ? await getGeneralLedgerReport(db, ctx, filters) : null;
   const ledger = selectedAccountId && !razaoTodas ? await getAccountLedgerReport(db, ctx, selectedAccountId, filters) : null;
   const activeAccount = ledger?.account ?? options.accounts.find((a) => a.id === selectedAccountId) ?? null;
@@ -265,7 +293,7 @@ export default async function ContabilidadePage({ searchParams }: { searchParams
           </div>
           <PrintButton label="Imprimir / Guardar PDF" />
           {canExport && view !== 'chart' && !razaoTodas ? (
-            <a href={`${exportHref(view, filters, selectedAccountId, colsParam)}&formato=xlsx`} style={{ ...actionBtn, background: ACCENT, color: '#fff', borderColor: ACCENT }}>
+            <a href={`${exportHref(view, filters, view === 'trial-balance' ? balanceteAccountId : selectedAccountId, colsParam)}&formato=xlsx`} style={{ ...actionBtn, background: ACCENT, color: '#fff', borderColor: ACCENT }}>
               <Icon name="sheet" size={14} />
               Excel
             </a>
@@ -277,7 +305,7 @@ export default async function ContabilidadePage({ searchParams }: { searchParams
             </a>
           ) : null}
           {canExport && view !== 'chart' && !razaoTodas ? (
-            <Link href={exportHref(view, filters, selectedAccountId, colsParam)} style={actionBtn}>
+            <Link href={exportHref(view, filters, view === 'trial-balance' ? balanceteAccountId : selectedAccountId, colsParam)} style={actionBtn}>
               <Icon name="download" size={14} />
               CSV
             </Link>
@@ -293,7 +321,7 @@ export default async function ContabilidadePage({ searchParams }: { searchParams
           <TabLink href={viewHref('chart', filters, selectedAccountId, colsParam)} active={view === 'chart'} icon="landmark" label="Plano de contas" />
           <TabLink href={viewHref('journal', filters, selectedAccountId, colsParam)} active={view === 'journal'} icon="book-open" label="Extrato Diario" />
           <TabLink href={viewHref('ledger', filters, selectedAccountId, colsParam)} active={view === 'ledger'} icon="list-tree" label="Razao / Extracto" />
-          <TabLink href={viewHref('trial-balance', filters, selectedAccountId, colsParam)} active={view === 'trial-balance'} icon="scale" label="Balancete" />
+          <TabLink href={viewHref('trial-balance', filters, balanceteAccountId, colsParam)} active={view === 'trial-balance'} icon="scale" label="Balancete" />
           <TabLink href={`/contabilidade/demonstracoes?from=${filters.from ?? ''}&to=${filters.to ?? ''}`} active={false} icon="bar-chart-3" label="Demonstrações" />
           {hasPermission(ctx, 'accounting.prepare') || hasPermission(ctx, 'accounting.post') || hasPermission(ctx, 'accounting.reverse') ? (
             <TabLink href="/contabilidade/lancamentos" active={false} icon="pen-line" label="Lançamentos manuais" />
@@ -383,6 +411,14 @@ export default async function ContabilidadePage({ searchParams }: { searchParams
                   <option value="WITHOUT">Sem movimento</option>
                   <option value="ALL">Todas</option>
                 </select>
+              </label>
+              <label style={{ ...labelStyle, flexDirection: 'row', alignItems: 'center', gap: 8, justifyContent: 'flex-start' }}>
+                <input type="checkbox" name="totalRazao" value="1" defaultChecked={!!filters.groupByRazao} />
+                Total por Razão
+              </label>
+              <label style={{ ...labelStyle, flexDirection: 'row', alignItems: 'center', gap: 8, justifyContent: 'flex-start' }}>
+                <input type="checkbox" name="totalClasse" value="1" defaultChecked={!!filters.groupByClasse} />
+                Total por Classe
               </label>
             </>
           ) : null}
@@ -619,6 +655,11 @@ export default async function ContabilidadePage({ searchParams }: { searchParams
                 Validacao global indisponivel com filtro de conta. Remova o filtro de conta para validar o equilibrio global.
               </div>
             ) : null}
+            {trial.groupingFallbackUsed ? (
+              <div style={{ padding: '11px 16px', borderBottom: '1px solid var(--bd-soft)', background: 'var(--card2)', color: 'var(--text3)', fontSize: 12.5 }}>
+                Hierarquia do plano incompleta para algumas contas; agrupamento por prefixo de codigo aplicado.
+              </div>
+            ) : null}
             <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', minWidth: 460 + trialColumns.length * 110, borderCollapse: 'collapse' }}>
                 <thead>
@@ -633,7 +674,27 @@ export default async function ContabilidadePage({ searchParams }: { searchParams
                 <tbody>
                   {trial.rows.length === 0 ? (
                     <EmptyRow colSpan={2 + trialColumns.length} message="Sem movimentos contabilisticos no periodo seleccionado." />
-                  ) : trial.rows.map((row) => (
+                  ) : trial.displayRows ? trial.displayRows.map((d, i) => {
+                    if (d.kind === 'account') {
+                      return (
+                        <tr key={d.row.accountId} className="ants-row">
+                          <td className="font-mono" style={{ ...td, color: 'var(--accent-fg)', fontWeight: 700 }}>{d.row.code}</td>
+                          <td style={td}>{d.row.name}</td>
+                          {trialColumns.map((key) => trialBalanceCell(d.row, key))}
+                        </tr>
+                      );
+                    }
+                    const isClasse = d.kind === 'subtotal-classe';
+                    const rowStyle: React.CSSProperties = isClasse
+                      ? { ...td, fontWeight: 800, fontSize: 13, color: 'var(--text)', background: 'var(--accent-bg)', borderTop: '2px solid var(--accent-fg)' }
+                      : { ...td, fontWeight: 700, color: 'var(--text)', background: 'var(--card2)', borderTop: '1px solid var(--bd-soft)' };
+                    return (
+                      <tr key={`${d.kind}-${d.code}-${i}`} style={{ breakInside: 'avoid' }}>
+                        <td colSpan={2} style={rowStyle}>{d.label}</td>
+                        {trialColumns.map((key) => trialBalanceSubtotalCell(d, key, rowStyle))}
+                      </tr>
+                    );
+                  }) : trial.rows.map((row) => (
                     <tr key={row.accountId} className="ants-row">
                       <td className="font-mono" style={{ ...td, color: 'var(--accent-fg)', fontWeight: 700 }}>{row.code}</td>
                       <td style={td}>{row.name}</td>

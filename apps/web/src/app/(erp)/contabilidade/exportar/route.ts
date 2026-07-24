@@ -52,6 +52,8 @@ function filtersFromUrl(url: URL): AccountingReportFilters {
     q: clean(url.searchParams.get('q')),
     accountClass: clean(url.searchParams.get('classe')),
     accountMovement: contas === 'WITHOUT' || contas === 'ALL' ? contas : undefined,
+    groupByRazao: url.searchParams.get('totalRazao') === '1' || undefined,
+    groupByClasse: url.searchParams.get('totalClasse') === '1' || undefined,
   };
 }
 

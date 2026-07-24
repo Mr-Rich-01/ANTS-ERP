@@ -6,7 +6,7 @@ import { requireCompany } from './context';
 import { requirePermission, hasPermission } from './permissions';
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from './errors';
 import { writeAudit } from './audit';
-import { exportTableToXlsx, type XlsxCellValue, type XlsxColumn } from './xlsx-export';
+import { exportTableToXlsx, type XlsxBodyRow, type XlsxCellValue, type XlsxColumn } from './xlsx-export';
 
 // ─────────────────────────────────────────────────────────────
 // Tipos
@@ -1159,6 +1159,10 @@ export interface AccountingReportFilters {
   accountClass?: string;
   /** S18 (balancete): filtro de movimento; omitido = 'WITH' (comportamento S11). */
   accountMovement?: TrialBalanceMovementFilter;
+  /** S18.1 (balancete): subtotais por conta razão (nível 2 do plano — 21, 22…). */
+  groupByRazao?: boolean;
+  /** S18.1 (balancete): subtotais por classe (nível 1 do plano — 1, 2, 3…). */
+  groupByClasse?: boolean;
 }
 
 export interface AccountingReportOptions {
@@ -1238,6 +1242,34 @@ export interface TrialBalanceReportRow {
   closingCredit: number;
 }
 
+/** S18.1: linha de subtotal do balancete (por conta razão ou por classe). */
+export type TrialBalanceSubtotalKind = 'subtotal-razao' | 'subtotal-classe';
+
+export interface TrialBalanceSubtotalRow {
+  kind: TrialBalanceSubtotalKind;
+  /** Código do grupo: '21' (razão) ou '2' (classe). */
+  code: string;
+  /** Nome da conta razão/classe do plano; '' quando resolvida por prefixo sem conta correspondente. */
+  name: string;
+  /** «Subtotal 21 — Clientes» / «Subtotal Classe 2 — Terceiros» (sem « — …» quando não há nome). */
+  label: string;
+  /**
+   * Soma SIGNED dos saldos iniciais do grupo. Deliberadamente signed: a apresentação
+   * por conta (valor absoluto + natureza) não é agregável entre contas de naturezas mistas.
+   */
+  openingBalance: number;
+  debit: number;
+  credit: number;
+  closingDebit: number;
+  closingCredit: number;
+  accountCount: number;
+}
+
+/** S18.1: sequência de apresentação do balancete — contas intercaladas com linhas de subtotal. */
+export type TrialBalanceDisplayRow =
+  | { kind: 'account'; row: TrialBalanceReportRow }
+  | TrialBalanceSubtotalRow;
+
 export interface TrialBalanceReport {
   filters: Required<Pick<AccountingReportFilters, 'from' | 'to'>> & Omit<AccountingReportFilters, 'from' | 'to'>;
   rows: TrialBalanceReportRow[];
@@ -1248,6 +1280,13 @@ export interface TrialBalanceReport {
   isBalanced: boolean;
   isGlobalBalanceCheckAvailable: boolean;
   movementCount: number;
+  /**
+   * S18.1: quando algum toggle de agrupamento está activo, a sequência já-pronta que a UI
+   * e as exportações consomem (contas + linhas de subtotal). Ausente = comportamento S11/S18 (lista plana).
+   */
+  displayRows?: TrialBalanceDisplayRow[];
+  /** S18.1: `true` se algum grupo foi resolvido por prefixo de código (hierarquia `parentId` incompleta). */
+  groupingFallbackUsed?: boolean;
 }
 
 const DEFAULT_REPORT_LIMIT = 500;
@@ -1278,6 +1317,8 @@ function normalizeAccountingReportFilters(filters: AccountingReportFilters = {})
     limit: filters.limit ? Math.min(Math.max(Math.trunc(filters.limit), 1), 2000) : DEFAULT_REPORT_LIMIT,
     accountClass: accountClass && /^\d{1,3}$/.test(accountClass) ? accountClass : undefined,
     accountMovement: filters.accountMovement === 'WITHOUT' || filters.accountMovement === 'ALL' ? filters.accountMovement : undefined,
+    groupByRazao: filters.groupByRazao || undefined,
+    groupByClasse: filters.groupByClasse || undefined,
   };
 }
 
@@ -1576,6 +1617,130 @@ export async function getGeneralLedgerReport(db: PrismaClient, ctx: RequestConte
   return { filters, sections, totalDebit: round2(grandDebit), totalCredit: round2(grandCredit), truncated };
 }
 
+type TrialBalanceGroupingAccount = { id: string; code: string; name: string; parentId: string | null; level: number };
+
+/** Antepassado da conta cujo `level` é exactamente `targetLevel`, subindo por `parentId`; `null` se a cadeia não o alcançar. */
+function ancestorAtLevel(
+  account: TrialBalanceGroupingAccount,
+  byId: Map<string, TrialBalanceGroupingAccount>,
+  targetLevel: number,
+): TrialBalanceGroupingAccount | null {
+  let current = account;
+  const seen = new Set<string>([current.id]);
+  while (current.level > targetLevel && current.parentId) {
+    const parent = byId.get(current.parentId);
+    if (!parent || seen.has(parent.id)) return null;
+    seen.add(parent.id);
+    current = parent;
+  }
+  return current.level === targetLevel ? current : null;
+}
+
+interface TrialBalanceSums {
+  opening: number;
+  debit: number;
+  credit: number;
+  closingDebit: number;
+  closingCredit: number;
+}
+
+/**
+ * S18.1: agregação de apresentação do balancete. Intercala as contas (já ordenadas por código)
+ * com linhas de subtotal por conta razão (nível 2) e/ou por classe (nível 1), resolvidas pela
+ * relação real `parentId` do plano; o prefixo de código é apenas fallback (com `fallbackUsed`).
+ * Os subtotais somam EXCLUSIVAMENTE as contas de movimento do grupo (as `rows` já são só de
+ * movimento), pelo que Σ dos subtotais de topo = totais do balancete — sem dupla contagem.
+ */
+export function buildTrialBalanceDisplayRows(
+  rows: TrialBalanceReportRow[],
+  chart: TrialBalanceGroupingAccount[],
+  grouping: { byRazao: boolean; byClasse: boolean },
+): { displayRows: TrialBalanceDisplayRow[]; fallbackUsed: boolean } {
+  const byId = new Map(chart.map((a) => [a.id, a]));
+  const byCode = new Map(chart.map((a) => [a.code, a]));
+  let fallbackUsed = false;
+
+  const resolve = (row: TrialBalanceReportRow, targetLevel: number, prefixLen: number): { code: string; name: string } => {
+    const account = byId.get(row.accountId);
+    if (account) {
+      const ancestor = ancestorAtLevel(account, byId, targetLevel);
+      if (ancestor) return { code: ancestor.code, name: ancestor.name };
+    }
+    fallbackUsed = true;
+    const code = row.code.slice(0, prefixLen);
+    return { code, name: byCode.get(code)?.name ?? '' };
+  };
+
+  const zero = (): TrialBalanceSums => ({ opening: 0, debit: 0, credit: 0, closingDebit: 0, closingCredit: 0 });
+  const addInto = (sums: TrialBalanceSums, row: TrialBalanceReportRow) => {
+    sums.opening += row.openingBalance;
+    sums.debit += row.debit;
+    sums.credit += row.credit;
+    sums.closingDebit += row.closingDebit;
+    sums.closingCredit += row.closingCredit;
+  };
+  const makeSubtotal = (kind: TrialBalanceSubtotalKind, code: string, name: string, sums: TrialBalanceSums, count: number): TrialBalanceSubtotalRow => {
+    const prefix = kind === 'subtotal-classe' ? `Subtotal Classe ${code}` : `Subtotal ${code}`;
+    return {
+      kind,
+      code,
+      name,
+      label: name ? `${prefix} — ${name}` : prefix,
+      openingBalance: round2(sums.opening),
+      debit: round2(sums.debit),
+      credit: round2(sums.credit),
+      closingDebit: round2(sums.closingDebit),
+      closingCredit: round2(sums.closingCredit),
+      accountCount: count,
+    };
+  };
+
+  type Acc = { code: string; name: string; sums: TrialBalanceSums; count: number };
+  const displayRows: TrialBalanceDisplayRow[] = [];
+  let razaoAcc: Acc | null = null;
+  let classeAcc: Acc | null = null;
+  const flushRazao = () => {
+    if (razaoAcc) displayRows.push(makeSubtotal('subtotal-razao', razaoAcc.code, razaoAcc.name, razaoAcc.sums, razaoAcc.count));
+    razaoAcc = null;
+  };
+  const flushClasse = () => {
+    if (classeAcc) displayRows.push(makeSubtotal('subtotal-classe', classeAcc.code, classeAcc.name, classeAcc.sums, classeAcc.count));
+    classeAcc = null;
+  };
+
+  for (const row of rows) {
+    const razao = grouping.byRazao ? resolve(row, 2, 2) : null;
+    const classe = grouping.byClasse ? resolve(row, 1, 1) : null;
+
+    // Fronteira de classe (nível externo): fecha o razão pendente e depois a classe.
+    if (classe && classeAcc && classeAcc.code !== classe.code) {
+      flushRazao();
+      flushClasse();
+    }
+    // Fronteira de razão (nível interno).
+    if (razao && razaoAcc && razaoAcc.code !== razao.code) {
+      flushRazao();
+    }
+
+    displayRows.push({ kind: 'account', row });
+
+    if (razao) {
+      if (!razaoAcc) razaoAcc = { code: razao.code, name: razao.name, sums: zero(), count: 0 };
+      addInto(razaoAcc.sums, row);
+      razaoAcc.count += 1;
+    }
+    if (classe) {
+      if (!classeAcc) classeAcc = { code: classe.code, name: classe.name, sums: zero(), count: 0 };
+      addInto(classeAcc.sums, row);
+      classeAcc.count += 1;
+    }
+  }
+  flushRazao();
+  flushClasse();
+
+  return { displayRows, fallbackUsed };
+}
+
 export async function getTrialBalanceReport(db: PrismaClient, ctx: RequestContext, rawFilters: AccountingReportFilters = {}): Promise<TrialBalanceReport> {
   requirePermission(ctx, 'accounting.view');
   const companyId = requireCompany(ctx);
@@ -1678,9 +1843,27 @@ export async function getTrialBalanceReport(db: PrismaClient, ctx: RequestContex
   }
   totalDebit = round2(totalDebit);
   totalCredit = round2(totalCredit);
+  const publicRows: TrialBalanceReportRow[] = rows.map(({ movementLineCount: _ignored, ...row }) => row);
+
+  // S18.1: agrupamento com subtotais (camada de apresentação sobre as rows já filtradas).
+  let displayRows: TrialBalanceDisplayRow[] | undefined;
+  let groupingFallbackUsed: boolean | undefined;
+  if (filters.groupByRazao || filters.groupByClasse) {
+    const chart = await db.ledgerAccount.findMany({
+      where: { companyId },
+      select: { id: true, code: true, name: true, parentId: true, level: true },
+    });
+    const built = buildTrialBalanceDisplayRows(publicRows, chart, {
+      byRazao: !!filters.groupByRazao,
+      byClasse: !!filters.groupByClasse,
+    });
+    displayRows = built.displayRows;
+    groupingFallbackUsed = built.fallbackUsed;
+  }
+
   return {
     filters,
-    rows: rows.map(({ movementLineCount: _ignored, ...row }) => row),
+    rows: publicRows,
     totalDebit,
     totalCredit,
     totalClosingDebit: round2(totalClosingDebit),
@@ -1688,6 +1871,8 @@ export async function getTrialBalanceReport(db: PrismaClient, ctx: RequestContex
     isBalanced: totalDebit === totalCredit,
     isGlobalBalanceCheckAvailable: !filters.ledgerAccountId && !filters.accountClass && movement !== 'WITHOUT',
     movementCount,
+    displayRows,
+    groupingFallbackUsed,
   };
 }
 
@@ -1968,11 +2153,28 @@ export async function exportTrialBalanceCsv(db: PrismaClient, ctx: RequestContex
       default: return '';
     }
   };
+  // S18.1: nos subtotais o saldo inicial é a soma SIGNED (deliberado — não agregável por abs+natureza).
+  const subtotalCellFor = (s: TrialBalanceSubtotalRow, key: TrialBalanceColumnKey): string => {
+    switch (key) {
+      case 'type':
+      case 'nature': return '';
+      case 'opening': return accountingMoneyLabel(s.openingBalance);
+      case 'debit': return accountingMoneyLabel(s.debit);
+      case 'credit': return accountingMoneyLabel(s.credit);
+      case 'closingDebit': return accountingMoneyLabel(s.closingDebit);
+      case 'closingCredit': return accountingMoneyLabel(s.closingCredit);
+    }
+  };
+  const bodyLines = report.displayRows
+    ? report.displayRows.map((d) => d.kind === 'account'
+        ? accountingCsvLine([d.row.code, d.row.name, ...columns.map((c) => cellFor(d.row, c))])
+        : accountingCsvLine([d.label, '', ...columns.map((c) => subtotalCellFor(d, c))]))
+    : report.rows.map((r) => accountingCsvLine([r.code, r.name, ...columns.map((c) => cellFor(r, c))]));
   const lines = [
     accountingCsvLine(['Balancete']),
     accountingCsvLine(['Período', `${report.filters.from} a ${report.filters.to}`]),
     accountingCsvLine(['Conta', 'Nome da conta', ...columns.map(trialBalanceColumnLabel)]),
-    ...report.rows.map((r) => accountingCsvLine([r.code, r.name, ...columns.map((c) => cellFor(r, c))])),
+    ...bodyLines,
     accountingCsvLine(['Totais', '', ...columns.map(totalFor)]),
     accountingCsvLine([
       'Validacao',
@@ -2025,11 +2227,31 @@ export async function exportTrialBalanceXlsx(
       default: return null;
     }
   };
+  // S18.1: soma SIGNED do saldo inicial nos subtotais (deliberado — não agregável por abs+natureza).
+  const subtotalCellFor = (s: TrialBalanceSubtotalRow, key: TrialBalanceColumnKey): XlsxCellValue => {
+    switch (key) {
+      case 'type':
+      case 'nature': return null;
+      case 'opening': return s.openingBalance;
+      case 'debit': return s.debit;
+      case 'credit': return s.credit;
+      case 'closingDebit': return s.closingDebit;
+      case 'closingCredit': return s.closingCredit;
+    }
+  };
   const movement = report.filters.accountMovement ?? 'WITH';
   const scopeNotes = [
     report.filters.accountClass ? `Classe ${report.filters.accountClass}` : null,
     movement === 'WITHOUT' ? 'Contas sem movimento' : movement === 'ALL' ? 'Todas as contas' : null,
+    report.filters.groupByRazao ? 'Total por Razão' : null,
+    report.filters.groupByClasse ? 'Total por Classe' : null,
+    report.groupingFallbackUsed ? 'Agrupamento por prefixo de código (hierarquia incompleta)' : null,
   ].filter(Boolean);
+  const bodyRows: XlsxBodyRow[] = report.displayRows
+    ? report.displayRows.map((d) => d.kind === 'account'
+        ? { code: d.row.code, name: d.row.name, ...Object.fromEntries(columns.map((key) => [key, cellFor(d.row, key)])) }
+        : { kind: 'subtotal' as const, emphasis: (d.kind === 'subtotal-classe' ? 2 : 1) as 1 | 2, values: { code: d.label, name: '', ...Object.fromEntries(columns.map((key) => [key, subtotalCellFor(d, key)])) } })
+    : report.rows.map((r) => ({ code: r.code, name: r.name, ...Object.fromEntries(columns.map((key) => [key, cellFor(r, key)])) }));
   const buffer = await exportTableToXlsx({
     title: 'Balancete',
     companyName: company?.tradeName || company?.legalName || '',
@@ -2038,7 +2260,7 @@ export async function exportTrialBalanceXlsx(
     exportedAt: new Date(),
     sheetName: 'Balancete',
     columns: xlsxColumns,
-    rows: report.rows.map((r) => ({ code: r.code, name: r.name, ...Object.fromEntries(columns.map((key) => [key, cellFor(r, key)])) })),
+    rows: bodyRows,
     grandTotal: { code: 'Totais', ...Object.fromEntries(columns.map((key) => [key, totalFor(key)])) },
   });
   return { filename: `contabilidade-balancete-${report.filters.from}-${report.filters.to}.xlsx`, buffer };
